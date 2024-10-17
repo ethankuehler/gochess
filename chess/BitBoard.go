@@ -8,31 +8,6 @@ import (
 	"strings"
 )
 
-// index for certin pieces.
-const PAWN = 0
-const BISHOP = 1
-const KNIGHT = 2
-const ROOK = 3
-const QUEEN = 4
-const KING = 5
-const BLACK_OFFSET = 6
-
-// mask for game encoding.
-const TURN_MASK uint8 = 1
-const WHITEOO_MASK uint8 = 1 << 1
-const WHITEOOO_MASK uint8 = 1 << 2
-const BLACKOO_MASK uint8 = 1 << 3
-const BLACKOOO_MASK uint8 = 1 << 4
-
-// precalculated positional masking.
-const ROW_MASK uint64 = 255
-const COLONM_MASK uint64 = 72340172838076673
-
-// string information for formating and covnerting different chess notations.
-var PICECES_SYM = []string{"P", "B", "N", "R", "Q", "K", "p", "b", "n", "r", "q", "k"}
-var CASTLE_SYM = []string{"K", "Q", "k", "q"}
-var COLONMS = []rune{'a', 'b', 'c', 'd', 'e', 'f', 'g'}
-
 // Given algerbraic notation for a position (e.g. c5) calculate the position.
 func CalcLocFromAlg(alg string) (uint64, error) {
 	col := slices.Index(COLONMS, rune(alg[0]))
