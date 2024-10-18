@@ -3,6 +3,7 @@ package chess
 import (
 	"errors"
 	"fmt"
+	"slices"
 )
 
 type Move struct {
@@ -54,4 +55,21 @@ func (m *Move) String() string {
 	}
 
 	return fmt.Sprintf("%c%d%c%d", COLONMS[scol], srow+1, COLONMS[ecol], erow+1)
+}
+
+// Given algerbraic notation for a position (e.g. c5) calculate the position.
+func CalcLocFromAlg(alg string) (uint64, error) {
+	col := slices.Index(COLONMS, rune(alg[0]))
+	if col == -1 {
+		s := fmt.Sprintf("Invalid algerbraic notation %s", alg)
+		return 0, errors.New(s)
+	}
+
+	row := int(alg[1]-'0') - 1
+	if row < 0 || row >= 8 {
+		s := fmt.Sprintf("Invalid algerbraic notation %s", alg)
+		return 0, errors.New(s)
+	}
+
+	return 1 << (col + row*8), nil
 }
