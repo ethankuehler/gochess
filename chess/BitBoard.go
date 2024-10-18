@@ -26,7 +26,7 @@ func CalcLocFromAlg(alg string) (uint64, error) {
 }
 
 type BitBoard struct {
-	pieces          [12]uint64 //BitBoard, encoding for all piceces on board.
+	pieces          [12]uint64 //BitBoard, encoding for all pieces on board.
 	encoding        uint8      //Encoding for castle and turn information.
 	halfmove_clock  uint16     //Number of half moves since last pawn advance or piece capture, for 50 move rule.
 	fullmove_number uint16     //Number of full moves.
@@ -169,4 +169,13 @@ func (b BitBoard) String() string {
 func (b BitBoard) LegalMoves() []Move {
 
 	return make([]Move, 1)
+}
+
+// Returns a mask of every Occupied sqaure on the chess board.
+func (b BitBoard) Occupied() uint64 {
+	var occ uint64 = 0
+	for _, v := range b.pieces {
+		occ |= v
+	}
+	return occ
 }
