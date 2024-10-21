@@ -32,6 +32,7 @@ func TestNewBaordFEN(t *testing.T) {
 		var b, err = chess.NewBoardFEN(record[0])
 		if err != nil {
 			t.Errorf("ERROR: could not decode FEN %s", record[0])
+			continue
 		}
 		out := b.FEN()
 		if out != record[0] {

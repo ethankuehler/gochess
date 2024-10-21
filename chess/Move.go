@@ -68,6 +68,8 @@ func AlgFromLoc(loc uint64) string {
 		if rowMask&loc > 0 {
 			row = i
 		}
+		colMask = colMask << 1
+		rowMask = rowMask << 8
 	}
 
 	return fmt.Sprintf("%c%d", COLONMS[col], row+1)

@@ -3,7 +3,6 @@ package chess
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -85,11 +84,20 @@ func NewBoardFEN(FEN string) (*BitBoard, error) {
 	castle_info := fields[2]
 	for i, v := range CASTLE_SYM {
 		if strings.Contains(castle_info, v) {
-			b.encoding |= 1 << i
+			b.encoding |= 1 << (i + 1)
 		}
 	}
 
 	//TODO: deal with en passant and fields[3]
+	if fields[3] == "-" {
+		b.enpassant = 0
+	} else {
+		enpassant, err := CalcLocFromAlg(fields[3])
+		if err != nil {
+			return nil, err
+		}
+		b.enpassant = enpassant
+	}
 
 	//turn number
 	v, err := strconv.Atoi(fields[4])
@@ -105,6 +113,47 @@ func NewBoardFEN(FEN string) (*BitBoard, error) {
 	b.fullmove_number = uint16(v)
 
 	return &b, nil
+}
+
+// returns a string with turn, castle, enpassant and move number info
+func (b BitBoard) InfoString() string {
+	var buffer bytes.Buffer
+	//Turn information
+	buffer.WriteRune(' ')
+	if b.encoding&TURN_MASK > 0 {
+		buffer.WriteRune('w')
+	} else {
+		buffer.WriteRune('b')
+	}
+
+	//Castle Information
+	buffer.WriteRune(' ')
+	canCastle := false
+	for i, v := range CASTLE_SYM {
+		if b.encoding&(1<<(i+1)) > 0 {
+			buffer.WriteString(v)
+			canCastle = true
+		}
+	}
+	if canCastle == false {
+		buffer.WriteRune('-')
+	}
+
+	//Enpassant
+	buffer.WriteRune(' ')
+	if b.enpassant > 0 {
+		buffer.WriteString(AlgFromLoc(b.enpassant))
+	} else {
+		buffer.WriteRune('-')
+	}
+
+	buffer.WriteRune(' ')
+	buffer.WriteString(strconv.Itoa(int(b.halfmove_clock)))
+
+	buffer.WriteRune(' ')
+	buffer.WriteString(strconv.Itoa(int(b.fullmove_number)))
+
+	return buffer.String()
 }
 
 // returns a string showing the location of every piece on the bord
@@ -133,19 +182,7 @@ func (b BitBoard) String() string {
 		loc = loc >> 1
 	}
 
-	//Add castle information to string
-	boardStr += "\n"
-	for i, v := range CASTLE_SYM {
-		if b.encoding&(1<<i) > 0 {
-			boardStr += v
-		}
-	}
-
-	//en passant
-	boardStr += " " + "-" + " " //TODO: en passant
-
-	//move timer
-	boardStr += fmt.Sprintf("%d", b.halfmove_clock) + " " + fmt.Sprintf("%d", b.fullmove_number)
+	boardStr += b.InfoString()
 
 	return boardStr
 }
@@ -189,51 +226,7 @@ func (b BitBoard) FEN() string {
 		}
 	}
 
-	//Turn information
-	buffer.WriteRune(' ')
-	if b.encoding&TURN_MASK > 0 {
-		buffer.WriteRune('w')
-	} else {
-		buffer.WriteRune('b')
-	}
-
-	//Castle Information
-	buffer.WriteRune(' ')
-	canCastle := false
-	if b.encoding&WHITEOO_MASK > 0 {
-		buffer.WriteRune('K')
-		canCastle = true
-	}
-	if b.encoding&WHITEOOO_MASK > 0 {
-		buffer.WriteRune('Q')
-		canCastle = true
-	}
-	if b.encoding&BLACKOO_MASK > 0 {
-		buffer.WriteRune('k')
-		canCastle = true
-	}
-	if b.encoding&BLACKOO_MASK > 0 {
-		buffer.WriteRune('q')
-		canCastle = true
-	}
-
-	if canCastle == false {
-		buffer.WriteRune('-')
-	}
-
-	//Enpassant
-	buffer.WriteRune(' ')
-	if b.enpassant > 0 {
-		buffer.WriteString(AlgFromLoc(b.enpassant))
-	} else {
-		buffer.WriteRune('-')
-	}
-
-	buffer.WriteRune(' ')
-	buffer.WriteString(strconv.Itoa(int(b.halfmove_clock)))
-
-	buffer.WriteRune(' ')
-	buffer.WriteString(strconv.Itoa(int(b.fullmove_number)))
+	buffer.WriteString(b.InfoString())
 
 	return buffer.String()
 }
