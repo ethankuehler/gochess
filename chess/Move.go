@@ -57,6 +57,22 @@ func (m *Move) String() string {
 	return fmt.Sprintf("%c%d%c%d", COLONMS[scol], srow+1, COLONMS[ecol], erow+1)
 }
 
+func AlgFromLoc(loc uint64) string {
+	col, row := 0, 0
+	colMask := COLONM_MASK
+	rowMask := ROW_MASK
+	for i := range 8 {
+		if colMask&loc > 0 {
+			col = i
+		}
+		if rowMask&loc > 0 {
+			row = i
+		}
+	}
+
+	return fmt.Sprintf("%c%d", COLONMS[col], row+1)
+}
+
 // Given algerbraic notation for a position (e.g. c5) calculate the position.
 func CalcLocFromAlg(alg string) (uint64, error) {
 	col := slices.Index(COLONMS, rune(alg[0]))

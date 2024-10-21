@@ -2,6 +2,7 @@ package chess
 
 // index for certin pieces.
 const (
+	ALL          = -1
 	PAWN         = 0
 	BISHOP       = 1
 	KNIGHT       = 2
@@ -18,6 +19,12 @@ const (
 	WHITEOOO_MASK uint8 = 1 << 2
 	BLACKOO_MASK  uint8 = 1 << 3
 	BLACKOOO_MASK uint8 = 1 << 4
+)
+
+const (
+	BOTH  = -1
+	WHITE = 0
+	BLACK = 1
 )
 
 // precalculated positional masking.

@@ -1,8 +1,9 @@
 package main
 
 import (
-	"chessprograming/chess"
 	"fmt"
+
+	"github.com/ethankuehler/gochess/chess"
 )
 
 func main() {

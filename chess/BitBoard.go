@@ -1,6 +1,7 @@
 package chess
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"slices"
@@ -10,6 +11,7 @@ import (
 
 type BitBoard struct {
 	pieces          [12]uint64 //BitBoard, encoding for all pieces on board.
+	enpassant       uint64     //location of piece that can preform enpassant
 	encoding        uint8      //Encoding for castle and turn information.
 	halfmove_clock  uint16     //Number of half moves since last pawn advance or piece capture, for 50 move rule.
 	fullmove_number uint16     //Number of full moves.
@@ -148,6 +150,94 @@ func (b BitBoard) String() string {
 	return boardStr
 }
 
+func (b BitBoard) FEN() string {
+	var buffer bytes.Buffer
+
+	row_count := 0
+	count := 0
+	for loc := uint64(1) << 63; 0 < loc; loc = loc >> 1 {
+
+		//
+		found := false
+		for i, v := range b.pieces {
+			if v&loc > 0 {
+				if count > 0 {
+					buffer.WriteString(strconv.Itoa(count))
+					count = 0
+				}
+				buffer.WriteString(PICECES_SYM[i])
+				found = true
+				break
+			}
+		}
+
+		//
+		if !found {
+			count += 1
+		}
+
+		row_count += 1
+		if row_count == 8 {
+			if count != 0 {
+				buffer.WriteString(strconv.Itoa(count))
+				count = 0
+			}
+			if loc != 1 {
+				buffer.WriteRune('/')
+			}
+			row_count = 0
+		}
+	}
+
+	//Turn information
+	buffer.WriteRune(' ')
+	if b.encoding&TURN_MASK > 0 {
+		buffer.WriteRune('w')
+	} else {
+		buffer.WriteRune('b')
+	}
+
+	//Castle Information
+	buffer.WriteRune(' ')
+	canCastle := false
+	if b.encoding&WHITEOO_MASK > 0 {
+		buffer.WriteRune('K')
+		canCastle = true
+	}
+	if b.encoding&WHITEOOO_MASK > 0 {
+		buffer.WriteRune('Q')
+		canCastle = true
+	}
+	if b.encoding&BLACKOO_MASK > 0 {
+		buffer.WriteRune('k')
+		canCastle = true
+	}
+	if b.encoding&BLACKOO_MASK > 0 {
+		buffer.WriteRune('q')
+		canCastle = true
+	}
+
+	if canCastle == false {
+		buffer.WriteRune('-')
+	}
+
+	//Enpassant
+	buffer.WriteRune(' ')
+	if b.enpassant > 0 {
+		buffer.WriteString(AlgFromLoc(b.enpassant))
+	} else {
+		buffer.WriteRune('-')
+	}
+
+	buffer.WriteRune(' ')
+	buffer.WriteString(strconv.Itoa(int(b.halfmove_clock)))
+
+	buffer.WriteRune(' ')
+	buffer.WriteString(strconv.Itoa(int(b.fullmove_number)))
+
+	return buffer.String()
+}
+
 // returns a list of all legal moves from a current baord position
 func (b BitBoard) LegalMoves() []Move {
 
@@ -155,10 +245,29 @@ func (b BitBoard) LegalMoves() []Move {
 }
 
 // Returns a mask of every Occupied sqaure on the chess board.
-func (b BitBoard) Occupied() uint64 {
-	var occ uint64 = 0
-	for _, v := range b.pieces {
-		occ |= v
+// colour should be WHITE, BLACK, or BOTH.
+func (b BitBoard) Occupied(colour int64) uint64 {
+	var offset uint64
+	var N uint64
+
+	switch colour {
+	case WHITE:
+		offset = 0
+		N = 6
+	case BLACK:
+		offset = BLACK_OFFSET
+		N = 6
+	case BOTH:
+		offset = 0
+		N = 12
+	default:
+		panic("bad input into Occupied")
 	}
-	return occ
+
+	var occupied uint64 = 0
+	for i := offset; i < N+offset; i++ {
+		occupied |= b.pieces[i]
+	}
+
+	return occupied
 }
