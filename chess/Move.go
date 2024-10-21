@@ -57,6 +57,7 @@ func (m *Move) String() string {
 	return fmt.Sprintf("%c%d%c%d", COLONMS[scol], srow+1, COLONMS[ecol], erow+1)
 }
 
+// find algebraic position from position
 func AlgFromLoc(loc uint64) string {
 	col, row := 0, 0
 	colMask := COLONM_MASK

@@ -117,7 +117,7 @@ func NewBoardFEN(FEN string) (*BitBoard, error) {
 }
 
 // returns a string with turn, castle, enpassant and move number info
-func (b BitBoard) InfoString() string {
+func (b *BitBoard) InfoString() string {
 	var buffer bytes.Buffer
 	//Turn information
 	buffer.WriteRune(' ')
@@ -158,7 +158,7 @@ func (b BitBoard) InfoString() string {
 }
 
 // returns a string showing the location of every piece on the bord
-func (b BitBoard) String() string {
+func (b *BitBoard) String() string {
 	boardStr := ""
 	//we start at the top right
 	var loc uint64 = 1 << 63
@@ -188,7 +188,7 @@ func (b BitBoard) String() string {
 	return boardStr
 }
 
-func (b BitBoard) FEN() string {
+func (b *BitBoard) FEN() string {
 	var buffer bytes.Buffer
 
 	row_count := 0
@@ -233,13 +233,13 @@ func (b BitBoard) FEN() string {
 }
 
 // returns a list of all legal moves from a current baord position
-func (b BitBoard) LegalMoves() []Move {
+func (b *BitBoard) LegalMoves() []Move {
 	return make([]Move, 1) //TODO: get this working
 }
 
 // Returns a mask of every Occupied sqaure on the chess board.
 // colour should be WHITE, BLACK, or BOTH.
-func (b BitBoard) Occupied(colour int64) uint64 {
+func (b *BitBoard) Occupied(colour int64) uint64 {
 	var offset uint64
 	var N uint64
 
