@@ -83,7 +83,7 @@ func CalcLocFromAlg(alg string) (uint64, error) {
 		return 0, errors.New(s)
 	}
 
-	row := int(alg[1]-'0') - 1
+	row := int(alg[1]-'0') - 1 //its imporant to subtract by 1
 	if row < 0 || row >= 8 {
 		s := fmt.Sprintf("Invalid algerbraic notation %s", alg)
 		return 0, errors.New(s)

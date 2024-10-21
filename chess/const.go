@@ -33,6 +33,11 @@ const (
 	COLONM_MASK uint64 = 72340172838076673
 )
 
+const (
+	KNIGHT_MASK   uint64 = 43234889994
+	KNIGHT_OFFSET uint64 = 18
+)
+
 // string information for formating and covnerting different chess notations.
 var (
 	PICECES_SYM = []string{"P", "B", "N", "R", "Q", "K", "p", "b", "n", "r", "q", "k"}
