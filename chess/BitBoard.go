@@ -16,6 +16,7 @@ type BitBoard struct {
 	fullmove_number uint16     //Number of full moves.
 }
 
+// New BitBoard with starting setup
 func NewBoardDefault() *BitBoard {
 	b := BitBoard{}
 	//setting all the white pieces on the home squares
@@ -88,7 +89,7 @@ func NewBoardFEN(FEN string) (*BitBoard, error) {
 		}
 	}
 
-	//TODO: deal with en passant and fields[3]
+	//Enpassant
 	if fields[3] == "-" {
 		b.enpassant = 0
 	} else {
@@ -194,7 +195,7 @@ func (b BitBoard) FEN() string {
 	count := 0
 	for loc := uint64(1) << 63; 0 < loc; loc = loc >> 1 {
 
-		//
+		// determins if there is a piece at the location loc
 		found := false
 		for i, v := range b.pieces {
 			if v&loc > 0 {
@@ -208,7 +209,7 @@ func (b BitBoard) FEN() string {
 			}
 		}
 
-		//
+		// if no piece is found
 		if !found {
 			count += 1
 		}
@@ -233,8 +234,7 @@ func (b BitBoard) FEN() string {
 
 // returns a list of all legal moves from a current baord position
 func (b BitBoard) LegalMoves() []Move {
-
-	return make([]Move, 1)
+	return make([]Move, 1) //TODO: get this working
 }
 
 // Returns a mask of every Occupied sqaure on the chess board.
