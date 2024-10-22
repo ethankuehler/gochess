@@ -20,12 +20,12 @@ func NewMoveUCI(UCI string) (*Move, error) {
 		return nil, errors.New(s)
 	}
 
-	start, err := CalcLocFromAlg(UCI[:2])
+	start, err := LocFromAlg(UCI[:2])
 	if err != nil {
 		return nil, errors.Join(errors.New(s), err)
 	}
 
-	end, err := CalcLocFromAlg(UCI[2:])
+	end, err := LocFromAlg(UCI[2:])
 	if err != nil {
 		return nil, errors.Join(errors.New(s), err)
 	}
@@ -76,8 +76,7 @@ func AlgFromLoc(loc uint64) string {
 	return fmt.Sprintf("%c%d", COLONMS[col], row+1)
 }
 
-// Given algerbraic notation for a position (e.g. c5) calculate the position.
-func CalcLocFromAlg(alg string) (uint64, error) {
+func ShiftFromAlg(alg string) (uint64, error) {
 	col := slices.Index(COLONMS, rune(alg[0]))
 	if col == -1 {
 		s := fmt.Sprintf("Invalid algerbraic notation %s", alg)
@@ -90,5 +89,14 @@ func CalcLocFromAlg(alg string) (uint64, error) {
 		return 0, errors.New(s)
 	}
 
-	return 1 << (col + row*8), nil
+	return uint64(col + row*8), nil
+}
+
+// Given algerbraic notation for a position (e.g. c5) calculate the position.
+func LocFromAlg(alg string) (uint64, error) {
+	shift, err := ShiftFromAlg(alg)
+	if err != nil {
+		return 0, err
+	}
+	return 1 << shift, nil
 }

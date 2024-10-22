@@ -93,7 +93,7 @@ func NewBoardFEN(FEN string) (*BitBoard, error) {
 	if fields[3] == "-" {
 		b.enpassant = 0
 	} else {
-		enpassant, err := CalcLocFromAlg(fields[3])
+		enpassant, err := LocFromAlg(fields[3])
 		if err != nil {
 			return nil, err
 		}

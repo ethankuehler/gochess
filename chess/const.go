@@ -38,9 +38,16 @@ const (
 	KNIGHT_OFFSET uint64 = 18
 )
 
+const (
+	PAWN_MOVE_MASK2         uint64 = 257
+	PAWN_MOVE_MASK          uint64 = 1
+	PAWN_ATTACK_MASK        uint64 = 5
+	PAWN_ATTACK_MASK_OFFSET uint64 = 1
+)
+
 // string information for formating and covnerting different chess notations.
 var (
 	PICECES_SYM = []string{"P", "B", "N", "R", "Q", "K", "p", "b", "n", "r", "q", "k"}
 	CASTLE_SYM  = []string{"K", "Q", "k", "q"}
-	COLONMS     = []rune{'a', 'b', 'c', 'd', 'e', 'f', 'g'}
+	COLONMS     = []rune{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'}
 )
