@@ -21,24 +21,33 @@ func TestKnightAttacks(t *testing.T) {
 
 func TestPawnAttacks(t *testing.T) {
 	chess.BuildPawnAttacks()
-	if chess.PAWN_ATTACKS == nil {
+	if chess.WHITE_PAWN_ATTACKS == nil {
 		t.Error("nil map")
 	}
 
-	if len(chess.PAWN_ATTACKS) != 48 {
-		t.Errorf("map incorrect size, 64 != %d", len(chess.PAWN_ATTACKS))
+	if len(chess.WHITE_PAWN_ATTACKS) != 48 {
+		t.Errorf("map incorrect size, 64 != %d", len(chess.WHITE_PAWN_ATTACKS))
 	}
 	//TODO: more testing
 }
 
 func TestPawnMoves(t *testing.T) {
 	chess.BuildPawnMoves()
-	if chess.PAWN_MOVES == nil {
-		t.Error("nil map")
+	if chess.WHITE_PAWN_MOVES == nil {
+		t.Error("White nil map")
 	}
 
-	if len(chess.PAWN_MOVES) != 48 {
-		t.Errorf("map incorrect size, 64 != %d", len(chess.PAWN_ATTACKS))
+	if len(chess.WHITE_PAWN_MOVES) != 48 {
+		t.Errorf("White map incorrect size, 64 != %d", len(chess.WHITE_PAWN_ATTACKS))
+	}
+
+	if chess.BLACK_PAWN_MOVES == nil {
+		t.Error("Black nil map")
+	}
+
+	if len(chess.BLACK_PAWN_MOVES) != 48 {
+		t.Errorf("Black map incorrect size, 64 != %d", len(chess.WHITE_PAWN_ATTACKS))
 	}
 	//TODO: more testing
+
 }

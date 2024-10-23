@@ -30,5 +30,4 @@ func TestNewMove(t *testing.T) {
 			}
 		}
 	}
-
 }

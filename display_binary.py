@@ -4,8 +4,7 @@ import sys
 
 def display_binary(x: int) -> str:
     bstring = '{0:064b}'.format(x)
-    s = [bstring[i:i+8] for i in range(0, len(bstring), 8)]
-    s = [i[::-1] for i in s]
+    s = [bstring[i:i+8][::-1] for i in range(0, len(bstring), 8)]
     return '\n'.join(s)
 
 

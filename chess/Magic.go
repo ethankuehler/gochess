@@ -5,8 +5,11 @@ package chess
 var KNIGHT_ATTACKS map[uint64]uint64
 
 // pawns are split up into attacks and move's
-var PAWN_ATTACKS map[uint64]uint64
-var PAWN_MOVES map[uint64]uint64
+// Black and white pecies are split up due to the fact that they are different for pawns.
+var WHITE_PAWN_ATTACKS map[uint64]uint64
+var WHITE_PAWN_MOVES map[uint64]uint64
+var BLACK_PAWN_ATTACKS map[uint64]uint64
+var BLACK_PAWN_MOVES map[uint64]uint64
 
 // sliding piececs
 var (
@@ -52,30 +55,52 @@ func BuildKnightAttacks() {
 
 // TODO: deal with black, so far these only work for white pawns
 func BuildPawnMoves() {
-	PAWN_MOVES = make(map[uint64]uint64)
-	//pawns on the 2nd rank move twice
+	WHITE_PAWN_MOVES = make(map[uint64]uint64)
+	BLACK_PAWN_MOVES = make(map[uint64]uint64)
+	//White pawns on the 2nd rank move twice.
 	start, _ := ShiftFromAlg("a2")
 	stop, _ := ShiftFromAlg("h2")
 	for i := start; i <= stop; i++ {
-		PAWN_MOVES[1<<i] = PAWN_MOVE_MASK2 << i
+		loc := uint64(1) << i
+		mask := WHITE_PAWN_MOVE_MASK_2 << (i - WHITE_PAWN_MOVE_OFFSET_2)
+		WHITE_PAWN_MOVES[loc] = mask
 	}
 
-	//rest of the pawns are normal
+	//Black pawns on the 7th also move twice.
+	start, _ = ShiftFromAlg("a7")
+	stop, _ = ShiftFromAlg("h7")
+	for i := start; i <= stop; i++ {
+		loc := uint64(1) << i
+		mask := BLACK_PAWN_MOVE_MASK_2 << (i - BLACK_PAWN_MOVE_OFFSET_2)
+		BLACK_PAWN_MOVES[loc] = mask
+	}
+
+	//white pawns
 	start, _ = ShiftFromAlg("a3")
 	stop, _ = ShiftFromAlg("h7")
 	for i := start; i <= stop; i++ {
-		PAWN_MOVES[1<<i] = PAWN_MOVE_MASK << i
+		loc := uint64(i) << i
+		mask := WHITE_PAWN_MOVE_MASK << (i - WHITE_PAWN_MOVE_MASK)
+		WHITE_PAWN_MOVES[loc] = mask
 	}
 
+	//black pawns
+	start, _ = ShiftFromAlg("a2")
+	stop, _ = ShiftFromAlg("h6")
+	for i := start; i <= stop; i++ {
+		loc := uint64(i) << i
+		mask := BLACK_PAWN_MOVE_MASK << (i - BLACK_PAWN_MOVE_OFFSET)
+		BLACK_PAWN_MOVES[loc] = mask
+	}
 }
 
 func BuildPawnAttacks() {
-	PAWN_ATTACKS = make(map[uint64]uint64)
+	WHITE_PAWN_ATTACKS = make(map[uint64]uint64)
 	start, _ := ShiftFromAlg("a2")
 	stop, _ := ShiftFromAlg("h7")
 	for i := start; i <= stop; i++ {
 		loc := uint64(1 << i)
-		shift := (i - PAWN_ATTACK_MASK_OFFSET)
-		PAWN_ATTACKS[loc] = PAWN_ATTACK_MASK << shift
+		mask := WHITE_PAWN_ATTACK_MASK << (i - WHITE_PAWN_ATTACK_OFFSET)
+		WHITE_PAWN_ATTACKS[loc] = mask
 	}
 }

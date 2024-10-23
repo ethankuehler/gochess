@@ -38,14 +38,25 @@ const (
 	KNIGHT_OFFSET uint64 = 18
 )
 
+// Use display_binary.py to conferm these numbers
+// Mask is going to be a bit mask
+// Offset is always a shift number
 const (
-	PAWN_MOVE_MASK2         uint64 = 257
-	PAWN_MOVE_MASK          uint64 = 1
-	PAWN_ATTACK_MASK        uint64 = 5
-	PAWN_ATTACK_MASK_OFFSET uint64 = 1
+	WHITE_PAWN_MOVE_MASK_2        uint64 = 65792
+	WHITE_PAWN_MOVE_OFFSET_2      uint64 = 0
+	WHITE_PAWN_MOVE_MASK          uint64 = 256
+	WHITE_PAWN_MOVE_OFFSET        uint64 = 0
+	WHITE_PAWN_ATTACK_MASK        uint64 = 1280
+	WHITE_PAWN_ATTACK_OFFSET      uint64 = 1
+	BLACK_PAWN_MOVE_MASK_2        uint64 = 257
+	BLACK_PAWN_MOVE_OFFSET_2      uint64 = 16
+	BLACK_PAWN_MOVE_MASK          uint64 = 1
+	BLACK_PAWN_MOVE_OFFSET        uint64 = 8
+	BLACK_PAWN_ATTACK_MASK        uint64 = 5
+	BLACK_PAWN_ATTACK_MASK_OFFSET uint64 = 9
 )
 
-// string information for formating and covnerting different chess notations.
+// string information fdor formating and covnerting different chess notations.
 var (
 	PICECES_SYM = []string{"P", "B", "N", "R", "Q", "K", "p", "b", "n", "r", "q", "k"}
 	CASTLE_SYM  = []string{"K", "Q", "k", "q"}
