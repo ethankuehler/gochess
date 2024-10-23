@@ -71,14 +71,14 @@ func BuildPawnMoves() {
 
 	//white pawns
 	for i := range ShiftIter("a3", "h7") {
-		loc := uint64(i) << i
-		mask := WHITE_PAWN_MOVE_MASK << (i - WHITE_PAWN_MOVE_MASK)
+		loc := uint64(1) << i
+		mask := WHITE_PAWN_MOVE_MASK << (i - WHITE_PAWN_MOVE_OFFSET)
 		WHITE_PAWN_MOVES[loc] = mask
 	}
 
 	//black pawns
 	for i := range ShiftIter("a2", "h6") {
-		loc := uint64(i) << i
+		loc := uint64(1) << i
 		mask := BLACK_PAWN_MOVE_MASK << (i - BLACK_PAWN_MOVE_OFFSET)
 		BLACK_PAWN_MOVES[loc] = mask
 	}

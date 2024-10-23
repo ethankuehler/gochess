@@ -118,6 +118,5 @@ func ShiftIter(start_str, stop_str string) iter.Seq[uint64] {
 				return
 			}
 		}
-
 	}
 }
