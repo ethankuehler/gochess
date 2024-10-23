@@ -103,12 +103,12 @@ func LocFromAlg(alg string) (uint64, error) {
 	return 1 << shift, nil
 }
 
-func ShiftIter(s, e string) iter.Seq[uint64] {
-	start, err := ShiftFromAlg(s)
+func ShiftIter(start_str, stop_str string) iter.Seq[uint64] {
+	start, err := ShiftFromAlg(start_str)
 	if err != nil {
 		log.Fatal(err)
 	}
-	stop, _ := ShiftFromAlg(s)
+	stop, err := ShiftFromAlg(stop_str)
 	if err != nil {
 		log.Fatal(err)
 	}
