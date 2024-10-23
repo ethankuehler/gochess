@@ -3,6 +3,8 @@ package chess
 import (
 	"errors"
 	"fmt"
+	"iter"
+	"log"
 	"slices"
 )
 
@@ -99,4 +101,23 @@ func LocFromAlg(alg string) (uint64, error) {
 		return 0, err
 	}
 	return 1 << shift, nil
+}
+
+func ShiftIter(s, e string) iter.Seq[uint64] {
+	start, err := ShiftFromAlg(s)
+	if err != nil {
+		log.Fatal(err)
+	}
+	stop, _ := ShiftFromAlg(s)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return func(yield func(uint64) bool) {
+		for i := start; i <= stop; i++ {
+			if !yield(i) {
+				return
+			}
+		}
+
+	}
 }

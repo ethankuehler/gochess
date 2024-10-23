@@ -40,9 +40,7 @@ func GetRookAttack(location uint64, blockers uint64) uint64 {
 
 func BuildKnightAttacks() {
 	KNIGHT_ATTACKS = make(map[uint64]uint64)
-	start, _ := ShiftFromAlg("a1")
-	end, _ := ShiftFromAlg("h8")
-	for i := start; i <= end; i++ {
+	for i := range ShiftIter("a1", "h8") {
 		var loc uint64 = 1 << i
 		mask_shift := i - KNIGHT_OFFSET
 		if mask_shift > 0 {
@@ -58,36 +56,28 @@ func BuildPawnMoves() {
 	WHITE_PAWN_MOVES = make(map[uint64]uint64)
 	BLACK_PAWN_MOVES = make(map[uint64]uint64)
 	//White pawns on the 2nd rank move twice.
-	start, _ := ShiftFromAlg("a2")
-	stop, _ := ShiftFromAlg("h2")
-	for i := start; i <= stop; i++ {
+	for i := range ShiftIter("a2", "h2") {
 		loc := uint64(1) << i
 		mask := WHITE_PAWN_MOVE_MASK_2 << (i - WHITE_PAWN_MOVE_OFFSET_2)
 		WHITE_PAWN_MOVES[loc] = mask
 	}
 
 	//Black pawns on the 7th also move twice.
-	start, _ = ShiftFromAlg("a7")
-	stop, _ = ShiftFromAlg("h7")
-	for i := start; i <= stop; i++ {
+	for i := range ShiftIter("a7", "h7") {
 		loc := uint64(1) << i
 		mask := BLACK_PAWN_MOVE_MASK_2 << (i - BLACK_PAWN_MOVE_OFFSET_2)
 		BLACK_PAWN_MOVES[loc] = mask
 	}
 
 	//white pawns
-	start, _ = ShiftFromAlg("a3")
-	stop, _ = ShiftFromAlg("h7")
-	for i := start; i <= stop; i++ {
+	for i := range ShiftIter("a3", "h7") {
 		loc := uint64(i) << i
 		mask := WHITE_PAWN_MOVE_MASK << (i - WHITE_PAWN_MOVE_MASK)
 		WHITE_PAWN_MOVES[loc] = mask
 	}
 
 	//black pawns
-	start, _ = ShiftFromAlg("a2")
-	stop, _ = ShiftFromAlg("h6")
-	for i := start; i <= stop; i++ {
+	for i := range ShiftIter("a2", "h6") {
 		loc := uint64(i) << i
 		mask := BLACK_PAWN_MOVE_MASK << (i - BLACK_PAWN_MOVE_OFFSET)
 		BLACK_PAWN_MOVES[loc] = mask
@@ -96,9 +86,7 @@ func BuildPawnMoves() {
 
 func BuildPawnAttacks() {
 	WHITE_PAWN_ATTACKS = make(map[uint64]uint64)
-	start, _ := ShiftFromAlg("a2")
-	stop, _ := ShiftFromAlg("h7")
-	for i := start; i <= stop; i++ {
+	for i := range ShiftIter("a2", "h7") {
 		loc := uint64(1 << i)
 		mask := WHITE_PAWN_ATTACK_MASK << (i - WHITE_PAWN_ATTACK_OFFSET)
 		WHITE_PAWN_ATTACKS[loc] = mask
