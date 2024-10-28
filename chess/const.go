@@ -38,22 +38,27 @@ const (
 	KNIGHT_OFFSET uint64 = 18
 )
 
+const (
+	KING_MASK   uint64 = 0
+	KING_OFFSET uint64 = 0
+)
+
 // Use display_binary.py to conferm these numbers
 // Mask is going to be a bit mask
 // Offset is always a shift number
 const (
-	WHITE_PAWN_MOVE_MASK_2        uint64 = 65792
-	WHITE_PAWN_MOVE_OFFSET_2      uint64 = 0
-	WHITE_PAWN_MOVE_MASK          uint64 = 256
-	WHITE_PAWN_MOVE_OFFSET        uint64 = 0
-	WHITE_PAWN_ATTACK_MASK        uint64 = 1280
-	WHITE_PAWN_ATTACK_OFFSET      uint64 = 1
-	BLACK_PAWN_MOVE_MASK_2        uint64 = 257
-	BLACK_PAWN_MOVE_OFFSET_2      uint64 = 16
-	BLACK_PAWN_MOVE_MASK          uint64 = 1
-	BLACK_PAWN_MOVE_OFFSET        uint64 = 8
-	BLACK_PAWN_ATTACK_MASK        uint64 = 5
-	BLACK_PAWN_ATTACK_MASK_OFFSET uint64 = 9
+	WHITE_PAWN_MOVE_MASK_2   uint64 = 65792
+	WHITE_PAWN_MOVE_OFFSET_2 uint64 = 0
+	WHITE_PAWN_MOVE_MASK     uint64 = 256
+	WHITE_PAWN_MOVE_OFFSET   uint64 = 0
+	WHITE_PAWN_ATTACK_MASK   uint64 = 1280
+	WHITE_PAWN_ATTACK_OFFSET uint64 = 1
+	BLACK_PAWN_MOVE_MASK_2   uint64 = 257
+	BLACK_PAWN_MOVE_OFFSET_2 uint64 = 16
+	BLACK_PAWN_MOVE_MASK     uint64 = 1
+	BLACK_PAWN_MOVE_OFFSET   uint64 = 8
+	BLACK_PAWN_ATTACK_MASK   uint64 = 5
+	BLACK_PAWN_ATTACK_OFFSET uint64 = 9
 )
 
 // string information fdor formating and covnerting different chess notations.

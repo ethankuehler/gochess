@@ -51,7 +51,6 @@ func BuildKnightAttacks() {
 	}
 }
 
-// TODO: deal with black, so far these only work for white pawns
 func BuildPawnMoves() {
 	WHITE_PAWN_MOVES = make(map[uint64]uint64)
 	BLACK_PAWN_MOVES = make(map[uint64]uint64)
@@ -86,9 +85,17 @@ func BuildPawnMoves() {
 
 func BuildPawnAttacks() {
 	WHITE_PAWN_ATTACKS = make(map[uint64]uint64)
+	BLACK_PAWN_ATTACKS = make(map[uint64]uint64)
+
 	for i := range ShiftIter("a2", "h7") {
 		loc := uint64(1 << i)
 		mask := WHITE_PAWN_ATTACK_MASK << (i - WHITE_PAWN_ATTACK_OFFSET)
+		WHITE_PAWN_ATTACKS[loc] = mask
+	}
+
+	for i := range ShiftIter("a2", "h7") {
+		loc := uint64(1 << i)
+		mask := BLACK_PAWN_ATTACK_MASK << (i - BLACK_PAWN_ATTACK_OFFSET)
 		WHITE_PAWN_ATTACKS[loc] = mask
 	}
 }

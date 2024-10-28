@@ -9,9 +9,9 @@ class Colour(Enum):
 
 class PositionIter():
     def __init__(self, start: str, stop: str):
-        self.coloums = ['a','b','c','d','e','f', 'g', 'h']
-        self.idx = [self.coloums.index(start[0]), int(start[1])]
-        self.stop = [self.coloums.index(stop[0]), int(stop[1])]
+        self.columns = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+        self.idx = [self.columns.index(start[0]), int(start[1])]
+        self.stop = [self.columns.index(stop[0]), int(stop[1])]
         
     def _less_eq(self, rhs, lhs):
         return (rhs[0] + rhs[1]*8) <= (lhs[0] + lhs[1]*8)
@@ -22,7 +22,7 @@ class PositionIter():
     def __next__(self):
         if not self._less_eq(self.idx, self.stop):
             raise StopIteration
-        r = self.coloums[self.idx[0]] + str(self.idx[1])
+        r = self.columns[self.idx[0]] + str(self.idx[1])
 
         if self.idx[0] < 7:
             self.idx[0] += 1
@@ -30,7 +30,49 @@ class PositionIter():
             self.idx[0] = 0
             self.idx[1] += 1
         return r
-        
+
+class Position:
+    def __init__(self, pos = 'a1'):
+        self.columns = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+        self.loc = [self.columns.index(pos[0]), int(pos[1])]
+    
+
+    def __lt__(self, lhs):
+        rhs = self.loc
+        return (rhs[0] + rhs[1]*8) < (lhs[0] + lhs[1]*8)
+    
+
+    def __le__(self, lhs):
+        rhs = self.loc
+        return (rhs[0] + rhs[1]*8) <= (lhs[0] + lhs[1]*8)
+    
+
+    def __eq__(self, lhs):
+        rhs = self.loc
+        return rhs == lhs
+
+
+    def add(self, col, row) -> bool:
+        new_col = self.loc[0] + col
+        new_row = self.loc[1] + row
+        if (0 <= new_col < 8) and (0 <= new_row < 8):
+            self.loc = [new_col, new_row]
+            return True
+        else:
+            return False
+    
+    
+    def getInt(self):
+        return 1 << (self.loc[0] + self.loc[1]*8)
+    
+
+    def getShift(self):
+        return (self.loc[0] + self.loc[1]*8)
+    
+
+    def getString(self):
+        return self.columns[self.loc[0]] + str(self.loc[1])
+    
 
 def display_binary(x: int) -> str:
     bstring = '{0:064b}'.format(x)
@@ -39,8 +81,8 @@ def display_binary(x: int) -> str:
 
 
 def alg_to_int(s:str) -> int:
-    coloums = ['a','b','c','d','e','f', 'g', 'h']
-    col = coloums.index(s[0])
+    columns = ['a','b','c','d','e','f', 'g', 'h']
+    col = columns.index(s[0])
     row = int(s[1])
     return 1 << (col + (row-1)*8)
 
@@ -67,11 +109,26 @@ def generate_pawn_move(start: str, side: Colour) -> int:
     return move
 
 
+def generate_knight_move(start: str) -> int:
+    knight_attacks = ['b1', 'd1', 'a2', 'e2', 'a4', 'e4', 'b5', 'd5']
+    sPos = Position(start)
+    
+
+    
 
 def all_pawn_moves(side: Colour):
     data = {"start" : [], "move": []}
     for p in PositionIter('a2', 'h7'):
         m = generate_pawn_move(p, side)
+        data['start'].append(alg_to_int(p))
+        data['move'].append(m)
+    return data
+
+
+def all_knight_moves():
+    data = {"start" : [], "move": []}
+    for p in PositionIter('a2', 'h7'):
+        m = generate_knight_moves(p)
         data['start'].append(alg_to_int(p))
         data['move'].append(m)
     return data
@@ -103,7 +160,7 @@ print(display_binary(k))
 
 print(alg_to_shift('c3'))
 print(display_binary(generate_pawn_move("e3", Colour.white)))
-'''
+
 
 for i in PositionIter('a1', 'h7'):
     print(i)
@@ -120,4 +177,9 @@ for idx, row in df.iterrows():
     print_move(s, m)
     print(' ')
 
-df.to_csv('test_data/black_pawn_move.csv')
+#df.to_csv('test_data/black_pawn_move.csv')
+'''
+
+print_move(alg_to_int('f3'), generate_knight_move('f3'))
+for i in PositionIter('a1', 'h7'):
+    print(i)
