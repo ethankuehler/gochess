@@ -157,8 +157,7 @@ func (b *BitBoard) InfoString() string {
 	return buffer.String()
 }
 
-// returns a string showing the location of every piece on the bord
-func (b *BitBoard) String() string {
+func (b *BitBoard) toString(piceces []string) string {
 	boardStr := ""
 	//we start at the top right
 	var loc uint64 = 1 << 63
@@ -174,7 +173,7 @@ func (b *BitBoard) String() string {
 		s := " _ "
 		for k, p := range b.pieces {
 			if loc&p > 0 {
-				s = " " + PICECES_SYM[k] + " "
+				s = " " + piceces[k] + " "
 				break
 			}
 		}
@@ -186,6 +185,15 @@ func (b *BitBoard) String() string {
 	boardStr += b.InfoString()
 
 	return boardStr
+}
+
+// returns a string showing the location of every piece on the bord
+func (b *BitBoard) String() string {
+	return b.toString(PICECES_SYM)
+}
+
+func (b *BitBoard) StringUni() string {
+	return b.toString(UNI_PICECES_SYM)
 }
 
 func (b *BitBoard) FEN() string {

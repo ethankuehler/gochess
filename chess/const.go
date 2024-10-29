@@ -61,9 +61,10 @@ const (
 	BLACK_PAWN_ATTACK_OFFSET uint64 = 9
 )
 
-// string information fdor formating and covnerting different chess notations.
+// string information for formating and chess notations.
 var (
-	PICECES_SYM = []string{"P", "B", "N", "R", "Q", "K", "p", "b", "n", "r", "q", "k"}
-	CASTLE_SYM  = []string{"K", "Q", "k", "q"}
-	COLONMS     = []rune{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'}
+	PICECES_SYM     = []string{"P", "B", "N", "R", "Q", "K", "p", "b", "n", "r", "q", "k"}
+	UNI_PICECES_SYM = []string{"♙", "♗", "♘", "♖", "♕", "♔", "♟", "♝", "♞", "♜", "♛", "♚"}
+	CASTLE_SYM      = []string{"K", "Q", "k", "q"}
+	COLONMS         = []rune{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'}
 )
