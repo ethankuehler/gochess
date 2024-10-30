@@ -46,7 +46,7 @@ func GetRookAttack(location uint64, blockers uint64) uint64 {
 }
 
 func BuildKnightAttacks() {
-	file_name := "data/knight_attack.csv"
+	file_name := "data/knight_attacks.csv"
 	KNIGHT_ATTACKS = LoadAttacks(file_name)
 }
 
@@ -105,7 +105,7 @@ func LoadAttacks(csv_file_name string) map[uint64]uint64 {
 	if err != nil {
 		log.Fatalf("was not able to read file, %v", err)
 	}
-	for _, record := range data {
+	for _, record := range data[1:] {
 		start, attack, err := readRecord(record)
 		if err != nil {
 			log.Fatalf("Error in data, %v", err)
