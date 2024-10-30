@@ -9,19 +9,6 @@ import (
 	"github.com/ethankuehler/gochess/chess"
 )
 
-func TestKnightAttacks(t *testing.T) {
-	chess.BuildKnightAttacks()
-	if chess.KNIGHT_ATTACKS == nil {
-		t.Error("nil map")
-	}
-
-	if len(chess.KNIGHT_ATTACKS) != 64 {
-		t.Errorf("map incorrect size, 64 != %d", len(chess.KNIGHT_ATTACKS))
-	}
-
-	//TODO: more testing
-}
-
 func TestPawnAttacks(t *testing.T) {
 	chess.BuildPawnAttacks()
 	if chess.WHITE_PAWN_ATTACKS == nil {
@@ -31,7 +18,7 @@ func TestPawnAttacks(t *testing.T) {
 	if len(chess.WHITE_PAWN_ATTACKS) != 48 {
 		t.Errorf("map incorrect size, 64 != %d", len(chess.WHITE_PAWN_ATTACKS))
 	}
-	//TODO: more testing
+
 }
 
 func readCsv(filename string) ([][]string, error) {

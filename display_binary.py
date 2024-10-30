@@ -4,7 +4,7 @@ from enum import Enum
 import pandas as pd
 import itertools
 
-
+#this shit is so scuffed XD
 class Colour(Enum):
     white = 0
     black = 1
@@ -111,23 +111,35 @@ def generate_pawn_move(start: str, side: Colour) -> int:
         raise Exception(f"you fucked up, {start}")
     return move
 
+def generate_pawn_attack(start: str, side: Colour) -> int:
+    moves = []
+    if side == Colour.white:
+        moves = [(1, 1), (-1, 1)]
+    else:
+        moves = [(1, -1), (-1, -1)]
+    
+    sPos = Position(start)
+
+    int_attack = 0
+    for i in moves:
+        new_attack = sPos.add(i[0], i[1])
+        if new_attack is not None:
+            int_attack |= new_attack.getInt()
+        
+    return int_attack
+
 
 def generate_knight_move(start: str) -> int:
     perms = [(1, 2), (2, 1), (-1, 2), (2, -1), (1, -2), (-2, 1), (-1, -2), (-2, -1)]
     sPos = Position(start)
-    attacks = []
+    int_attack = 0
     for i in perms:
         new_attack = sPos.add(i[0], i[1])
         if new_attack is not None:
             #print(new_attack.getString())
             #print(display_binary(new_attack.getInt()))
-            attacks.append(new_attack.getInt())
+            int_attack |= new_attack.getInt()
         
-
-    int_attack = 0
-    for i in attacks:
-        int_attack |= i
-
     return int_attack
 
 
@@ -135,6 +147,15 @@ def all_pawn_moves(side: Colour):
     data = {"start" : [], "move": []}
     for p in PositionIter('a2', 'h7'):
         m = generate_pawn_move(p, side)
+        data['start'].append(alg_to_int(p))
+        data['move'].append(m)
+    return data
+
+
+def all_pawn_attacks(side: Colour):
+    data = {"start" : [], "move": []}
+    for p in PositionIter('a2', 'h7'):
+        m = generate_pawn_attack(p, side)
         data['start'].append(alg_to_int(p))
         data['move'].append(m)
     return data
@@ -196,7 +217,7 @@ for idx, row in df.iterrows():
 '''
 
 
-df = pd.DataFrame(all_knight_moves())
+df = pd.DataFrame(all_pawn_attacks(Colour.black))
 print(' ')
 for idx, row in df.iterrows():
     print(row)
@@ -205,5 +226,6 @@ for idx, row in df.iterrows():
     print_move(s, m)
     print(' ')
 
-df.to_csv('data/knight_attacks.csv')
+df.to_csv('test_data/black_pawn_attacks.csv')
+
 
