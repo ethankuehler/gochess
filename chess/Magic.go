@@ -1,5 +1,12 @@
 package chess
 
+import (
+	"encoding/csv"
+	"log"
+	"os"
+	"strconv"
+)
+
 // there are only 64 knight moves on a chess board
 // each key is the location of the knight, the value is the attack
 var KNIGHT_ATTACKS map[uint64]uint64
@@ -39,16 +46,8 @@ func GetRookAttack(location uint64, blockers uint64) uint64 {
 }
 
 func BuildKnightAttacks() {
-	KNIGHT_ATTACKS = make(map[uint64]uint64)
-	for i := range ShiftIter("a1", "h8") {
-		var loc uint64 = 1 << i
-		mask_shift := i - KNIGHT_OFFSET
-		if mask_shift > 0 {
-			KNIGHT_ATTACKS[loc] = KNIGHT_MASK << mask_shift
-		} else {
-			KNIGHT_ATTACKS[loc] = KNIGHT_MASK >> -mask_shift
-		}
-	}
+	file_name := "data/knight_attack.csv"
+	KNIGHT_ATTACKS = LoadAttacks(file_name)
 }
 
 func BuildPawnMoves() {
@@ -98,4 +97,52 @@ func BuildPawnAttacks() {
 		mask := BLACK_PAWN_ATTACK_MASK << (i - BLACK_PAWN_ATTACK_OFFSET)
 		WHITE_PAWN_ATTACKS[loc] = mask
 	}
+}
+
+func LoadAttacks(csv_file_name string) map[uint64]uint64 {
+	target_map := make(map[uint64]uint64)
+	data, err := readCsv(csv_file_name)
+	if err != nil {
+		log.Fatalf("was not able to read file, %v", err)
+	}
+	for _, record := range data {
+		start, attack, err := readRecord(record)
+		if err != nil {
+			log.Fatalf("Error in data, %v", err)
+		}
+		target_map[start] = attack
+	}
+	return target_map
+}
+
+func readCsv(filename string) ([][]string, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	// Create a new CSV reader
+	reader := csv.NewReader(file)
+	reader.FieldsPerRecord = -1
+
+	// Read all the records from the CSV
+	records, err := reader.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+
+	return records, nil
+}
+
+func readRecord(record []string) (uint64, uint64, error) {
+	loc, err := strconv.ParseUint(record[1], 10, 64)
+	if err != nil {
+		return 0, 0, err
+	}
+	mask, err := strconv.ParseUint(record[2], 10, 64)
+	if err != nil {
+		return 0, 0, err
+	}
+	return uint64(loc), uint64(mask), nil
 }
