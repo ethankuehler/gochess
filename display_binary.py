@@ -237,7 +237,7 @@ for idx, row in df.iterrows():
 '''
 
 
-df = pd.DataFrame(all_king_moves())
+df = pd.DataFrame(all_knight_moves())
 print(' ')
 for idx, row in df.iterrows():
     print(row)
@@ -246,6 +246,6 @@ for idx, row in df.iterrows():
     print_move(s, m)
     print(' ')
 
-df.to_csv('test_data/king_attacks.csv')
+df.to_csv('data/knight_attacks.csv')
 
 
