@@ -11,7 +11,7 @@ import (
 
 func TestNewBaordFEN(t *testing.T) {
 	// Open the CSV file
-	file, err := os.Open("../test_data/FEN.csv")
+	file, err := os.Open("../data/FEN.csv")
 	if err != nil {
 		log.Fatalf("Failed to open file: %v", err)
 	}

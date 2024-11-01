@@ -142,6 +142,18 @@ def generate_knight_move(start: str) -> int:
         
     return int_attack
 
+def generate_king_move(start: str) -> int:
+    perms = [(1, 1), (1, 0), (1, -1), (0, 1), (0, -1), (-1, 1), (-1, 0), (-1, -1)]
+    sPos = Position(start)
+    int_attack = 0
+    for i in perms:
+        new_attack = sPos.add(i[0], i[1])
+        if new_attack is not None:
+            #print(new_attack.getString())
+            #print(display_binary(new_attack.getInt()))
+            int_attack |= new_attack.getInt()
+        
+    return int_attack
 
 def all_pawn_moves(side: Colour):
     data = {"start" : [], "move": []}
@@ -165,6 +177,14 @@ def all_knight_moves():
     data = {"start" : [], "move": []}
     for p in PositionIter('a1', 'h8'):
         m = generate_knight_move(p)
+        data['start'].append(alg_to_int(p))
+        data['move'].append(m)
+    return data
+
+def all_king_moves():
+    data = {"start" : [], "move": []}
+    for p in PositionIter('a1', 'h8'):
+        m = generate_king_move(p)
         data['start'].append(alg_to_int(p))
         data['move'].append(m)
     return data
@@ -217,7 +237,7 @@ for idx, row in df.iterrows():
 '''
 
 
-df = pd.DataFrame(all_pawn_attacks(Colour.black))
+df = pd.DataFrame(all_king_moves())
 print(' ')
 for idx, row in df.iterrows():
     print(row)
@@ -226,6 +246,6 @@ for idx, row in df.iterrows():
     print_move(s, m)
     print(' ')
 
-df.to_csv('test_data/black_pawn_attacks.csv')
+df.to_csv('test_data/king_attacks.csv')
 
 

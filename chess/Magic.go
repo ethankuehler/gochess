@@ -13,10 +13,12 @@ var KNIGHT_ATTACKS map[uint64]uint64
 
 // pawns are split up into attacks and move's
 // Black and white pecies are split up due to the fact that they are different for pawns.
-var WHITE_PAWN_ATTACKS map[uint64]uint64
-var WHITE_PAWN_MOVES map[uint64]uint64
-var BLACK_PAWN_ATTACKS map[uint64]uint64
-var BLACK_PAWN_MOVES map[uint64]uint64
+var (
+	WHITE_PAWN_ATTACKS map[uint64]uint64
+	WHITE_PAWN_MOVES   map[uint64]uint64
+	BLACK_PAWN_ATTACKS map[uint64]uint64
+	BLACK_PAWN_MOVES   map[uint64]uint64
+)
 
 // sliding piececs
 var (
