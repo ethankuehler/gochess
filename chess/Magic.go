@@ -10,6 +10,7 @@ import (
 // there are only 64 knight moves on a chess board
 // each key is the location of the knight, the value is the attack
 var KNIGHT_ATTACKS map[uint64]uint64
+var KING_ATTACKS map[uint64]uint64
 
 // pawns are split up into attacks and move's
 // Black and white pecies are split up due to the fact that they are different for pawns.
@@ -24,8 +25,8 @@ var (
 var (
 	ROOK_MAGIC     []MagicEntry
 	BISHOP_MAGIC   []MagicEntry
-	ROOK_ATTTACKS  []uint64
-	BISHOP_ATTACKS []uint64
+	ROOK_ATTTACKS  [][]uint64
+	BISHOP_ATTACKS [][]uint64
 )
 
 type MagicEntry struct {
@@ -47,9 +48,24 @@ func GetRookAttack(location uint64, blockers uint64) uint64 {
 	return 0 // TODO: finish
 }
 
+func BuildAllAttacks() {
+	BuildKnightAttacks()
+	BuildKingAttacks()
+	BuildPawnMoves()
+	BuildPawnAttacks()
+	//BuildRookAttacks()
+	//BuildBishopAttacks()
+	//BuildQueenAttacks()
+}
+
 func BuildKnightAttacks() {
 	file_name := "data/knight_attacks.csv"
 	KNIGHT_ATTACKS = LoadAttacks(file_name)
+}
+
+func BuildKingAttacks() {
+	file_name := "data/king_attacks.csv"
+	KING_ATTACKS = LoadAttacks(file_name)
 }
 
 func BuildPawnMoves() {
