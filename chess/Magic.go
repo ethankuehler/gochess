@@ -119,7 +119,7 @@ func BuildPawnAttacks() {
 
 func LoadAttacks(csv_file_name string) map[uint64]uint64 {
 	target_map := make(map[uint64]uint64)
-	data, err := readCsv(csv_file_name)
+	data, err := readCSV(csv_file_name)
 	if err != nil {
 		log.Fatalf("was not able to read file, %v", err)
 	}
@@ -133,7 +133,7 @@ func LoadAttacks(csv_file_name string) map[uint64]uint64 {
 	return target_map
 }
 
-func readCsv(filename string) ([][]string, error) {
+func readCSV(filename string) ([][]string, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
