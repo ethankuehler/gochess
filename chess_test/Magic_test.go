@@ -21,7 +21,7 @@ func TestPawnAttacks(t *testing.T) {
 
 }
 
-func readCsv(filename string) ([][]string, error) {
+func readCSV(filename string) ([][]string, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -71,7 +71,7 @@ func TestPawnMoves(t *testing.T) {
 		t.Errorf("Black map incorrect size, 64 != %d", len(chess.WHITE_PAWN_ATTACKS))
 	}
 
-	records, err := readCsv("../data/white_pawn_move.csv")
+	records, err := readCSV("../data/white_pawn_move.csv")
 	if err != nil {
 		t.Fatalf("could not open csv %v", err)
 	}
@@ -86,7 +86,7 @@ func TestPawnMoves(t *testing.T) {
 		}
 	}
 
-	records, err = readCsv("../data/black_pawn_move.csv")
+	records, err = readCSV("../data/black_pawn_move.csv")
 	if err != nil {
 		t.Fatalf("could not open csv %v", err)
 	}
