@@ -12,9 +12,9 @@ func TestNewMove(t *testing.T) {
 		for j := range 7 {
 			for k := range 7 {
 				for l := range 7 {
-					scol := chess.COLONMS[i]
+					scol := chess.COLUMNS[i]
 					srow := j + 1
-					ecol := chess.COLONMS[k]
+					ecol := chess.COLUMNS[k]
 					erow := l + 1
 					uci := fmt.Sprintf("%c%d%c%d", scol, srow, ecol, erow)
 					m, err := chess.NewMoveUCI(uci)

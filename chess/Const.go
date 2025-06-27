@@ -30,7 +30,7 @@ const (
 // precalculated positional masking.
 const (
 	ROW_MASK    uint64 = 255
-	COLONM_MASK uint64 = 72340172838076673
+	COLUMN_MASK uint64 = 72340172838076673
 )
 
 const (
@@ -66,5 +66,5 @@ var (
 	PICECES_SYM     = []string{"P", "B", "N", "R", "Q", "K", "p", "b", "n", "r", "q", "k"}
 	UNI_PICECES_SYM = []string{"♙", "♗", "♘", "♖", "♕", "♔", "♟", "♝", "♞", "♜", "♛", "♚"}
 	CASTLE_SYM      = []string{"K", "Q", "k", "q"}
-	COLONMS         = []rune{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'}
+	COLUMNS         = []rune{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'}
 )

@@ -37,7 +37,7 @@ func NewMoveUCI(UCI string) (*Move, error) {
 
 func (m *Move) String() string {
 	scol, srow, ecol, erow := 0, 0, 0, 0
-	colMask := COLONM_MASK
+	colMask := COLUMN_MASK
 	rowMask := ROW_MASK
 	for i := range 8 {
 		if (colMask & m.start) > 0 {
@@ -56,13 +56,13 @@ func (m *Move) String() string {
 		rowMask = rowMask << 8
 	}
 
-	return fmt.Sprintf("%c%d%c%d", COLONMS[scol], srow+1, COLONMS[ecol], erow+1)
+	return fmt.Sprintf("%c%d%c%d", COLUMNS[scol], srow+1, COLUMNS[ecol], erow+1)
 }
 
 // find algebraic position from position
 func AlgFromLoc(loc uint64) string {
 	col, row := 0, 0
-	colMask := COLONM_MASK
+	colMask := COLUMN_MASK
 	rowMask := ROW_MASK
 	for i := range 8 {
 		if colMask&loc > 0 {
@@ -75,11 +75,11 @@ func AlgFromLoc(loc uint64) string {
 		rowMask = rowMask << 8
 	}
 
-	return fmt.Sprintf("%c%d", COLONMS[col], row+1)
+	return fmt.Sprintf("%c%d", COLUMNS[col], row+1)
 }
 
 func ShiftFromAlg(alg string) (uint64, error) {
-	col := slices.Index(COLONMS, rune(alg[0]))
+	col := slices.Index(COLUMNS, rune(alg[0]))
 	if col == -1 {
 		s := fmt.Sprintf("Invalid algerbraic notation %s", alg)
 		return 0, errors.New(s)
