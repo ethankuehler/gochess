@@ -248,27 +248,24 @@ func (b *BitBoard) LegalMoves() []Move {
 // Returns a mask of every Occupied sqaure on the chess board.
 // colour should be WHITE, BLACK, or BOTH.
 func (b *BitBoard) Occupied(colour int64) uint64 {
-	var offset uint64
-	var N uint64
-
-	switch colour {
-	case WHITE:
-		offset = 0
-		N = 6
-	case BLACK:
-		offset = BLACK_OFFSET
-		N = 6
-	case BOTH:
-		offset = 0
-		N = 12
-	default:
-		panic("bad input into Occupied")
-	}
-
 	var occupied uint64 = 0
-	for i := offset; i < N+offset; i++ {
+	for i := range PicecesIter(colour) {
 		occupied |= b.pieces[i]
 	}
-
 	return occupied
+}
+
+func (b *BitBoard) GetPieces(colour int64, piece int64) uint64 {
+	if colour == BOTH || piece == ALL {
+		panic("Invalid input in GetPieces")
+	}
+
+	var offset int64
+	if colour == WHITE {
+		offset = 0
+	} else {
+		offset = BLACK_OFFSET
+	}
+
+	return b.pieces[piece+offset]
 }

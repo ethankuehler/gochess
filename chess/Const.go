@@ -1,5 +1,9 @@
 package chess
 
+import (
+	"iter"
+)
+
 // index for certin pieces.
 const (
 	ALL          = -1
@@ -11,6 +15,31 @@ const (
 	KING         = 5
 	BLACK_OFFSET = 6
 )
+
+func PicecesIter(colour int64) iter.Seq[uint64] {
+	var start uint64
+	var stop uint64
+	switch colour {
+	case WHITE:
+		start = 0
+		stop = 6
+	case BLACK:
+		start = BLACK_OFFSET
+		stop = BLACK_OFFSET + 6
+	case BOTH:
+		start = 0
+		stop = 12
+	}
+
+	return func(yield func(uint64) bool) {
+		for i := start; i < stop; i++ {
+			if !yield(i) {
+				return
+			}
+		}
+	}
+
+}
 
 // mask for game encoding.
 const (

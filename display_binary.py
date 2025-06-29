@@ -237,7 +237,7 @@ for idx, row in df.iterrows():
 #df.to_csv('test_data/black_pawn_move.csv')
 """
 
-
+'''
 df = pd.DataFrame(all_knight_moves())
 print(" ")
 for idx, row in df.iterrows():
@@ -248,3 +248,4 @@ for idx, row in df.iterrows():
     print(" ")
 
 df.to_csv("data/knight_attacks.csv")
+'''

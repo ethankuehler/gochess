@@ -41,3 +41,57 @@ func TestNewBaordFEN(t *testing.T) {
 	}
 
 }
+
+func TestOccupied(t *testing.T) {
+	// Open the CSV file
+	file, err := os.Open("../data/FEN.csv")
+	if err != nil {
+		log.Fatalf("Failed to open file: %v", err)
+	}
+	defer file.Close()
+
+	// Create a new CSV reader
+	reader := csv.NewReader(file)
+	reader.FieldsPerRecord = -1
+
+	// Read all the records from the CSV
+	records, err := reader.ReadAll()
+	if err != nil {
+		log.Fatalf("Failed to read CSV file: %v", err)
+	}
+
+	// Loop through and print each record
+	for _, record := range records {
+		var b, err = chess.NewBoardFEN(record[0])
+		if err != nil {
+			t.Errorf("ERROR: could not decode FEN %s", record[0])
+			continue
+		}
+		occupied_white := b.Occupied(chess.WHITE)
+		var comp_white uint64
+		comp_white = 0
+		for i := chess.PAWN; i <= chess.KING; i++ {
+			comp_white |= b.GetPieces(chess.WHITE, int64(i))
+		}
+		if occupied_white != comp_white {
+			t.Errorf("ERROR: WHITE Occupied %b, comp %b", occupied_white, comp_white)
+		}
+
+		occupied_black := b.Occupied(chess.BLACK)
+		var comp_black uint64
+		comp_black = 0
+		for i := chess.PAWN; i <= chess.KING; i++ {
+			comp_black |= b.GetPieces(chess.BLACK, int64(i))
+		}
+		if occupied_black != comp_black {
+			t.Errorf("ERROR: BLACK Occupied %b, comp %b", occupied_black, comp_black)
+		}
+
+		occupied_both := b.Occupied(chess.BOTH)
+		if occupied_both != (comp_white | comp_black) {
+			t.Errorf("ERROR: BOTH Occupied %b, comp %b", occupied_black, comp_black)
+		}
+
+	}
+
+}
