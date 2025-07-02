@@ -71,7 +71,7 @@ func TestOccupied(t *testing.T) {
 		var comp_white uint64
 		comp_white = 0
 		for i := chess.PAWN; i <= chess.KING; i++ {
-			comp_white |= b.GetPieces(chess.WHITE, int64(i))
+			comp_white |= b.GetPieces(chess.WHITE, chess.Piece(i))
 		}
 		if occupied_white != comp_white {
 			t.Errorf("ERROR: WHITE Occupied %b, comp %b", occupied_white, comp_white)
@@ -81,7 +81,7 @@ func TestOccupied(t *testing.T) {
 		var comp_black uint64
 		comp_black = 0
 		for i := chess.PAWN; i <= chess.KING; i++ {
-			comp_black |= b.GetPieces(chess.BLACK, int64(i))
+			comp_black |= b.GetPieces(chess.BLACK, chess.Piece(i))
 		}
 		if occupied_black != comp_black {
 			t.Errorf("ERROR: BLACK Occupied %b, comp %b", occupied_black, comp_black)

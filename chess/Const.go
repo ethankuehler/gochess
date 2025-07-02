@@ -5,20 +5,22 @@ import (
 )
 
 // index for certin pieces.
+type Piece int
+
 const (
-	ALL          = -1
-	PAWN         = 0
-	BISHOP       = 1
-	KNIGHT       = 2
-	ROOK         = 3
-	QUEEN        = 4
-	KING         = 5
-	BLACK_OFFSET = 6
+	ALL          Piece = -1
+	PAWN               = 0
+	BISHOP             = 1
+	KNIGHT             = 2
+	ROOK               = 3
+	QUEEN              = 4
+	KING               = 5
+	BLACK_OFFSET       = 6
 )
 
-func PicecesIter(colour int64) iter.Seq[uint64] {
-	var start uint64
-	var stop uint64
+func PicecesIter(colour Colour) iter.Seq[Piece] {
+	var start Piece
+	var stop Piece
 	switch colour {
 	case WHITE:
 		start = 0
@@ -31,7 +33,7 @@ func PicecesIter(colour int64) iter.Seq[uint64] {
 		stop = 12
 	}
 
-	return func(yield func(uint64) bool) {
+	return func(yield func(Piece) bool) {
 		for i := start; i < stop; i++ {
 			if !yield(i) {
 				return
@@ -50,10 +52,12 @@ const (
 	BLACKOOO_MASK uint8 = 1 << 4
 )
 
+type Colour int
+
 const (
-	BOTH  = -1
-	WHITE = 0
-	BLACK = 1
+	BOTH  Colour = -1
+	WHITE Colour = 0
+	BLACK Colour = 1
 )
 
 // precalculated positional masking.
