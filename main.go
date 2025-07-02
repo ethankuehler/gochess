@@ -20,6 +20,9 @@ func main() {
 	}
 	fmt.Println(b.StringUni())
 	fmt.Println(b.FEN())
+	fmt.Println(b.Occupied(chess.BOTH))
+	fmt.Println(b.Occupied(chess.WHITE))
+	fmt.Println(b.Occupied(chess.BLACK))
 
 	m, err := chess.NewMoveUCI("e2e4")
 	if err != nil {

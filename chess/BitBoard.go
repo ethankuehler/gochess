@@ -116,7 +116,7 @@ func NewBoardFEN(FEN string) (*BitBoard, error) {
 	return &b, nil
 }
 
-// returns a string with turn, castle, enpassant and move number info
+// Returns a string with turn, castle, enpassant and move number info
 func (b *BitBoard) InfoString() string {
 	var buffer bytes.Buffer
 	//Turn information
@@ -187,7 +187,7 @@ func (b *BitBoard) toString(piceces []string) string {
 	return boardStr
 }
 
-// returns a string showing the location of every piece on the bord
+// Returns a string showing the location of every piece on the bord
 func (b *BitBoard) String() string {
 	return b.toString(PICECES_SYM)
 }
@@ -240,13 +240,13 @@ func (b *BitBoard) FEN() string {
 	return buffer.String()
 }
 
-// returns a list of all legal moves from a current baord position
+// Returns a list of all legal moves from a current baord position
 func (b *BitBoard) LegalMoves() []Move {
 	return make([]Move, 1) //TODO: get this working
 }
 
 // Returns a mask of every Occupied sqaure on the chess board.
-// colour should be WHITE, BLACK, or BOTH.
+// Colour should be WHITE, BLACK, or BOTH.
 func (b *BitBoard) Occupied(colour int64) uint64 {
 	var occupied uint64 = 0
 	for i := range PicecesIter(colour) {
@@ -255,9 +255,10 @@ func (b *BitBoard) Occupied(colour int64) uint64 {
 	return occupied
 }
 
+// Returns the position of all piceces of a centrin colour and type.
 func (b *BitBoard) GetPieces(colour int64, piece int64) uint64 {
 	if colour == BOTH || piece == ALL {
-		panic("Invalid input in GetPieces")
+		panic("Invalid input in GetPieces, cannot be BOTH or ALL.")
 	}
 
 	var offset int64
