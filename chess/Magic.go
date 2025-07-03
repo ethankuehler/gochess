@@ -1,7 +1,7 @@
 package chess
 
 // there are only 64 knight moves on a chess board
-// each key is the location of the knight, the value is the attack
+// each index is the shift of the knight, the value is the attack
 var KNIGHT_ATTACKS []uint64
 var KING_ATTACKS []uint64
 
@@ -52,7 +52,7 @@ func BuildAllAttacks() {
 }
 
 func BuildKnightAttacks() {
-	file_name := "../data/knight_attacks.csv"
+	file_name := "data/knight_attacks.csv"
 	KNIGHT_ATTACKS = LoadAttacks(file_name)
 }
 
@@ -62,16 +62,16 @@ func BuildKingAttacks() {
 }
 
 func BuildPawnMoves() {
-	file_name := "../data/white_pawn_move.csv"
+	file_name := "data/white_pawn_move.csv"
 	WHITE_PAWN_MOVES = LoadAttacks(file_name)
-	file_name = "../data/black_pawn_move.csv"
+	file_name = "data/black_pawn_move.csv"
 	BLACK_PAWN_MOVES = LoadAttacks(file_name)
 }
 
 func BuildPawnAttacks() {
-	file_name := "../data/white_pawn_attacks.csv"
+	file_name := "data/white_pawn_attacks.csv"
 	WHITE_PAWN_ATTACKS = LoadAttacks(file_name)
-	file_name = "../data/black_pawn_attacks.csv"
+	file_name = "data/black_pawn_attacks.csv"
 	BLACK_PAWN_ATTACKS = LoadAttacks(file_name)
 
 }

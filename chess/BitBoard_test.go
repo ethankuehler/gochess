@@ -7,9 +7,15 @@ import (
 	"testing"
 )
 
+func TestMain(m *testing.M) {
+	// Change working directory to project root
+	os.Chdir("..")
+	os.Exit(m.Run())
+}
+
 func TestNewBaordFEN(t *testing.T) {
 	// Open the CSV file
-	file, err := os.Open("../data/FEN.csv")
+	file, err := os.Open("data/FEN.csv")
 	if err != nil {
 		log.Fatalf("Failed to open file: %v", err)
 	}
@@ -42,7 +48,7 @@ func TestNewBaordFEN(t *testing.T) {
 
 func TestOccupied(t *testing.T) {
 	// Open the CSV file
-	file, err := os.Open("../data/FEN.csv")
+	file, err := os.Open("data/FEN.csv")
 	if err != nil {
 		log.Fatalf("Failed to open file: %v", err)
 	}

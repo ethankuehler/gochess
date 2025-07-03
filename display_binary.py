@@ -138,8 +138,6 @@ def generate_knight_move(start: str) -> int:
     for i in perms:
         new_attack = sPos.add(i[0], i[1])
         if new_attack is not None:
-            # print(new_attack.getString())
-            # print(display_binary(new_attack.getInt()))
             int_attack |= new_attack.getInt()
 
     return int_attack
@@ -152,8 +150,6 @@ def generate_king_move(start: str) -> int:
     for i in perms:
         new_attack = sPos.add(i[0], i[1])
         if new_attack is not None:
-            # print(new_attack.getString())
-            # print(display_binary(new_attack.getInt()))
             int_attack |= new_attack.getInt()
 
     return int_attack

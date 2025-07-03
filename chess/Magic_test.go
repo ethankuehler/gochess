@@ -6,6 +6,7 @@ import (
 
 func TestPawnAttacks(t *testing.T) {
 	BuildPawnAttacks()
+
 	if WHITE_PAWN_ATTACKS == nil {
 		t.Error("nil map")
 	}
@@ -13,11 +14,11 @@ func TestPawnAttacks(t *testing.T) {
 	if len(WHITE_PAWN_ATTACKS) != 64 {
 		t.Errorf("map incorrect size, 64 != %d", len(WHITE_PAWN_ATTACKS))
 	}
-
 }
 
 func TestPawnMoves(t *testing.T) {
 	BuildPawnMoves()
+
 	if WHITE_PAWN_MOVES == nil {
 		t.Error("White nil map")
 	}
@@ -34,7 +35,7 @@ func TestPawnMoves(t *testing.T) {
 		t.Errorf("Black map incorrect size, 64 != %d", len(WHITE_PAWN_ATTACKS))
 	}
 
-	records, err := readCSV("../data/white_pawn_move.csv")
+	records, err := readCSV("data/white_pawn_move.csv")
 	if err != nil {
 		t.Fatalf("could not open csv %v", err)
 	}
@@ -49,7 +50,7 @@ func TestPawnMoves(t *testing.T) {
 		}
 	}
 
-	records, err = readCSV("../data/black_pawn_move.csv")
+	records, err = readCSV("data/black_pawn_move.csv")
 	if err != nil {
 		t.Fatalf("could not open csv %v", err)
 	}
@@ -63,5 +64,4 @@ func TestPawnMoves(t *testing.T) {
 			t.Errorf("black move did not match gen=%d actual=%d", BLACK_PAWN_MOVES[val[0]], val[2])
 		}
 	}
-
 }
