@@ -8,6 +8,7 @@ import (
 
 func main() {
 
+	chess.BuildKingAttacks()
 	chess.BuildKnightAttacks()
 	chess.BuildPawnAttacks()
 	chess.BuildPawnMoves()

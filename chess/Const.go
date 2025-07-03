@@ -4,19 +4,26 @@ import (
 	"iter"
 )
 
+type Location int
+
+const LOCATION_START = 0
+const LOCATION_STOP = 64 + 1
+const LOCATION_SIZE = 64
+
 // index for certin pieces.
 type Piece int
 
 const (
-	ALL          Piece = -1
-	PAWN               = 0
-	BISHOP             = 1
-	KNIGHT             = 2
-	ROOK               = 3
-	QUEEN              = 4
-	KING               = 5
-	BLACK_OFFSET       = 6
+	ALL    Piece = -1
+	PAWN   Piece = 0
+	BISHOP Piece = 1
+	KNIGHT Piece = 2
+	ROOK   Piece = 3
+	QUEEN  Piece = 4
+	KING   Piece = 5
 )
+
+const BLACK_OFFSET = 6
 
 func PicecesIter(colour Colour) iter.Seq[Piece] {
 	var start Piece

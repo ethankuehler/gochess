@@ -1,8 +1,7 @@
 #!/usr/bin/python3
-import sys
 from enum import Enum
 import pandas as pd
-import itertools
+from typing import Callable 
 
 
 # this shit is so scuffed XD
@@ -75,15 +74,8 @@ class Position:
 
 def display_binary(x: int) -> str:
     bstring = "{0:064b}".format(x)
-    s = [bstring[i : i + 8][::1] for i in range(0, len(bstring), 8)]
+    s = [bstring[i : i + 8][::-1] for i in range(0, len(bstring), 8)]
     return "\n".join(s)
-
-
-def alg_to_int(s: str) -> int:
-    columns = ["a", "b", "c", "d", "e", "f", "g", "h"]
-    col = columns.index(s[0])
-    row = int(s[1])
-    return 1 << (col + (row - 1) * 8)
 
 
 def alg_to_shift(s: str) -> int:
@@ -93,16 +85,25 @@ def alg_to_shift(s: str) -> int:
     return col + (row - 1) * 8
 
 
+def alg_to_int(s: str) -> int:
+    return 1 << alg_to_shift(s)
+
+
 def generate_pawn_move(start: str, side: Colour) -> int:
     loc = alg_to_int(start)
+    
+    row = int(start[1])
+    if row == 1 or row == 8:
+        return 0
+    
     move = -1
     if side == Colour.white:
         move = loc << 8
-        if int(start[1]) == 2:
+        if row == 2:
             move = move | move << 8
     else:
         move = loc >> 8
-        if int(start[1]) == 7:
+        if row == 7:
             move = move | move >> 8
     if move == -1:
         raise Exception(f"you fucked up, {start}")
@@ -110,6 +111,9 @@ def generate_pawn_move(start: str, side: Colour) -> int:
 
 
 def generate_pawn_attack(start: str, side: Colour) -> int:
+    row = int(start[1])
+    if row == 1 or row == 8:
+        return 0
     moves = []
     if side == Colour.white:
         moves = [(1, 1), (-1, 1)]
@@ -155,40 +159,52 @@ def generate_king_move(start: str) -> int:
     return int_attack
 
 
-def all_pawn_moves(side: Colour):
-    data = {"start": [], "move": []}
-    for p in PositionIter("a2", "h7"):
-        m = generate_pawn_move(p, side)
-        data["start"].append(alg_to_int(p))
-        data["move"].append(m)
-    return data
-
-
-def all_pawn_attacks(side: Colour):
-    data = {"start": [], "move": []}
-    for p in PositionIter("a2", "h7"):
-        m = generate_pawn_attack(p, side)
-        data["start"].append(alg_to_int(p))
-        data["move"].append(m)
-    return data
-
-
-def all_knight_moves():
+def all_moves_pawn(side: Colour, generator : Callable[[str, Colour], int]) -> dict[str, list]:
     data = {"start": [], "move": []}
     for p in PositionIter("a1", "h8"):
-        m = generate_knight_move(p)
+        m = generator(p, side)
         data["start"].append(alg_to_int(p))
         data["move"].append(m)
     return data
 
 
-def all_king_moves():
+def all_moves(generator : Callable[[str], int]) -> dict[str, list]:
     data = {"start": [], "move": []}
     for p in PositionIter("a1", "h8"):
-        m = generate_king_move(p)
+        m = generator(p)
         data["start"].append(alg_to_int(p))
         data["move"].append(m)
     return data
+
+
+def save_moves(generator : Callable[[str], int], piece : str) -> None:
+    x = all_moves(generator)
+    df = pd.DataFrame(x)
+
+    print(' ')
+    for idx, row in df.iterrows():
+        print(row)
+        s = int(row['start'])
+        m = int(row['move'])
+        print_move(s, m)
+        print(' ')
+
+    df.to_csv(f'data/{piece}_attacks.csv')
+
+
+def save_moves_pawn(colour : Colour, generator : Callable[[str, Colour], int], type : str) -> None:
+    x = all_moves_pawn(colour, generator)
+    df = pd.DataFrame(x)
+
+    print(' ')
+    for idx, row in df.iterrows():
+        print(row)
+        s = int(row['start'])
+        m = int(row['move'])
+        print_move(s, m)
+        print(' ')
+
+    df.to_csv(f'data/{colour.name}_pawn_{type}.csv')
 
 
 def print_move(start: int, move: int) -> None:
@@ -199,53 +215,11 @@ def print_move(start: int, move: int) -> None:
     print(move_str)
 
 
-"""
-for i in sys.argv[1:]:
-    print(i)
-    print(display_binary(int(i)))
-"""
+save_moves_pawn(Colour.white, generate_pawn_move, 'move')
+save_moves_pawn(Colour.black, generate_pawn_move, 'move')
 
-"""
-knight_attacks = ['b1', 'd1', 'a2', 'e2', 'a4', 'e4', 'b5', 'd5']
-knight_attacks_masks = [alg_to_int(i) for i in knight_attacks]
-k = 0
-for i in knight_attacks_masks:
-    k = k | i
+save_moves_pawn(Colour.white, generate_pawn_attack, 'attacks')
+save_moves_pawn(Colour.black, generate_pawn_attack, 'attacks')
 
-print(k)
-print(display_binary(k))
-
-print(alg_to_shift('c3'))
-print(display_binary(generate_pawn_move("e3", Colour.white)))
-
-
-for i in PositionIter('a1', 'h7'):
-    print(i)
-
-
-x = all_pawn_moves(Colour.black)
-df = pd.DataFrame(x)
-
-print(' ')
-for idx, row in df.iterrows():
-    print(row)
-    s = int(row['start'])
-    m = int(row['move'])
-    print_move(s, m)
-    print(' ')
-
-#df.to_csv('test_data/black_pawn_move.csv')
-"""
-
-'''
-df = pd.DataFrame(all_knight_moves())
-print(" ")
-for idx, row in df.iterrows():
-    print(row)
-    s = int(row["start"])
-    m = int(row["move"])
-    print_move(s, m)
-    print(" ")
-
-df.to_csv("data/knight_attacks.csv")
-'''
+save_moves(generate_knight_move, 'knight')
+save_moves(generate_king_move, 'king')

@@ -5,8 +5,6 @@ import (
 	"log"
 	"os"
 	"testing"
-
-	"github.com/ethankuehler/gochess/chess"
 )
 
 func TestNewBaordFEN(t *testing.T) {
@@ -29,7 +27,7 @@ func TestNewBaordFEN(t *testing.T) {
 
 	// Loop through and print each record
 	for _, record := range records {
-		var b, err = chess.NewBoardFEN(record[0])
+		var b, err = NewBoardFEN(record[0])
 		if err != nil {
 			t.Errorf("ERROR: could not decode FEN %s", record[0])
 			continue
@@ -62,32 +60,32 @@ func TestOccupied(t *testing.T) {
 
 	// Loop through and print each record
 	for _, record := range records {
-		var b, err = chess.NewBoardFEN(record[0])
+		var b, err = NewBoardFEN(record[0])
 		if err != nil {
 			t.Errorf("ERROR: could not decode FEN %s", record[0])
 			continue
 		}
-		occupied_white := b.Occupied(chess.WHITE)
+		occupied_white := b.Occupied(WHITE)
 		var comp_white uint64
 		comp_white = 0
-		for i := chess.PAWN; i <= chess.KING; i++ {
-			comp_white |= b.GetPieces(chess.WHITE, chess.Piece(i))
+		for i := PAWN; i <= KING; i++ {
+			comp_white |= b.GetPieces(WHITE, Piece(i))
 		}
 		if occupied_white != comp_white {
 			t.Errorf("ERROR: WHITE Occupied %b, comp %b", occupied_white, comp_white)
 		}
 
-		occupied_black := b.Occupied(chess.BLACK)
+		occupied_black := b.Occupied(BLACK)
 		var comp_black uint64
 		comp_black = 0
-		for i := chess.PAWN; i <= chess.KING; i++ {
-			comp_black |= b.GetPieces(chess.BLACK, chess.Piece(i))
+		for i := PAWN; i <= KING; i++ {
+			comp_black |= b.GetPieces(BLACK, Piece(i))
 		}
 		if occupied_black != comp_black {
 			t.Errorf("ERROR: BLACK Occupied %b, comp %b", occupied_black, comp_black)
 		}
 
-		occupied_both := b.Occupied(chess.BOTH)
+		occupied_both := b.Occupied(BOTH)
 		if occupied_both != (comp_white | comp_black) {
 			t.Errorf("ERROR: BOTH Occupied %b, comp %b", occupied_black, comp_black)
 		}
