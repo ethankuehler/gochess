@@ -52,7 +52,7 @@ func NewBoardFEN(FEN string) (*BitBoard, error) {
 	fields := strings.Fields(FEN)
 
 	if len(fields) != 6 {
-		return nil, errors.New("Invalid FEN.")
+		return nil, errors.New("invalid FEN")
 	}
 
 	var loc uint64 = 1 << 63
@@ -69,7 +69,7 @@ func NewBoardFEN(FEN string) (*BitBoard, error) {
 		}
 	}
 	if loc != 0 {
-		return nil, errors.New("Invald FEN, piece placement invalid.")
+		return nil, errors.New("invald FEN, piece placement invalid")
 	}
 
 	b.encoding = 0
@@ -78,7 +78,7 @@ func NewBoardFEN(FEN string) (*BitBoard, error) {
 	if fields[1] == "w" {
 		b.encoding |= TURN_MASK
 	} else if fields[1] != "b" {
-		return nil, errors.New("Invald FEN, invalid turn")
+		return nil, errors.New("invald FEN, invalid turn")
 	}
 
 	//castling
@@ -136,7 +136,7 @@ func (b *BitBoard) InfoString() string {
 			canCastle = true
 		}
 	}
-	if canCastle == false {
+	if !canCastle {
 		buffer.WriteRune('-')
 	}
 
