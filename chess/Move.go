@@ -78,19 +78,26 @@ func AlgFromLoc(loc uint64) string {
 	return fmt.Sprintf("%c%d", COLUMNS[col], row+1)
 }
 
-func ShiftFromAlg(alg string) (uint64, error) {
+func RowColFromAlg(alg string) (uint64, uint64, error) {
 	col := slices.Index(COLUMNS, rune(alg[0]))
 	if col == -1 {
 		s := fmt.Sprintf("Invalid algerbraic notation %s", alg)
-		return 0, errors.New(s)
+		return 0, 0, errors.New(s)
 	}
 
 	row := int(alg[1]-'0') - 1 //its imporant to subtract by 1
 	if row < 0 || row >= 8 {
 		s := fmt.Sprintf("Invalid algerbraic notation %s", alg)
-		return 0, errors.New(s)
+		return 0, 0, errors.New(s)
 	}
+	return uint64(row), uint64(col), nil
+}
 
+func ShiftFromAlg(alg string) (uint64, error) {
+	row, col, err := RowColFromAlg(alg)
+	if err != nil {
+		return 0, err
+	}
 	return uint64(col + row*8), nil
 }
 
@@ -106,11 +113,11 @@ func LocFromAlg(alg string) (uint64, error) {
 func ShiftIter(start_str, stop_str string) iter.Seq[uint64] {
 	start, err := ShiftFromAlg(start_str)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err.Error())
 	}
 	stop, err := ShiftFromAlg(stop_str)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err.Error())
 	}
 	return func(yield func(uint64) bool) {
 		for i := start; i <= stop; i++ {

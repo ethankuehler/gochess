@@ -1,5 +1,10 @@
 package chess
 
+import (
+	"log"
+	"math/rand/v2"
+)
+
 // there are only 64 knight moves on a chess board
 // each index is the shift of the knight, the value is the attack
 var KNIGHT_ATTACKS []uint64
@@ -35,10 +40,47 @@ func MagicIndex(entry MagicEntry, board uint64) uint64 {
 	return index
 }
 
-func GetRookAttack(location uint64, blockers uint64) uint64 {
-	//magic := ROOK_MAGIC[location]
-	//attacks := ROOK_ATTTACKS[location]
-	return 0 // TODO: finish
+func GetRookAttack(loc Location, board int64) uint64 {
+	magic := ROOK_MAGIC[loc]
+	idx := MagicIndex(magic, uint64(board))
+	return ROOK_ATTTACKS[loc][idx]
+}
+
+func GetBishopeAttack(loc Location, board int64) uint64 {
+	magic := BISHOP_MAGIC[loc]
+	idx := MagicIndex(magic, uint64(board))
+	return BISHOP_ATTACKS[loc][idx]
+}
+
+func GetRookMask(alg string) uint64 {
+	row, col, err := RowColFromAlg(alg)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	return (COLUMN_MASK << col) | (ROW_MASK << row * 8)
+}
+
+func FindMagicRook(alg string) []uint64 {
+	loc, err := ShiftFromAlg(alg)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	mask := GetRookMask(alg)
+	for {
+		test_magic := rand.Uint64() & rand.Uint64() & rand.Uint64()
+		magicE := MagicEntry{test_magic, mask, uint8(loc)}
+		table, err := TryMagicRook(Location(loc), magicE)
+		if err != nil {
+			continue
+		}
+		return table
+	}
+}
+
+func TryMagicRook(loc Location, magicE MagicEntry) ([]uint64, error) {
+
+	//TODO: finish
+	return make([]uint64, 0), nil
 }
 
 func BuildAllAttacks() {
