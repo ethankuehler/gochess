@@ -20,7 +20,7 @@ func LoadAttacks(csv_file_name string) []uint64 {
 			log.Fatalf("Error in data: %s", err.Error())
 		}
 		if len(val) != 3 {
-			log.Fatal("Error, data didnt have enough rows, filename: %s", csv_file_name)
+			log.Fatalf("Error, data didnt have enough rows, filename: %s", csv_file_name)
 		}
 		target[val[0]] = val[2]
 	}
