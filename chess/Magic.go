@@ -69,7 +69,7 @@ func FindMagicRook(alg string) []uint64 {
 	for {
 		test_magic := rand.Uint64() & rand.Uint64() & rand.Uint64()
 		magicE := MagicEntry{test_magic, mask, uint8(loc)}
-		table, err := TryMagicRook(Location(loc), magicE)
+		table, err := TryRookMagic(Location(loc), magicE)
 		if err != nil {
 			continue
 		}
@@ -77,7 +77,7 @@ func FindMagicRook(alg string) []uint64 {
 	}
 }
 
-func TryMagicRook(loc Location, magicE MagicEntry) ([]uint64, error) {
+func TryRookMagic(loc Location, magicE MagicEntry) ([]uint64, error) {
 
 	//TODO: finish
 	return make([]uint64, 0), nil
