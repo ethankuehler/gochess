@@ -77,7 +77,7 @@ func FindMagicRook(alg string) []uint64 {
 	}
 }
 
-func TryRookMagic(loc Location, magicE MagicEntry) ([]uint64, error) {
+func TryRookMagic(loc Location, magic MagicEntry) ([]uint64, error) {
 
 	//TODO: finish
 	return make([]uint64, 0), nil
