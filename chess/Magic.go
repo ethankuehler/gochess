@@ -85,10 +85,10 @@ func TryRookMagic(loc Location, magic MagicEntry) ([]uint64, error) {
 
 	for true {
 		moves := RayCast(loc, blockers, mask)
-		table_entry := table[MagicIndex(magic, blockers)]
-		if table_entry == 0 {
-			table_entry = moves
-		} else if table_entry != moves {
+		table_entry := &table[MagicIndex(magic, blockers)]
+		if *table_entry == 0 {
+			*table_entry = moves
+		} else if *table_entry != moves {
 			return nil, errors.New("invalid magic")
 		}
 
