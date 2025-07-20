@@ -1,6 +1,7 @@
 package chess
 
 import (
+	"errors"
 	"log"
 	"math/rand/v2"
 )
@@ -78,9 +79,31 @@ func FindMagicRook(alg string) []uint64 {
 }
 
 func TryRookMagic(loc Location, magic MagicEntry) ([]uint64, error) {
+	table := make([]uint64, 1<<(64-magic.Index))
+	var blockers uint64 = 0
+	mask := magic.Mask
 
-	//TODO: finish
-	return make([]uint64, 0), nil
+	for true {
+		moves := RayCast(loc, blockers, mask)
+		table_entry := table[MagicIndex(magic, blockers)]
+		if table_entry == 0 {
+			table_entry = moves
+		} else if table_entry != moves {
+			return nil, errors.New("invalid magic")
+		}
+
+		blockers = (blockers - mask) & mask
+		if blockers == 0 {
+			break
+		}
+	}
+
+	return table, nil
+}
+
+// TODO:: fix types, this is also a sign that the inital types aren't that good and will need to be changed.
+func RayCast(inital Location, blockers uint64, mask uint64) uint64 {
+	return 0
 }
 
 func BuildAllAttacks() {
