@@ -47,7 +47,7 @@ func GetRookAttack(loc Location, board int64) uint64 {
 	return ROOK_ATTTACKS[loc][idx]
 }
 
-func GetBishopeAttack(loc Location, board int64) uint64 {
+func GetBishopAttack(loc Location, board int64) uint64 {
 	magic := BISHOP_MAGIC[loc]
 	idx := MagicIndex(magic, uint64(board))
 	return BISHOP_ATTACKS[loc][idx]
@@ -61,7 +61,7 @@ func GetRookMask(alg string) uint64 {
 	return (COLUMN_MASK << col) | (ROW_MASK << row * 8)
 }
 
-func GetBishopeMask(alg string) uint64 {
+func GetBishopMask(alg string) uint64 {
 	//TODO: not done
 	return 0
 }
