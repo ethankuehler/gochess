@@ -61,6 +61,11 @@ func GetRookMask(alg string) uint64 {
 	return (COLUMN_MASK << col) | (ROW_MASK << row * 8)
 }
 
+func GetBishopeMask(alg string) uint64 {
+	//TODO: not done
+	return 0
+}
+
 func FindMagicRook(alg string) []uint64 {
 	loc, err := ShiftFromAlg(alg)
 	if err != nil {
