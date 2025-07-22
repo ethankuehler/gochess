@@ -2,7 +2,6 @@ package chess
 
 import (
 	"errors"
-	"log"
 	"math/rand/v2"
 )
 
@@ -34,6 +33,14 @@ type MagicEntry struct {
 	Index uint8
 }
 
+// array of vector that tell in which directions for the Ray caster to cast
+type Ray [4][2]int
+
+var (
+	ROOK_RAY   = Ray{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+	BISHOP_RAY = Ray{{1, 1}, {-1, -1}, {1, -1}, {-1, 1}}
+)
+
 func MagicIndex(entry MagicEntry, board uint64) uint64 {
 	blockers := board & entry.Mask
 	hash := blockers * entry.Magic
@@ -41,41 +48,35 @@ func MagicIndex(entry MagicEntry, board uint64) uint64 {
 	return index
 }
 
-func GetRookAttack(loc Location, board int64) uint64 {
+func GetRookAttack(loc Shift, board int64) uint64 {
 	magic := ROOK_MAGIC[loc]
 	idx := MagicIndex(magic, uint64(board))
 	return ROOK_ATTTACKS[loc][idx]
 }
 
-func GetBishopAttack(loc Location, board int64) uint64 {
+func GetBishopAttack(loc Shift, board int64) uint64 {
 	magic := BISHOP_MAGIC[loc]
 	idx := MagicIndex(magic, uint64(board))
 	return BISHOP_ATTACKS[loc][idx]
 }
 
-func GetRookMask(alg string) uint64 {
-	row, col, err := RowColFromAlg(alg)
-	if err != nil {
-		log.Fatal(err.Error())
-	}
+func GetRookMask(coord Coordinates) uint64 {
+	row, col := coord.col, coord.row
 	return (COLUMN_MASK << col) | (ROW_MASK << row * 8)
 }
 
-func GetBishopMask(alg string) uint64 {
+func GetBishopMask(coord Coordinates) uint64 {
 	//TODO: not done
 	return 0
 }
 
-func FindMagicRook(alg string) []uint64 {
-	loc, err := ShiftFromAlg(alg)
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-	mask := GetRookMask(alg)
+func FindMagic(coord Coordinates) []uint64 {
+	mask := GetRookMask(coord)
+	shift := ShiftFromCoords(coord)
 	for {
 		test_magic := rand.Uint64() & rand.Uint64() & rand.Uint64()
-		magicE := MagicEntry{test_magic, mask, uint8(loc)}
-		table, err := TryRookMagic(Location(loc), magicE)
+		magicE := MagicEntry{test_magic, mask, uint8(shift)}
+		table, err := TryRookMagic(shift, magicE)
 		if err != nil {
 			continue
 		}
@@ -83,13 +84,13 @@ func FindMagicRook(alg string) []uint64 {
 	}
 }
 
-func TryRookMagic(loc Location, magic MagicEntry) ([]uint64, error) {
-	table := make([]uint64, 1<<(64-magic.Index))
+func TryRookMagic(loc Shift, magic MagicEntry) ([]uint64, error) {
+	table := make([]uint64, 1<<(64-magic.Index)) //TODO: this need to be check to see if its correct
 	var blockers uint64 = 0
 	mask := magic.Mask
 
 	for true {
-		moves := RayCast(loc, blockers, mask)
+		moves := RayCast(loc, blockers, mask, Ray{})
 		table_entry := &table[MagicIndex(magic, blockers)]
 		if *table_entry == 0 {
 			*table_entry = moves
@@ -107,7 +108,8 @@ func TryRookMagic(loc Location, magic MagicEntry) ([]uint64, error) {
 }
 
 // TODO:: fix types, this is also a sign that the inital types aren't that good and will need to be changed.
-func RayCast(inital Location, blockers uint64, mask uint64) uint64 {
+func RayCast(inital Shift, blockers uint64, mask uint64, r Ray) uint64 {
+
 	return 0
 }
 

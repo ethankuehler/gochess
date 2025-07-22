@@ -4,11 +4,26 @@ import (
 	"iter"
 )
 
-type Location int
+type Shift int
 
 const LOCATION_START = 0
 const LOCATION_STOP = 64 + 1
 const LOCATION_SIZE = 64
+
+type Coordinates struct {
+	row uint64
+	col uint64
+}
+
+func CoordsFromShift(loc Shift) Coordinates {
+	col := loc % 8
+	row := loc / 8
+	return Coordinates{uint64(col), uint64(row)}
+}
+
+func ShiftFromCoords(coord Coordinates) Shift {
+	return Shift(coord.col + coord.row*8)
+}
 
 // index for certin pieces.
 type Piece int
@@ -25,13 +40,13 @@ const (
 
 const BLACK_OFFSET = 6
 
-func PicecesIter(colour Colour) iter.Seq[Piece] {
+func PiecesIter(colour Colour) iter.Seq[Piece] {
 	var start Piece
 	var stop Piece
 	switch colour {
 	case WHITE:
 		start = 0
-		stop = 6
+		stop = BLACK_OFFSET
 	case BLACK:
 		start = BLACK_OFFSET
 		stop = BLACK_OFFSET + 6

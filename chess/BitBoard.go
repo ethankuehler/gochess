@@ -249,7 +249,7 @@ func (b *BitBoard) LegalMoves() []Move {
 // Colour should be WHITE, BLACK, or BOTH.
 func (b *BitBoard) Occupied(colour Colour) uint64 {
 	var occupied uint64 = 0
-	for i := range PicecesIter(colour) {
+	for i := range PiecesIter(colour) {
 		occupied |= b.pieces[i]
 	}
 	return occupied
