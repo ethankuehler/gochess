@@ -7,30 +7,30 @@ import (
 
 // there are only 64 knight moves on a chess board
 // each index is the shift of the knight, the value is the attack
-var KNIGHT_ATTACKS []uint64
-var KING_ATTACKS []uint64
+var KNIGHT_ATTACKS []BitBoard
+var KING_ATTACKS []BitBoard
 
 // pawns are split up into attacks and move's
 // Black and white pecies are split up due to the fact that they are different for pawns.
 var (
-	WHITE_PAWN_ATTACKS []uint64
-	WHITE_PAWN_MOVES   []uint64
-	BLACK_PAWN_ATTACKS []uint64
-	BLACK_PAWN_MOVES   []uint64
+	WHITE_PAWN_ATTACKS []BitBoard
+	WHITE_PAWN_MOVES   []BitBoard
+	BLACK_PAWN_ATTACKS []BitBoard
+	BLACK_PAWN_MOVES   []BitBoard
 )
 
 // sliding piececs
 var (
 	ROOK_MAGIC     []MagicEntry //magic numbers
 	BISHOP_MAGIC   []MagicEntry
-	ROOK_ATTTACKS  [][]uint64
-	BISHOP_ATTACKS [][]uint64
+	ROOK_ATTTACKS  [][]BitBoard
+	BISHOP_ATTACKS [][]BitBoard
 )
 
 type MagicEntry struct {
-	Mask  uint64
+	Mask  BitBoard
 	Magic uint64
-	Index uint8
+	Index Shift
 }
 
 // array of vector that tell in which directions for the Ray caster to cast
@@ -41,41 +41,41 @@ var (
 	BISHOP_RAY = Ray{{1, 1}, {-1, -1}, {1, -1}, {-1, 1}}
 )
 
-func MagicIndex(entry MagicEntry, board uint64) uint64 {
+func MagicIndex(entry MagicEntry, board BitBoard) uint64 {
 	blockers := board & entry.Mask
-	hash := blockers * entry.Magic
+	hash := uint64(blockers) * entry.Magic
 	index := hash >> (64 - entry.Index)
 	return index
 }
 
-func GetRookAttack(loc Shift, board int64) uint64 {
+func GetRookAttack(loc Shift, board BitBoard) BitBoard {
 	magic := ROOK_MAGIC[loc]
-	idx := MagicIndex(magic, uint64(board))
+	idx := MagicIndex(magic, board)
 	return ROOK_ATTTACKS[loc][idx]
 }
 
-func GetBishopAttack(loc Shift, board int64) uint64 {
+func GetBishopAttack(loc Shift, board BitBoard) BitBoard {
 	magic := BISHOP_MAGIC[loc]
-	idx := MagicIndex(magic, uint64(board))
+	idx := MagicIndex(magic, board)
 	return BISHOP_ATTACKS[loc][idx]
 }
 
-func GetRookMask(coord Coordinates) uint64 {
+func GetRookMask(coord Coordinates) BitBoard {
 	row, col := coord.col, coord.row
 	return (COLUMN_MASK << col) | (ROW_MASK << row * 8)
 }
 
-func GetBishopMask(coord Coordinates) uint64 {
+func GetBishopMask(coord Coordinates) BitBoard {
 	//TODO: not done
 	return 0
 }
 
-func FindMagic(coord Coordinates) []uint64 {
+func FindMagic(coord Coordinates) []BitBoard {
 	mask := GetRookMask(coord)
 	shift := ShiftFromCoords(coord)
 	for {
 		test_magic := rand.Uint64() & rand.Uint64() & rand.Uint64()
-		magicE := MagicEntry{test_magic, mask, uint8(shift)}
+		magicE := MagicEntry{mask, test_magic, shift}
 		table, err := TryRookMagic(shift, magicE)
 		if err != nil {
 			continue
@@ -84,9 +84,9 @@ func FindMagic(coord Coordinates) []uint64 {
 	}
 }
 
-func TryRookMagic(loc Shift, magic MagicEntry) ([]uint64, error) {
-	table := make([]uint64, 1<<(64-magic.Index)) //TODO: this need to be check to see if its correct
-	var blockers uint64 = 0
+func TryRookMagic(loc Shift, magic MagicEntry) ([]BitBoard, error) {
+	table := make([]BitBoard, 1<<(64-magic.Index)) //TODO: this need to be check to see if its correct
+	var blockers BitBoard = 0
 	mask := magic.Mask
 
 	for true {
@@ -108,7 +108,7 @@ func TryRookMagic(loc Shift, magic MagicEntry) ([]uint64, error) {
 }
 
 // TODO:: fix types, this is also a sign that the inital types aren't that good and will need to be changed.
-func RayCast(inital Shift, blockers uint64, mask uint64, r Ray) uint64 {
+func RayCast(inital Shift, blockers BitBoard, mask BitBoard, r Ray) BitBoard {
 
 	return 0
 }

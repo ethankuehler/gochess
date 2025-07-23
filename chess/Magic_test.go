@@ -45,7 +45,7 @@ func TestPawnMoves(t *testing.T) {
 		if err != nil {
 			t.Fatalf("could not convert record %v", err)
 		}
-		if WHITE_PAWN_MOVES[val[0]] != val[2] {
+		if WHITE_PAWN_MOVES[val[0]] != BitBoard(val[2]) {
 			t.Errorf("white move did not match gen=%d actual=%d", WHITE_PAWN_MOVES[val[0]], val[2])
 		}
 	}
@@ -60,7 +60,7 @@ func TestPawnMoves(t *testing.T) {
 		if err != nil {
 			t.Fatalf("could not convert record %v", err)
 		}
-		if BLACK_PAWN_MOVES[val[0]] != val[2] {
+		if BLACK_PAWN_MOVES[val[0]] != BitBoard(val[2]) {
 			t.Errorf("black move did not match gen=%d actual=%d", BLACK_PAWN_MOVES[val[0]], val[2])
 		}
 	}

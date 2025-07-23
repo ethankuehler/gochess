@@ -9,9 +9,9 @@ import (
 )
 
 type Move struct {
-	start    uint64 //starting position of piece
-	end      uint64 //ending position of piece
-	encoding uint16 //encoding for move information
+	start    BitBoard //starting position of piece
+	end      BitBoard //ending position of piece
+	encoding uint16   //encoding for move information
 }
 
 // Genrates a new move with no code, TODO: handel codes in the right way.
@@ -60,7 +60,7 @@ func (m *Move) String() string {
 }
 
 // find algebraic position from position
-func AlgFromLoc(loc uint64) string {
+func AlgFromLoc(loc BitBoard) string {
 	col, row := 0, 0
 	colMask := COLUMN_MASK
 	rowMask := ROW_MASK
@@ -93,16 +93,16 @@ func RowColFromAlg(alg string) (uint64, uint64, error) {
 	return uint64(row), uint64(col), nil
 }
 
-func ShiftFromAlg(alg string) (uint64, error) {
+func ShiftFromAlg(alg string) (Shift, error) {
 	row, col, err := RowColFromAlg(alg)
 	if err != nil {
 		return 0, err
 	}
-	return uint64(col + row*8), nil
+	return Shift(col + row*8), nil
 }
 
 // Given algerbraic notation for a position (e.g. c5) calculate the position.
-func LocFromAlg(alg string) (uint64, error) {
+func LocFromAlg(alg string) (BitBoard, error) {
 	shift, err := ShiftFromAlg(alg)
 	if err != nil {
 		return 0, err
@@ -110,7 +110,7 @@ func LocFromAlg(alg string) (uint64, error) {
 	return 1 << shift, nil
 }
 
-func ShiftIter(start_str, stop_str string) iter.Seq[uint64] {
+func ShiftIter(start_str, stop_str string) iter.Seq[Shift] {
 	start, err := ShiftFromAlg(start_str)
 	if err != nil {
 		log.Fatal(err.Error())
@@ -119,7 +119,7 @@ func ShiftIter(start_str, stop_str string) iter.Seq[uint64] {
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	return func(yield func(uint64) bool) {
+	return func(yield func(Shift) bool) {
 		for i := start; i <= stop; i++ {
 			if !yield(i) {
 				return

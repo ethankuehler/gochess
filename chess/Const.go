@@ -6,18 +6,18 @@ import (
 
 type Shift int
 
-const LOCATION_START = 0
-const LOCATION_STOP = 64 + 1
-const LOCATION_SIZE = 64
+const SHIFT_START = 1
+const SHIFT_STOP = 64 + 1
+const SHIFT_SIZE = 64
 
 type Coordinates struct {
 	row uint64
 	col uint64
 }
 
-func CoordsFromShift(loc Shift) Coordinates {
-	col := loc % 8
-	row := loc / 8
+func CoordsFromShift(shift Shift) Coordinates {
+	col := shift % 8
+	row := shift / 8
 	return Coordinates{uint64(col), uint64(row)}
 }
 
@@ -84,36 +84,36 @@ const (
 
 // precalculated positional masking.
 const (
-	ROW_MASK    uint64 = 255
-	COLUMN_MASK uint64 = 72340172838076673
+	ROW_MASK    BitBoard = 255
+	COLUMN_MASK BitBoard = 72340172838076673
 )
 
 const (
-	KNIGHT_MASK   uint64 = 43234889994
-	KNIGHT_OFFSET uint64 = 18
+	KNIGHT_MASK   BitBoard = 43234889994
+	KNIGHT_OFFSET BitBoard = 18
 )
 
 const (
-	KING_MASK   uint64 = 0
-	KING_OFFSET uint64 = 0
+	KING_MASK   BitBoard = 0
+	KING_OFFSET BitBoard = 0
 )
 
 // Use display_binary.py to conferm these numbers
 // Mask is going to be a bit mask
 // Offset is always a shift number
 const (
-	WHITE_PAWN_MOVE_MASK_2   uint64 = 65792
-	WHITE_PAWN_MOVE_OFFSET_2 uint64 = 0
-	WHITE_PAWN_MOVE_MASK     uint64 = 256
-	WHITE_PAWN_MOVE_OFFSET   uint64 = 0
-	WHITE_PAWN_ATTACK_MASK   uint64 = 1280
-	WHITE_PAWN_ATTACK_OFFSET uint64 = 1
-	BLACK_PAWN_MOVE_MASK_2   uint64 = 257
-	BLACK_PAWN_MOVE_OFFSET_2 uint64 = 16
-	BLACK_PAWN_MOVE_MASK     uint64 = 1
-	BLACK_PAWN_MOVE_OFFSET   uint64 = 8
-	BLACK_PAWN_ATTACK_MASK   uint64 = 5
-	BLACK_PAWN_ATTACK_OFFSET uint64 = 9
+	WHITE_PAWN_MOVE_MASK_2   BitBoard = 65792
+	WHITE_PAWN_MOVE_OFFSET_2 BitBoard = 0
+	WHITE_PAWN_MOVE_MASK     BitBoard = 256
+	WHITE_PAWN_MOVE_OFFSET   BitBoard = 0
+	WHITE_PAWN_ATTACK_MASK   BitBoard = 1280
+	WHITE_PAWN_ATTACK_OFFSET BitBoard = 1
+	BLACK_PAWN_MOVE_MASK_2   BitBoard = 257
+	BLACK_PAWN_MOVE_OFFSET_2 BitBoard = 16
+	BLACK_PAWN_MOVE_MASK     BitBoard = 1
+	BLACK_PAWN_MOVE_OFFSET   BitBoard = 8
+	BLACK_PAWN_ATTACK_MASK   BitBoard = 5
+	BLACK_PAWN_ATTACK_OFFSET BitBoard = 9
 )
 
 // string information for formating and chess notations.

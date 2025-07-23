@@ -7,8 +7,8 @@ import (
 	"strconv"
 )
 
-func LoadAttacks(csv_file_name string) []uint64 {
-	target := make([]uint64, LOCATION_SIZE)
+func LoadAttacks(csv_file_name string) []BitBoard {
+	target := make([]BitBoard, SHIFT_SIZE)
 	data, err := readCSV(csv_file_name)
 	if err != nil {
 		log.Fatalf("Unable to read file: %s", err.Error())
@@ -22,9 +22,8 @@ func LoadAttacks(csv_file_name string) []uint64 {
 		if len(val) != 3 {
 			log.Fatalf("Error, data didnt have enough rows, filename: %s", csv_file_name)
 		}
-		target[val[0]] = val[2]
+		target[val[0]] = BitBoard(val[2])
 	}
-
 	return target
 }
 

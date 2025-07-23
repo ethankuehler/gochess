@@ -72,8 +72,7 @@ func TestOccupied(t *testing.T) {
 			continue
 		}
 		occupied_white := b.Occupied(WHITE)
-		var comp_white uint64
-		comp_white = 0
+		var comp_white BitBoard = 0
 		for i := PAWN; i <= KING; i++ {
 			comp_white |= b.GetPieces(WHITE, Piece(i))
 		}
@@ -82,7 +81,7 @@ func TestOccupied(t *testing.T) {
 		}
 
 		occupied_black := b.Occupied(BLACK)
-		var comp_black uint64
+		var comp_black BitBoard
 		comp_black = 0
 		for i := PAWN; i <= KING; i++ {
 			comp_black |= b.GetPieces(BLACK, Piece(i))

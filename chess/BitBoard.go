@@ -8,17 +8,21 @@ import (
 	"strings"
 )
 
-type BitBoard struct {
-	pieces          [12]uint64 //BitBoard, encoding for all pieces on board.
-	enpassant       uint64     //location of piece that can preform enpassant
-	encoding        uint8      //Encoding for castle and turn information.
-	halfmove_clock  uint16     //Number of half moves since last pawn advance or piece capture, for 50 move rule.
-	fullmove_number uint16     //Number of full moves.
+type BitBoard uint64
+
+const EMPTY_BOARD BitBoard = 0
+
+type BoardState struct {
+	pieces          [12]BitBoard //BitBoard, encoding for all pieces on board.
+	enpassant       BitBoard     //location of piece that can preform enpassant
+	encoding        uint8        //Encoding for castle and turn information.
+	halfmove_clock  uint16       //Number of half moves since last pawn advance or piece capture, for 50 move rule.
+	fullmove_number uint16       //Number of full moves.
 }
 
 // New BitBoard with starting setup
-func NewBoardDefault() *BitBoard {
-	b := BitBoard{}
+func NewBoardDefault() *BoardState {
+	b := BoardState{}
 	//setting all the white pieces on the home squares
 	b.pieces[PAWN] = 0b1111111100000000
 	b.pieces[BISHOP] = 0b00100100
@@ -46,8 +50,8 @@ func NewBoardDefault() *BitBoard {
 }
 
 // Generates a bit board from a FEN notation.
-func NewBoardFEN(FEN string) (*BitBoard, error) {
-	b := BitBoard{}
+func NewBoardFEN(FEN string) (*BoardState, error) {
+	b := BoardState{}
 
 	fields := strings.Fields(FEN)
 
@@ -55,20 +59,20 @@ func NewBoardFEN(FEN string) (*BitBoard, error) {
 		return nil, errors.New("invalid FEN")
 	}
 
-	var loc uint64 = 1 << 63
+	var mask BitBoard = 1 << 63
 	for _, v := range fields[0] {
 		if v == '/' {
 			continue
 		}
 		idx := slices.Index(PICECES_SYM, string(v))
 		if idx != -1 {
-			b.pieces[idx] |= loc
-			loc = loc >> 1
+			b.pieces[idx] |= mask
+			mask = mask >> 1
 		} else {
-			loc = loc >> (v - 48)
+			mask = mask >> (v - 48)
 		}
 	}
-	if loc != 0 {
+	if mask != 0 {
 		return nil, errors.New("invald FEN, piece placement invalid")
 	}
 
@@ -117,7 +121,7 @@ func NewBoardFEN(FEN string) (*BitBoard, error) {
 }
 
 // Returns a string with turn, castle, enpassant and move number info
-func (b *BitBoard) InfoString() string {
+func (b *BoardState) InfoString() string {
 	var buffer bytes.Buffer
 	//Turn information
 	buffer.WriteRune(' ')
@@ -157,10 +161,10 @@ func (b *BitBoard) InfoString() string {
 	return buffer.String()
 }
 
-func (b *BitBoard) toString(piceces []string) string {
+func (b *BoardState) toString(piceces []string) string {
 	boardStr := ""
 	//we start at the top right
-	var loc uint64 = 1 << 63
+	var mask BitBoard = 1 << 63
 
 	for i := range 64 + 8 {
 		//insert a newline at the end of every row.
@@ -172,14 +176,14 @@ func (b *BitBoard) toString(piceces []string) string {
 		//Now find if there is a piece at the location loc and write it to s which by default is " _ ".
 		s := " _ "
 		for k, p := range b.pieces {
-			if loc&p > 0 {
+			if mask&p > 0 {
 				s = " " + piceces[k] + " "
 				break
 			}
 		}
 		boardStr += s
 
-		loc = loc >> 1
+		mask = mask >> 1
 	}
 
 	boardStr += b.InfoString()
@@ -188,25 +192,25 @@ func (b *BitBoard) toString(piceces []string) string {
 }
 
 // Returns a string showing the location of every piece on the bord
-func (b *BitBoard) String() string {
+func (b *BoardState) String() string {
 	return b.toString(PICECES_SYM)
 }
 
-func (b *BitBoard) StringUni() string {
+func (b *BoardState) StringUni() string {
 	return b.toString(UNI_PICECES_SYM)
 }
 
-func (b *BitBoard) FEN() string {
+func (b *BoardState) FEN() string {
 	var buffer bytes.Buffer
 
 	row_count := 0
 	count := 0
-	for loc := uint64(1) << 63; 0 < loc; loc = loc >> 1 {
+	for mask := BitBoard(1) << 63; 0 < mask; mask = mask >> 1 {
 
 		// determins if there is a piece at the location loc
 		found := false
 		for i, v := range b.pieces {
-			if v&loc > 0 {
+			if v&mask > 0 {
 				if count > 0 {
 					buffer.WriteString(strconv.Itoa(count))
 					count = 0
@@ -228,7 +232,7 @@ func (b *BitBoard) FEN() string {
 				buffer.WriteString(strconv.Itoa(count))
 				count = 0
 			}
-			if loc != 1 {
+			if mask != 1 {
 				buffer.WriteRune('/')
 			}
 			row_count = 0
@@ -241,14 +245,14 @@ func (b *BitBoard) FEN() string {
 }
 
 // Returns a list of all legal moves from a current baord position
-func (b *BitBoard) LegalMoves() []Move {
+func (b *BoardState) LegalMoves() []Move {
 	return make([]Move, 1) //TODO: get this working
 }
 
 // Returns a mask of every Occupied sqaure on the chess board.
 // Colour should be WHITE, BLACK, or BOTH.
-func (b *BitBoard) Occupied(colour Colour) uint64 {
-	var occupied uint64 = 0
+func (b *BoardState) Occupied(colour Colour) BitBoard {
+	var occupied BitBoard = 0
 	for i := range PiecesIter(colour) {
 		occupied |= b.pieces[i]
 	}
@@ -256,7 +260,7 @@ func (b *BitBoard) Occupied(colour Colour) uint64 {
 }
 
 // Returns the position of all piceces of a centrin colour and type.
-func (b *BitBoard) GetPieces(colour Colour, piece Piece) uint64 {
+func (b *BoardState) GetPieces(colour Colour, piece Piece) BitBoard {
 	if colour == BOTH || piece == ALL {
 		panic("Invalid input in GetPieces, cannot be BOTH or ALL.")
 	}
