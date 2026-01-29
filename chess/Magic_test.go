@@ -421,3 +421,233 @@ func TestRayCastFromConfig(t *testing.T) {
 		})
 	}
 }
+
+// TestGetBishopMask tests the GetBishopMask function for various squares
+func TestGetBishopMask(t *testing.T) {
+	tests := []struct {
+		name     string
+		square   Shift
+		minBits  int // Minimum number of bits that should be set
+		maxBits  int // Maximum number of bits that should be set
+	}{
+		{"center_d4", 27, 7, 11},  // Center square should have good diagonal coverage
+		{"corner_a1", 0, 0, 7},     // Corner has limited diagonal
+		{"corner_h8", 63, 0, 7},    // Corner has limited diagonal
+		{"edge_e1", 4, 4, 7},       // Edge square
+		{"near_center_d5", 35, 7, 11}, // Near center
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			coord := CoordsFromShift(tt.square)
+			mask := GetBishopMask(coord)
+			
+			// Count bits in mask
+			bitCount := 0
+			for i := Shift(0); i < 64; i++ {
+				if mask&(BitBoard(1)<<i) != 0 {
+					bitCount++
+				}
+			}
+			
+			if bitCount < tt.minBits || bitCount > tt.maxBits {
+				t.Errorf("Mask bit count %d not in range [%d, %d]", bitCount, tt.minBits, tt.maxBits)
+			}
+			
+			// Verify the square itself is not in the mask
+			if mask&(BitBoard(1)<<tt.square) != 0 {
+				t.Error("Mask should not include the piece's own square")
+			}
+		})
+	}
+}
+
+// TestBuildRookAttacks tests that rook attacks are built correctly
+func TestBuildRookAttacks(t *testing.T) {
+	BuildRookAttacks()
+	
+	if ROOK_MAGIC == nil {
+		t.Fatal("ROOK_MAGIC is nil")
+	}
+	
+	if len(ROOK_MAGIC) != 64 {
+		t.Fatalf("ROOK_MAGIC should have 64 entries, got %d", len(ROOK_MAGIC))
+	}
+	
+	if ROOK_ATTACKS == nil {
+		t.Fatal("ROOK_ATTACKS is nil")
+	}
+	
+	if len(ROOK_ATTACKS) != 64 {
+		t.Fatalf("ROOK_ATTACKS should have 64 entries, got %d", len(ROOK_ATTACKS))
+	}
+	
+	// Test a simple case: rook at d4 with no blockers
+	square := Shift(27) // d4
+	board := BitBoard(0)
+	attacks := GetRookAttack(square, board)
+	
+	// Should be able to attack along rank and file
+	coord := CoordsFromShift(square)
+	mask := (COLUMN_MASK << coord.file) | (ROW_MASK << (coord.rank * 8))
+	expectedAttacks := mask & ^(BitBoard(1) << square) // Exclude starting square
+	
+	if attacks != expectedAttacks {
+		t.Errorf("Rook attacks from d4 with no blockers incorrect:\n  Got:      %064b\n  Expected: %064b", attacks, expectedAttacks)
+	}
+}
+
+// TestBuildBishopAttacks tests that bishop attacks are built correctly
+func TestBuildBishopAttacks(t *testing.T) {
+	BuildBishopAttacks()
+	
+	if BISHOP_MAGIC == nil {
+		t.Fatal("BISHOP_MAGIC is nil")
+	}
+	
+	if len(BISHOP_MAGIC) != 64 {
+		t.Fatalf("BISHOP_MAGIC should have 64 entries, got %d", len(BISHOP_MAGIC))
+	}
+	
+	if BISHOP_ATTACKS == nil {
+		t.Fatal("BISHOP_ATTACKS is nil")
+	}
+	
+	if len(BISHOP_ATTACKS) != 64 {
+		t.Fatalf("BISHOP_ATTACKS should have 64 entries, got %d", len(BISHOP_ATTACKS))
+	}
+	
+	// Test a simple case: bishop at d4 with no blockers
+	square := Shift(27) // d4
+	board := BitBoard(0)
+	attacks := GetBishopAttack(square, board)
+	
+	// Should attack diagonals - verify it attacks some key squares
+	keySquares := []Shift{
+		18, // c3
+		20, // e3
+		34, // c5
+		36, // e5
+	}
+	
+	for _, sq := range keySquares {
+		if attacks&(BitBoard(1)<<sq) == 0 {
+			coord := CoordsFromShift(sq)
+			t.Errorf("Bishop from d4 should attack %c%d", COLUMNS[coord.file], coord.rank+1)
+		}
+	}
+}
+
+// TestGetRookAttackWithBlockers tests rook attacks with various blocker configurations
+func TestGetRookAttackWithBlockers(t *testing.T) {
+	BuildRookAttacks()
+	
+	// Rook at d4 (square 27) with blocker at d6 (square 43)
+	square := Shift(27)
+	blocker := BitBoard(1) << 43
+	attacks := GetRookAttack(square, blocker)
+	
+	// Should include d6 but not d7
+	if attacks&(BitBoard(1)<<43) == 0 {
+		t.Error("Rook should attack the blocker square")
+	}
+	
+	if attacks&(BitBoard(1)<<51) != 0 {
+		t.Error("Rook should not attack beyond the blocker")
+	}
+}
+
+// TestGetBishopAttackWithBlockers tests bishop attacks with various blocker configurations
+func TestGetBishopAttackWithBlockers(t *testing.T) {
+	BuildBishopAttacks()
+	
+	// Bishop at d4 (square 27) with blocker at f6 (square 45)
+	square := Shift(27)
+	blocker := BitBoard(1) << 45
+	attacks := GetBishopAttack(square, blocker)
+	
+	// Should include f6 but not g7
+	if attacks&(BitBoard(1)<<45) == 0 {
+		t.Error("Bishop should attack the blocker square")
+	}
+	
+	if attacks&(BitBoard(1)<<54) != 0 {
+		t.Error("Bishop should not attack beyond the blocker")
+	}
+}
+
+// TestGetQueenAttack tests that queen attacks combine rook and bishop
+func TestGetQueenAttack(t *testing.T) {
+	BuildRookAttacks()
+	BuildBishopAttacks()
+	
+	// Queen at d4 (square 27) with no blockers
+	square := Shift(27)
+	board := BitBoard(0)
+	
+	queenAttacks := GetQueenAttack(square, board)
+	rookAttacks := GetRookAttack(square, board)
+	bishopAttacks := GetBishopAttack(square, board)
+	
+	// Queen attacks should be the union of rook and bishop attacks
+	expected := rookAttacks | bishopAttacks
+	
+	if queenAttacks != expected {
+		t.Error("Queen attacks should be the union of rook and bishop attacks")
+	}
+	
+	// Verify queen attacks in all 8 directions
+	// Horizontal/Vertical (rook moves)
+	keyRookSquares := []Shift{19, 35, 26, 28} // d3, d5, c4, e4
+	for _, sq := range keyRookSquares {
+		if queenAttacks&(BitBoard(1)<<sq) == 0 {
+			t.Errorf("Queen should attack square %d (rook direction)", sq)
+		}
+	}
+	
+	// Diagonal (bishop moves)
+	keyBishopSquares := []Shift{18, 20, 34, 36} // c3, e3, c5, e5
+	for _, sq := range keyBishopSquares {
+		if queenAttacks&(BitBoard(1)<<sq) == 0 {
+			t.Errorf("Queen should attack square %d (bishop direction)", sq)
+		}
+	}
+}
+
+// TestBuildAllAttacks tests that BuildAllAttacks initializes everything
+func TestBuildAllAttacks(t *testing.T) {
+	BuildAllAttacks()
+	
+	// Verify all attack tables are initialized
+	if KNIGHT_ATTACKS == nil {
+		t.Error("KNIGHT_ATTACKS not initialized")
+	}
+	
+	if KING_ATTACKS == nil {
+		t.Error("KING_ATTACKS not initialized")
+	}
+	
+	if WHITE_PAWN_ATTACKS == nil {
+		t.Error("WHITE_PAWN_ATTACKS not initialized")
+	}
+	
+	if BLACK_PAWN_ATTACKS == nil {
+		t.Error("BLACK_PAWN_ATTACKS not initialized")
+	}
+	
+	if ROOK_MAGIC == nil {
+		t.Error("ROOK_MAGIC not initialized")
+	}
+	
+	if ROOK_ATTACKS == nil {
+		t.Error("ROOK_ATTACKS not initialized")
+	}
+	
+	if BISHOP_MAGIC == nil {
+		t.Error("BISHOP_MAGIC not initialized")
+	}
+	
+	if BISHOP_ATTACKS == nil {
+		t.Error("BISHOP_ATTACKS not initialized")
+	}
+}
