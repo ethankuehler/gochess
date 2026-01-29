@@ -14,7 +14,7 @@ type Move struct {
 	encoding uint16   //encoding for move information
 }
 
-// Genrates a new move with no code, TODO: handel codes in the right way.
+// Generates a new move with no code, TODO: handle codes in the right way.
 // Idea for codes might be somthing that engine will generate after ponder.
 func NewMoveUCI(UCI string) (*Move, error) {
 	s := fmt.Sprintf("Invalid UCI code %s", UCI)
@@ -81,13 +81,13 @@ func AlgFromLoc(loc BitBoard) string {
 func RowColFromAlg(alg string) (uint64, uint64, error) {
 	col := slices.Index(COLUMNS, rune(alg[0]))
 	if col == -1 {
-		s := fmt.Sprintf("Invalid algerbraic notation %s", alg)
+		s := fmt.Sprintf("Invalid algebraic notation %s", alg)
 		return 0, 0, errors.New(s)
 	}
 
-	row := int(alg[1]-'0') - 1 //its imporant to subtract by 1
+	row := int(alg[1]-'0') - 1 //its important to subtract by 1
 	if row < 0 || row >= 8 {
-		s := fmt.Sprintf("Invalid algerbraic notation %s", alg)
+		s := fmt.Sprintf("Invalid algebraic notation %s", alg)
 		return 0, 0, errors.New(s)
 	}
 	return uint64(row), uint64(col), nil
@@ -101,7 +101,7 @@ func ShiftFromAlg(alg string) (Shift, error) {
 	return Shift(col + row*8), nil
 }
 
-// Given algerbraic notation for a position (e.g. c5) calculate the position.
+// Given algebraic notation for a position (e.g. c5) calculate the position.
 func LocFromAlg(alg string) (BitBoard, error) {
 	shift, err := ShiftFromAlg(alg)
 	if err != nil {
