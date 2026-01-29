@@ -1,6 +1,9 @@
 package chess
 
 import (
+	"encoding/csv"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -227,5 +230,172 @@ func TestRayCastEmptyRay(t *testing.T) {
 	// Should return empty bitboard with no directions
 	if result != 0 {
 		t.Errorf("RayCast with empty ray should return 0, got %064b", result)
+	}
+}
+
+// parseFENToBlockers converts a FEN board string to a blocker BitBoard
+// FEN format: "8/8/2P5/8/8/8/8/8" where numbers are empty squares, letters are pieces
+func parseFENToBlockers(fen string) BitBoard {
+	var blockers BitBoard = 0
+	ranks := strings.Split(fen, "/")
+	
+	// FEN starts from rank 8 down to rank 1
+	for rankIdx, rankStr := range ranks {
+		rank := 7 - rankIdx // Convert to 0-indexed from bottom
+		file := 0
+		
+		for _, ch := range rankStr {
+			if ch >= '1' && ch <= '8' {
+				// Number means empty squares
+				file += int(ch - '0')
+			} else {
+				// Any letter (piece) is a blocker
+				square := file + rank*8
+				blockers |= BitBoard(1) << square
+				file++
+			}
+		}
+	}
+	
+	return blockers
+}
+
+// parseExpectedSquares converts a comma-separated list of algebraic squares to a BitBoard
+func parseExpectedSquares(squaresStr string) (BitBoard, error) {
+	var expected BitBoard = 0
+	if squaresStr == "" {
+		return expected, nil
+	}
+	
+	squares := strings.Split(squaresStr, ",")
+	for _, sq := range squares {
+		sq = strings.TrimSpace(sq)
+		if sq == "" {
+			continue
+		}
+		loc, err := LocFromAlg(sq)
+		if err != nil {
+			return 0, err
+		}
+		expected |= loc
+	}
+	
+	return expected, nil
+}
+
+// getRayForPieceType returns the appropriate Ray for the piece type
+func getRayForPieceType(pieceType string) Ray {
+	switch strings.ToLower(pieceType) {
+	case "rook":
+		return ROOK_RAY
+	case "bishop":
+		return BISHOP_RAY
+	default:
+		return Ray{}
+	}
+}
+
+// getMaskForPieceType returns the appropriate mask for the piece type at the given square
+func getMaskForPieceType(pieceType string, square Shift) BitBoard {
+	coord := CoordsFromShift(square)
+	rank, file := coord.col, coord.row // Note: fields are swapped!
+	
+	switch strings.ToLower(pieceType) {
+	case "rook":
+		// Rook can move along file and rank
+		return (COLUMN_MASK << file) | (ROW_MASK << (rank * 8))
+	case "bishop":
+		// Bishop can move diagonally
+		var mask BitBoard = 0
+		for i := 0; i < 8; i++ {
+			for j := 0; j < 8; j++ {
+				// Check if on same diagonal (i is rank, j is file)
+				if (i-int(rank)) == (j-int(file)) || (i-int(rank)) == -(j-int(file)) {
+					mask |= BitBoard(1) << (j + i*8)
+				}
+			}
+		}
+		return mask
+	default:
+		return 0
+	}
+}
+
+// TestRayCastFromConfig tests RayCast using configuration from CSV file
+func TestRayCastFromConfig(t *testing.T) {
+	file, err := os.Open("data/raycast_tests.csv")
+	if err != nil {
+		t.Fatalf("Failed to open raycast_tests.csv: %v", err)
+	}
+	defer file.Close()
+	
+	reader := csv.NewReader(file)
+	records, err := reader.ReadAll()
+	if err != nil {
+		t.Fatalf("Failed to read CSV: %v", err)
+	}
+	
+	// Skip header row
+	for i, record := range records[1:] {
+		if len(record) != 5 {
+			t.Errorf("Test %d: Invalid record format, expected 5 fields, got %d", i, len(record))
+			continue
+		}
+		
+		name := record[0]
+		pieceType := record[1]
+		pieceSquare := record[2]
+		fenBlockers := record[3]
+		expectedSquaresStr := record[4]
+		
+		t.Run(name, func(t *testing.T) {
+			// Parse piece square
+			square, err := ShiftFromAlg(pieceSquare)
+			if err != nil {
+				t.Fatalf("Invalid piece square %s: %v", pieceSquare, err)
+			}
+			
+			// Parse FEN to blockers
+			blockers := parseFENToBlockers(fenBlockers)
+			
+			// Get mask for piece type
+			mask := getMaskForPieceType(pieceType, square)
+			
+			// Get ray for piece type
+			ray := getRayForPieceType(pieceType)
+			
+			// Run RayCast
+			result := RayCast(square, blockers, mask, ray)
+			
+			// Parse expected squares
+			expected, err := parseExpectedSquares(expectedSquaresStr)
+			if err != nil {
+				t.Fatalf("Failed to parse expected squares: %v", err)
+			}
+			
+			// Compare result with expected
+			if result != expected {
+				t.Errorf("RayCast failed for %s:\n  Got:      %064b\n  Expected: %064b", name, result, expected)
+				
+				// Show which squares differ for debugging
+				diff := result ^ expected
+				if diff != 0 {
+					t.Logf("Difference in squares:")
+					for sq := Shift(0); sq < 64; sq++ {
+						bit := BitBoard(1) << sq
+						if diff&bit != 0 {
+							coord := CoordsFromShift(sq)
+							file := coord.row // Note: swapped
+							rank := coord.col
+							fileChar := COLUMNS[file]
+							rankNum := rank + 1
+							inResult := result&bit != 0
+							inExpected := expected&bit != 0
+							t.Logf("  Square %c%d: result=%v expected=%v", fileChar, rankNum, inResult, inExpected)
+						}
+					}
+				}
+			}
+		})
 	}
 }
