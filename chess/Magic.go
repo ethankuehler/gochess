@@ -79,19 +79,55 @@ func GetBishopAttack(loc Shift, board BitBoard) BitBoard {
 	return BISHOP_ATTACKS[loc][idx]
 }
 
+// GetQueenAttack returns the attack bitboard for a queen at the given location.
+// Queens combine rook and bishop movement patterns.
+// Parameters:
+//   - loc: Square position of the queen (0-63)
+//   - board: BitBoard representing all occupied squares
+// Returns: BitBoard with all squares the queen can attack
+func GetQueenAttack(loc Shift, board BitBoard) BitBoard {
+	return GetRookAttack(loc, board) | GetBishopAttack(loc, board)
+}
+
 // GetRookMask returns the relevant occupancy mask for a rook at the given coordinates.
 // The mask includes all squares on the same rank and file as the rook.
 func GetRookMask(coord Coordinates) BitBoard {
 	rank, file := coord.rank, coord.file
-	return (COLUMN_MASK << file) | (ROW_MASK << rank*8)
+	return (COLUMN_MASK << file) | (ROW_MASK << (rank * 8))
 }
 
 // GetBishopMask returns the relevant occupancy mask for a bishop at the given coordinates.
 // The mask includes all squares on the diagonals passing through the bishop's position.
-// TODO: Implementation needed - currently returns 0
+// Edge squares are typically excluded for magic bitboard optimization.
 func GetBishopMask(coord Coordinates) BitBoard {
-	//TODO: not done
-	return 0
+	rank, file := coord.rank, coord.file
+	var mask BitBoard = 0
+	
+	// For each of the 4 diagonal directions
+	for _, dir := range BISHOP_RAY {
+		rankDelta, fileDelta := dir[0], dir[1]
+		r, f := int(rank), int(file)
+		
+		// Move in direction until edge
+		for {
+			r += rankDelta
+			f += fileDelta
+			
+			// Stop at board edges
+			if r < 0 || r >= 8 || f < 0 || f >= 8 {
+				break
+			}
+			
+			// Optionally exclude edge squares for optimization
+			// (common practice in magic bitboards to reduce table size)
+			if r > 0 && r < 7 && f > 0 && f < 7 {
+				square := Shift(f + r*8)
+				mask |= BitBoard(1) << square
+			}
+		}
+	}
+	
+	return mask
 }
 
 // FindMagic searches for a valid magic number and attack table for a rook at the given coordinates.
@@ -125,7 +161,7 @@ func TryRookMagic(loc Shift, magic MagicEntry) ([]BitBoard, error) {
 	mask := magic.Mask
 
 	for true {
-		moves := RayCast(loc, blockers, mask, Ray{})
+		moves := RayCast(loc, blockers, mask, ROOK_RAY)
 		table_entry := &table[MagicIndex(magic, blockers)]
 		if *table_entry == 0 {
 			*table_entry = moves
@@ -198,16 +234,14 @@ func RayCast(initial Shift, blockers BitBoard, mask BitBoard, r Ray) BitBoard {
 
 // BuildAllAttacks initializes all pre-computed attack tables.
 // Call this once at program startup to load attack data from CSV files.
-// Currently loads: Knight, King, and Pawn attacks.
-// TODO: Add BuildRookAttacks(), BuildBishopAttacks(), BuildQueenAttacks()
+// Loads: Knight, King, Pawn attacks, and generates Rook and Bishop attacks using magic bitboards.
 func BuildAllAttacks() {
 	BuildKnightAttacks()
 	BuildKingAttacks()
 	BuildPawnMoves()
 	BuildPawnAttacks()
-	//BuildRookAttacks()
-	//BuildBishopAttacks()
-	//BuildQueenAttacks()
+	BuildRookAttacks()
+	BuildBishopAttacks()
 }
 
 // BuildKnightAttacks loads the pre-computed knight attack table from CSV.
@@ -240,5 +274,88 @@ func BuildPawnAttacks() {
 	WHITE_PAWN_ATTACKS = LoadAttacks(file_name)
 	file_name = "data/black_pawn_attacks.csv"
 	BLACK_PAWN_ATTACKS = LoadAttacks(file_name)
+}
 
+// BuildRookAttacks loads the magic numbers and generates the attack lookup tables for rooks.
+// This function initializes the ROOK_MAGIC and ROOK_ATTACKS global variables.
+func BuildRookAttacks() {
+	// Load magic numbers from CSV
+	magics, err := LoadMagicsFromCSV("data/rook_magic.csv")
+	if err != nil {
+		panic("Failed to load rook magic numbers: " + err.Error())
+	}
+	
+	// Initialize arrays
+	ROOK_MAGIC = magics
+	ROOK_ATTACKS = make([][]BitBoard, 64)
+	
+	// For each square, generate all attack patterns
+	for square := Shift(0); square < 64; square++ {
+		magic := ROOK_MAGIC[square]
+		
+		// Allocate attack table for this square
+		tableSize := 1 << magic.Index
+		ROOK_ATTACKS[square] = make([]BitBoard, tableSize)
+		
+		// Generate all possible blocker configurations
+		var blockers BitBoard = 0
+		mask := magic.Mask
+		
+		for {
+			// Generate attacks for this blocker configuration
+			attacks := RayCast(square, blockers, mask, ROOK_RAY)
+			
+			// Store in table at hashed index
+			index := MagicIndex(magic, blockers)
+			ROOK_ATTACKS[square][index] = attacks
+			
+			// Next blocker configuration (Carry-Rippler trick)
+			blockers = (blockers - mask) & mask
+			if blockers == 0 {
+				break
+			}
+		}
+	}
+}
+
+// BuildBishopAttacks loads the magic numbers and generates the attack lookup tables for bishops.
+// This function initializes the BISHOP_MAGIC and BISHOP_ATTACKS global variables.
+func BuildBishopAttacks() {
+	// Load magic numbers from CSV
+	magics, err := LoadMagicsFromCSV("data/bishop_magic.csv")
+	if err != nil {
+		panic("Failed to load bishop magic numbers: " + err.Error())
+	}
+	
+	// Initialize arrays
+	BISHOP_MAGIC = magics
+	BISHOP_ATTACKS = make([][]BitBoard, 64)
+	
+	// For each square, generate all attack patterns
+	for square := Shift(0); square < 64; square++ {
+		magic := BISHOP_MAGIC[square]
+		
+		// Allocate attack table for this square
+		tableSize := 1 << magic.Index
+		BISHOP_ATTACKS[square] = make([]BitBoard, tableSize)
+		
+		// Generate all possible blocker configurations
+		var blockers BitBoard = 0
+		mask := magic.Mask
+		
+		for {
+			// Generate attacks for this blocker configuration
+			attacks := RayCast(square, blockers, mask, BISHOP_RAY)
+			
+			// Store in table at hashed index
+			index := MagicIndex(magic, blockers)
+			BISHOP_ATTACKS[square][index] = attacks
+			
+			// Next blocker configuration (Carry-Rippler trick)
+			blockers = (blockers - mask) & mask
+			if blockers == 0 {
+				break
+			}
+		}
+	}
 }
