@@ -107,10 +107,60 @@ func TryRookMagic(loc Shift, magic MagicEntry) ([]BitBoard, error) {
 	return table, nil
 }
 
-// TODO:: fix types, this is also a sign that the inital types aren't that good and will need to be changed.
-func RayCast(inital Shift, blockers BitBoard, mask BitBoard, r Ray) BitBoard {
-
-	return 0
+// RayCast generates a bitboard of valid moves for a sliding piece from a given position.
+// It casts rays in the directions specified by the Ray array until hitting a blocker or board edge.
+// Parameters:
+//   - initial: The starting position on the board (0-63)
+//   - blockers: BitBoard of occupied squares that block movement
+//   - mask: BitBoard mask limiting valid squares for this piece type
+//   - r: Array of direction vectors [row_delta, col_delta] to cast rays in
+// Returns: BitBoard with all valid destination squares
+func RayCast(initial Shift, blockers BitBoard, mask BitBoard, r Ray) BitBoard {
+	var result BitBoard = 0
+	coord := CoordsFromShift(initial)
+	// Note: The Coordinates struct has swapped field names!
+	// coord.col actually contains the rank, coord.row contains the file
+	row, col := coord.col, coord.row // Swap to get correct values
+	
+	// Cast a ray in each direction
+	for _, dir := range r {
+		rowDelta := dir[0]
+		colDelta := dir[1]
+		
+		// Skip directions with no movement (would cause infinite loop)
+		if rowDelta == 0 && colDelta == 0 {
+			continue
+		}
+		
+		// Start from the initial position and move in the direction
+		currentRow := int(row) + rowDelta
+		currentCol := int(col) + colDelta
+		
+		// Continue casting the ray until we hit a blocker or edge
+		for currentRow >= 0 && currentRow < 8 && currentCol >= 0 && currentCol < 8 {
+			// Calculate the shift for this square
+			// shift = col (file) + row (rank) * 8
+			square := Shift(currentCol + currentRow*8)
+			squareBit := BitBoard(1) << square
+			
+			// Check if this square is within the mask
+			if mask&squareBit != 0 {
+				// Add this square to the result
+				result |= squareBit
+				
+				// If this square has a blocker, stop the ray here (but include the blocker)
+				if blockers&squareBit != 0 {
+					break
+				}
+			}
+			
+			// Move to the next square in this direction
+			currentRow += rowDelta
+			currentCol += colDelta
+		}
+	}
+	
+	return result
 }
 
 func BuildAllAttacks() {
