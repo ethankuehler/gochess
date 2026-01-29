@@ -122,13 +122,15 @@ func TestRayCastBishopCenter(t *testing.T) {
 	// Create a simple mask that includes the main diagonals through d4
 	var mask BitBoard = 0
 	coord := CoordsFromShift(initial)
+	// Note: coord.row contains file, coord.col contains rank (swapped!)
+	rank, file := coord.col, coord.row
 	
 	// Add all diagonal squares to mask
 	for i := 0; i < 8; i++ {
 		for j := 0; j < 8; j++ {
-			// Check if on same diagonal
-			if (i-int(coord.row)) == (j-int(coord.col)) || (i-int(coord.row)) == -(j-int(coord.col)) {
-				mask |= BitBoard(1) << (i*8 + j)
+			// Check if on same diagonal (i is rank, j is file)
+			if (i-int(rank)) == (j-int(file)) || (i-int(rank)) == -(j-int(file)) {
+				mask |= BitBoard(1) << (j + i*8)
 			}
 		}
 	}
@@ -152,10 +154,14 @@ func TestRayCastBishopWithBlocker(t *testing.T) {
 	// Create diagonal mask
 	var mask BitBoard = 0
 	coord := CoordsFromShift(initial)
+	// Note: coord.row contains file, coord.col contains rank (swapped!)
+	rank, file := coord.col, coord.row
+	
 	for i := 0; i < 8; i++ {
 		for j := 0; j < 8; j++ {
-			if (i-int(coord.row)) == (j-int(coord.col)) || (i-int(coord.row)) == -(j-int(coord.col)) {
-				mask |= BitBoard(1) << (i*8 + j)
+			// Check if on same diagonal (i is rank, j is file)
+			if (i-int(rank)) == (j-int(file)) || (i-int(rank)) == -(j-int(file)) {
+				mask |= BitBoard(1) << (j + i*8)
 			}
 		}
 	}
