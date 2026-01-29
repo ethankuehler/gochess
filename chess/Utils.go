@@ -7,6 +7,9 @@ import (
 	"strconv"
 )
 
+// LoadAttacks loads attack bitboards from a CSV file.
+// The CSV file should have columns: index, [other data], bitboard_value
+// Returns a slice of 64 BitBoards indexed by square position.
 func LoadAttacks(csv_file_name string) []BitBoard {
 	target := make([]BitBoard, SHIFT_SIZE)
 	data, err := readCSV(csv_file_name)
@@ -27,6 +30,7 @@ func LoadAttacks(csv_file_name string) []BitBoard {
 	return target
 }
 
+// readCSV reads a CSV file and returns all records as a 2D string slice.
 func readCSV(filename string) ([][]string, error) {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -45,6 +49,7 @@ func readCSV(filename string) ([][]string, error) {
 	return records, nil
 }
 
+// readRecord converts a CSV record (slice of strings) to a slice of uint64 values.
 func readRecord(record []string) ([]uint64, error) {
 	output := make([]uint64, len(record))
 	for i, str := range record {

@@ -125,8 +125,7 @@ func TestRayCastBishopCenter(t *testing.T) {
 	// Create a simple mask that includes the main diagonals through d4
 	var mask BitBoard = 0
 	coord := CoordsFromShift(initial)
-	// Note: coord.row contains file, coord.col contains rank (swapped!)
-	rank, file := coord.col, coord.row
+	rank, file := coord.rank, coord.file
 	
 	// Add all diagonal squares to mask
 	for i := 0; i < 8; i++ {
@@ -157,8 +156,7 @@ func TestRayCastBishopWithBlocker(t *testing.T) {
 	// Create diagonal mask
 	var mask BitBoard = 0
 	coord := CoordsFromShift(initial)
-	// Note: coord.row contains file, coord.col contains rank (swapped!)
-	rank, file := coord.col, coord.row
+	rank, file := coord.rank, coord.file
 	
 	for i := 0; i < 8; i++ {
 		for j := 0; j < 8; j++ {
@@ -311,7 +309,7 @@ func getRayForPieceType(pieceType string) Ray {
 // getMaskForPieceType returns the appropriate mask for the piece type at the given square
 func getMaskForPieceType(pieceType string, square Shift) BitBoard {
 	coord := CoordsFromShift(square)
-	rank, file := coord.col, coord.row // Note: fields are swapped!
+	rank, file := coord.rank, coord.file
 	
 	switch strings.ToLower(pieceType) {
 	case "rook":
@@ -409,8 +407,8 @@ func TestRayCastFromConfig(t *testing.T) {
 						bit := BitBoard(1) << sq
 						if diff&bit != 0 {
 							coord := CoordsFromShift(sq)
-							file := coord.row // Note: swapped
-							rank := coord.col
+							file := coord.file
+							rank := coord.rank
 							fileChar := COLUMNS[file]
 							rankNum := rank + 1
 							inResult := result&bit != 0

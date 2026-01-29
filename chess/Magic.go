@@ -11,7 +11,7 @@ var KNIGHT_ATTACKS []BitBoard
 var KING_ATTACKS []BitBoard
 
 // pawns are split up into attacks and move's
-// Black and white pecies are split up due to the fact that they are different for pawns.
+// Black and white pieces are split up due to the fact that they are different for pawns.
 var (
 	WHITE_PAWN_ATTACKS []BitBoard
 	WHITE_PAWN_MOVES   []BitBoard
@@ -19,20 +19,24 @@ var (
 	BLACK_PAWN_MOVES   []BitBoard
 )
 
-// sliding piececs
+// sliding pieces
 var (
-	ROOK_MAGIC     []MagicEntry //magic numbers
-	BISHOP_MAGIC   []MagicEntry
-	ROOK_ATTTACKS  [][]BitBoard
+	ROOK_MAGIC   []MagicEntry //magic numbers
+	BISHOP_MAGIC []MagicEntry
+	ROOK_ATTACKS [][]BitBoard
 	BISHOP_ATTACKS [][]BitBoard
 )
 
+// MagicEntry holds the magic bitboard data for a single square.
+// Used for efficiently computing sliding piece attacks (rook/bishop).
 type MagicEntry struct {
-	Mask  BitBoard
-	Magic uint64
-	Index Shift
+	Mask  BitBoard // Relevant occupancy mask for this square
+	Magic uint64   // Magic number for perfect hashing
+	Index Shift    // Number of bits in the hash index
 }
 
+// Ray represents an array of direction vectors for raycasting.
+// Each direction is a [2]int: [rank_delta, file_delta]
 // array of vector that tell in which directions for the Ray caster to cast
 type Ray [4][2]int
 
@@ -41,6 +45,9 @@ var (
 	BISHOP_RAY = Ray{{1, 1}, {-1, -1}, {1, -1}, {-1, 1}}
 )
 
+// MagicIndex computes the hash index for a magic bitboard lookup.
+// It masks the occupied squares, multiplies by the magic number,
+// and shifts to produce an index into the attack table.
 func MagicIndex(entry MagicEntry, board BitBoard) uint64 {
 	blockers := board & entry.Mask
 	hash := uint64(blockers) * entry.Magic
@@ -48,28 +55,48 @@ func MagicIndex(entry MagicEntry, board BitBoard) uint64 {
 	return index
 }
 
+// GetRookAttack returns the attack bitboard for a rook at the given location.
+// Uses magic bitboard technique for O(1) lookup.
+// Parameters:
+//   - loc: Square position of the rook (0-63)
+//   - board: BitBoard representing all occupied squares
+// Returns: BitBoard with all squares the rook can attack
 func GetRookAttack(loc Shift, board BitBoard) BitBoard {
 	magic := ROOK_MAGIC[loc]
 	idx := MagicIndex(magic, board)
-	return ROOK_ATTTACKS[loc][idx]
+	return ROOK_ATTACKS[loc][idx]
 }
 
+// GetBishopAttack returns the attack bitboard for a bishop at the given location.
+// Uses magic bitboard technique for O(1) lookup.
+// Parameters:
+//   - loc: Square position of the bishop (0-63)
+//   - board: BitBoard representing all occupied squares
+// Returns: BitBoard with all squares the bishop can attack
 func GetBishopAttack(loc Shift, board BitBoard) BitBoard {
 	magic := BISHOP_MAGIC[loc]
 	idx := MagicIndex(magic, board)
 	return BISHOP_ATTACKS[loc][idx]
 }
 
+// GetRookMask returns the relevant occupancy mask for a rook at the given coordinates.
+// The mask includes all squares on the same rank and file as the rook.
 func GetRookMask(coord Coordinates) BitBoard {
-	row, col := coord.col, coord.row
-	return (COLUMN_MASK << col) | (ROW_MASK << row * 8)
+	rank, file := coord.rank, coord.file
+	return (COLUMN_MASK << file) | (ROW_MASK << rank*8)
 }
 
+// GetBishopMask returns the relevant occupancy mask for a bishop at the given coordinates.
+// The mask includes all squares on the diagonals passing through the bishop's position.
+// TODO: Implementation needed - currently returns 0
 func GetBishopMask(coord Coordinates) BitBoard {
 	//TODO: not done
 	return 0
 }
 
+// FindMagic searches for a valid magic number and attack table for a rook at the given coordinates.
+// This is a brute-force search that tests random magic numbers until one works.
+// Returns the precomputed attack table for all possible blocker configurations.
 func FindMagic(coord Coordinates) []BitBoard {
 	mask := GetRookMask(coord)
 	shift := ShiftFromCoords(coord)
@@ -84,6 +111,14 @@ func FindMagic(coord Coordinates) []BitBoard {
 	}
 }
 
+// TryRookMagic attempts to build an attack table using the given magic number.
+// It iterates through all possible blocker configurations and uses the magic number
+// to hash them into the attack table. If any collisions occur with different attack
+// patterns, the magic number is invalid.
+// Parameters:
+//   - loc: Square position of the rook (0-63)
+//   - magic: MagicEntry containing the magic number and mask to test
+// Returns: The attack table if successful, or an error if the magic number causes collisions
 func TryRookMagic(loc Shift, magic MagicEntry) ([]BitBoard, error) {
 	table := make([]BitBoard, 1<<(64-magic.Index)) //TODO: this need to be check to see if its correct
 	var blockers BitBoard = 0
@@ -113,34 +148,32 @@ func TryRookMagic(loc Shift, magic MagicEntry) ([]BitBoard, error) {
 //   - initial: The starting position on the board (0-63)
 //   - blockers: BitBoard of occupied squares that block movement
 //   - mask: BitBoard mask limiting valid squares for this piece type
-//   - r: Array of direction vectors [row_delta, col_delta] to cast rays in
+//   - r: Array of direction vectors [rank_delta, file_delta] to cast rays in
 // Returns: BitBoard with all valid destination squares
 func RayCast(initial Shift, blockers BitBoard, mask BitBoard, r Ray) BitBoard {
 	var result BitBoard = 0
 	coord := CoordsFromShift(initial)
-	// Note: The Coordinates struct has swapped field names!
-	// coord.col actually contains the rank, coord.row contains the file
-	row, col := coord.col, coord.row // Swap to get correct values
+	rank, file := coord.rank, coord.file
 	
 	// Cast a ray in each direction
 	for _, dir := range r {
-		rowDelta := dir[0]
-		colDelta := dir[1]
+		rankDelta := dir[0]
+		fileDelta := dir[1]
 		
 		// Skip directions with no movement (would cause infinite loop)
-		if rowDelta == 0 && colDelta == 0 {
+		if rankDelta == 0 && fileDelta == 0 {
 			continue
 		}
 		
 		// Start from the initial position and move in the direction
-		currentRow := int(row) + rowDelta
-		currentCol := int(col) + colDelta
+		currentRank := int(rank) + rankDelta
+		currentFile := int(file) + fileDelta
 		
 		// Continue casting the ray until we hit a blocker or edge
-		for currentRow >= 0 && currentRow < 8 && currentCol >= 0 && currentCol < 8 {
+		for currentRank >= 0 && currentRank < 8 && currentFile >= 0 && currentFile < 8 {
 			// Calculate the shift for this square
-			// shift = col (file) + row (rank) * 8
-			square := Shift(currentCol + currentRow*8)
+			// shift = file + rank * 8
+			square := Shift(currentFile + currentRank*8)
 			squareBit := BitBoard(1) << square
 			
 			// Check if this square is within the mask
@@ -155,14 +188,18 @@ func RayCast(initial Shift, blockers BitBoard, mask BitBoard, r Ray) BitBoard {
 			}
 			
 			// Move to the next square in this direction
-			currentRow += rowDelta
-			currentCol += colDelta
+			currentRank += rankDelta
+			currentFile += fileDelta
 		}
 	}
 	
 	return result
 }
 
+// BuildAllAttacks initializes all pre-computed attack tables.
+// Call this once at program startup to load attack data from CSV files.
+// Currently loads: Knight, King, and Pawn attacks.
+// TODO: Add BuildRookAttacks(), BuildBishopAttacks(), BuildQueenAttacks()
 func BuildAllAttacks() {
 	BuildKnightAttacks()
 	BuildKingAttacks()
@@ -173,16 +210,22 @@ func BuildAllAttacks() {
 	//BuildQueenAttacks()
 }
 
+// BuildKnightAttacks loads the pre-computed knight attack table from CSV.
+// The table contains attack bitboards for all 64 squares.
 func BuildKnightAttacks() {
 	file_name := "data/knight_attacks.csv"
 	KNIGHT_ATTACKS = LoadAttacks(file_name)
 }
 
+// BuildKingAttacks loads the pre-computed king attack table from CSV.
+// The table contains attack bitboards for all 64 squares.
 func BuildKingAttacks() {
 	file_name := "data/king_attacks.csv"
 	KING_ATTACKS = LoadAttacks(file_name)
 }
 
+// BuildPawnMoves loads the pre-computed pawn movement tables from CSV.
+// Separate tables for white and black pawns since they move in opposite directions.
 func BuildPawnMoves() {
 	file_name := "data/white_pawn_move.csv"
 	WHITE_PAWN_MOVES = LoadAttacks(file_name)
@@ -190,6 +233,8 @@ func BuildPawnMoves() {
 	BLACK_PAWN_MOVES = LoadAttacks(file_name)
 }
 
+// BuildPawnAttacks loads the pre-computed pawn attack tables from CSV.
+// Separate tables for white and black pawns since they attack diagonally in opposite directions.
 func BuildPawnAttacks() {
 	file_name := "data/white_pawn_attacks.csv"
 	WHITE_PAWN_ATTACKS = LoadAttacks(file_name)
