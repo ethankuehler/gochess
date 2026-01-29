@@ -422,6 +422,115 @@ func TestRayCastFromConfig(t *testing.T) {
 	}
 }
 
+// TestAttacksFromFEN tests attack generation from real FEN positions
+// This validates that the attack generation works correctly in realistic game scenarios
+func TestAttacksFromFEN(t *testing.T) {
+	// Initialize all attack tables
+	BuildAllAttacks()
+	
+	file, err := os.Open("data/attack_tests.csv")
+	if err != nil {
+		t.Fatalf("Failed to open attack_tests.csv: %v", err)
+	}
+	defer file.Close()
+	
+	reader := csv.NewReader(file)
+	reader.Comment = '#' // Allow comments in CSV
+	records, err := reader.ReadAll()
+	if err != nil {
+		t.Fatalf("Failed to read CSV: %v", err)
+	}
+	
+	// Skip header row
+	for i, record := range records[1:] {
+		if len(record) != 5 {
+			t.Logf("Test %d: Skipping invalid record format, expected 5 fields, got %d", i, len(record))
+			continue
+		}
+		
+		name := strings.TrimSpace(record[0])
+		fenPosition := strings.TrimSpace(record[1])
+		pieceType := strings.TrimSpace(record[2])
+		pieceSquare := strings.TrimSpace(record[3])
+		expectedSquaresStr := strings.TrimSpace(record[4])
+		
+		// Skip empty test names
+		if name == "" {
+			continue
+		}
+		
+		t.Run(name, func(t *testing.T) {
+			// Parse FEN to get board state
+			board, err := NewBoardFEN(fenPosition)
+			if err != nil {
+				t.Fatalf("Failed to parse FEN %s: %v", fenPosition, err)
+			}
+			
+			// Parse piece square
+			square, err := ShiftFromAlg(pieceSquare)
+			if err != nil {
+				t.Fatalf("Invalid piece square %s: %v", pieceSquare, err)
+			}
+			
+			// Get occupied squares
+			occupied := board.Occupied(BOTH)
+			
+			// Generate attacks based on piece type
+			var attacks BitBoard
+			switch strings.ToLower(pieceType) {
+			case "rook":
+				attacks = GetRookAttack(square, occupied)
+			case "bishop":
+				attacks = GetBishopAttack(square, occupied)
+			case "queen":
+				attacks = GetQueenAttack(square, occupied)
+			case "knight":
+				attacks = KNIGHT_ATTACKS[square]
+			case "king":
+				attacks = KING_ATTACKS[square]
+			case "white_pawn":
+				attacks = WHITE_PAWN_ATTACKS[square]
+			case "black_pawn":
+				attacks = BLACK_PAWN_ATTACKS[square]
+			default:
+				t.Fatalf("Unknown piece type: %s", pieceType)
+			}
+			
+			// Parse expected squares
+			expected, err := parseExpectedSquares(expectedSquaresStr)
+			if err != nil {
+				t.Fatalf("Failed to parse expected squares: %v", err)
+			}
+			
+			// Compare result with expected
+			if attacks != expected {
+				t.Errorf("Attack generation failed:\n  FEN: %s\n  Piece: %s at %s", fenPosition, pieceType, pieceSquare)
+				t.Errorf("  Got:      %064b", attacks)
+				t.Errorf("  Expected: %064b", expected)
+				
+				// Show which squares differ for debugging
+				diff := attacks ^ expected
+				if diff != 0 {
+					t.Logf("Difference in squares:")
+					for sq := Shift(0); sq < 64; sq++ {
+						bit := BitBoard(1) << sq
+						if diff&bit != 0 {
+							coord := CoordsFromShift(sq)
+							file := coord.file
+							rank := coord.rank
+							fileChar := COLUMNS[file]
+							rankNum := rank + 1
+							inResult := attacks&bit != 0
+							inExpected := expected&bit != 0
+							t.Logf("  Square %c%d (shift %d): result=%v expected=%v", fileChar, rankNum, sq, inResult, inExpected)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
 // TestGetBishopMask tests the GetBishopMask function for various squares
 func TestGetBishopMask(t *testing.T) {
 	tests := []struct {
