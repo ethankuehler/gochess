@@ -905,3 +905,120 @@ func TestBuildAllAttacks(t *testing.T) {
 		t.Error("BISHOP_ATTACKS not initialized")
 	}
 }
+
+// TestBuildAllAttacksWithOption tests that BuildAllAttacksWithOption works correctly
+func TestBuildAllAttacksWithOption(t *testing.T) {
+	// Test with autoGenerate=false (should work with existing CSV files)
+	BuildAllAttacksWithOption(false)
+	
+	// Verify all attack tables are initialized
+	if KNIGHT_ATTACKS == nil {
+		t.Error("KNIGHT_ATTACKS not initialized")
+	}
+	
+	if KING_ATTACKS == nil {
+		t.Error("KING_ATTACKS not initialized")
+	}
+	
+	if WHITE_PAWN_ATTACKS == nil {
+		t.Error("WHITE_PAWN_ATTACKS not initialized")
+	}
+	
+	if BLACK_PAWN_ATTACKS == nil {
+		t.Error("BLACK_PAWN_ATTACKS not initialized")
+	}
+	
+	if ROOK_MAGIC == nil {
+		t.Error("ROOK_MAGIC not initialized")
+	}
+	
+	if ROOK_ATTACKS == nil {
+		t.Error("ROOK_ATTACKS not initialized")
+	}
+	
+	if BISHOP_MAGIC == nil {
+		t.Error("BISHOP_MAGIC not initialized")
+	}
+	
+	if BISHOP_ATTACKS == nil {
+		t.Error("BISHOP_ATTACKS not initialized")
+	}
+	
+	// Verify the attacks work correctly
+	square := Shift(27) // d4
+	board := BitBoard(0)
+	
+	// Test rook attack
+	rookAttacks := GetRookAttack(square, board)
+	if rookAttacks == 0 {
+		t.Error("Rook attacks should not be zero")
+	}
+	
+	// Test bishop attack
+	bishopAttacks := GetBishopAttack(square, board)
+	if bishopAttacks == 0 {
+		t.Error("Bishop attacks should not be zero")
+	}
+}
+
+// TestBuildRookAttacksWithOption tests rook attacks with option parameter
+func TestBuildRookAttacksWithOption(t *testing.T) {
+	// Test with autoGenerate=false (should load from existing CSV)
+	BuildRookAttacksWithOption(false)
+	
+	if ROOK_MAGIC == nil {
+		t.Fatal("ROOK_MAGIC is nil")
+	}
+	
+	if len(ROOK_MAGIC) != 64 {
+		t.Fatalf("ROOK_MAGIC should have 64 entries, got %d", len(ROOK_MAGIC))
+	}
+	
+	if ROOK_ATTACKS == nil {
+		t.Fatal("ROOK_ATTACKS is nil")
+	}
+	
+	if len(ROOK_ATTACKS) != 64 {
+		t.Fatalf("ROOK_ATTACKS should have 64 entries, got %d", len(ROOK_ATTACKS))
+	}
+	
+	// Verify attacks work correctly
+	square := Shift(27) // d4
+	board := BitBoard(0)
+	attacks := GetRookAttack(square, board)
+	
+	if attacks == 0 {
+		t.Error("Rook attacks should not be zero for d4 with no blockers")
+	}
+}
+
+// TestBuildBishopAttacksWithOption tests bishop attacks with option parameter
+func TestBuildBishopAttacksWithOption(t *testing.T) {
+	// Test with autoGenerate=false (should load from existing CSV)
+	BuildBishopAttacksWithOption(false)
+	
+	if BISHOP_MAGIC == nil {
+		t.Fatal("BISHOP_MAGIC is nil")
+	}
+	
+	if len(BISHOP_MAGIC) != 64 {
+		t.Fatalf("BISHOP_MAGIC should have 64 entries, got %d", len(BISHOP_MAGIC))
+	}
+	
+	if BISHOP_ATTACKS == nil {
+		t.Fatal("BISHOP_ATTACKS is nil")
+	}
+	
+	if len(BISHOP_ATTACKS) != 64 {
+		t.Fatalf("BISHOP_ATTACKS should have 64 entries, got %d", len(BISHOP_ATTACKS))
+	}
+	
+	// Verify attacks work correctly
+	square := Shift(27) // d4
+	board := BitBoard(0)
+	attacks := GetBishopAttack(square, board)
+	
+	if attacks == 0 {
+		t.Error("Bishop attacks should not be zero for d4 with no blockers")
+	}
+}

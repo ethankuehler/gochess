@@ -2,7 +2,9 @@ package chess
 
 import (
 	"errors"
+	"fmt"
 	"math/rand/v2"
+	"os"
 )
 
 // there are only 64 knight moves on a chess board
@@ -236,12 +238,18 @@ func RayCast(initial Shift, blockers BitBoard, mask BitBoard, r Ray) BitBoard {
 // Call this once at program startup to load attack data from CSV files.
 // Loads: Knight, King, Pawn attacks, and generates Rook and Bishop attacks using magic bitboards.
 func BuildAllAttacks() {
+	BuildAllAttacksWithOption(false)
+}
+
+// BuildAllAttacksWithOption initializes all pre-computed attack tables with generation option.
+// If autoGenerate is true, missing magic number CSV files will be generated automatically.
+func BuildAllAttacksWithOption(autoGenerate bool) {
 	BuildKnightAttacks()
 	BuildKingAttacks()
 	BuildPawnMoves()
 	BuildPawnAttacks()
-	BuildRookAttacks()
-	BuildBishopAttacks()
+	BuildRookAttacksWithOption(autoGenerate)
+	BuildBishopAttacksWithOption(autoGenerate)
 }
 
 // BuildKnightAttacks loads the pre-computed knight attack table from CSV.
@@ -278,11 +286,34 @@ func BuildPawnAttacks() {
 
 // BuildRookAttacks loads the magic numbers and generates the attack lookup tables for rooks.
 // This function initializes the ROOK_MAGIC and ROOK_ATTACKS global variables.
+// It will panic if the CSV file doesn't exist. For auto-generation support, use BuildRookAttacksWithOption(true).
 func BuildRookAttacks() {
-	// Load magic numbers from CSV
+	BuildRookAttacksWithOption(false)
+}
+
+// BuildRookAttacksWithOption loads or generates rook magic numbers based on options.
+// If autoGenerate is true and the CSV file doesn't exist, it will generate and save magic numbers.
+func BuildRookAttacksWithOption(autoGenerate bool) {
+	// Try to load magic numbers from CSV
 	magics, err := LoadMagicsFromCSV("data/rook_magic.csv")
 	if err != nil {
-		panic("Failed to load rook magic numbers: " + err.Error())
+		// Only auto-generate if the file doesn't exist
+		// For other errors (permissions, corrupt data), fail immediately
+		if autoGenerate && os.IsNotExist(err) {
+			// Generate magic numbers if they don't exist
+			magics = GenerateRookMagics()
+			// Validate generated magics
+			if magics == nil || len(magics) != 64 {
+				panic("Failed to generate valid rook magic numbers")
+			}
+			// Try to save them for future use
+			if saveErr := SaveRookMagicsToCSV(magics, "data/rook_magic.csv"); saveErr != nil {
+				// Log warning but continue - generation succeeded
+				fmt.Fprintf(os.Stderr, "Warning: Failed to save rook magic numbers: %v\n", saveErr)
+			}
+		} else {
+			panic("Failed to load rook magic numbers: " + err.Error())
+		}
 	}
 	
 	// Initialize arrays
@@ -320,11 +351,34 @@ func BuildRookAttacks() {
 
 // BuildBishopAttacks loads the magic numbers and generates the attack lookup tables for bishops.
 // This function initializes the BISHOP_MAGIC and BISHOP_ATTACKS global variables.
+// It will panic if the CSV file doesn't exist. For auto-generation support, use BuildBishopAttacksWithOption(true).
 func BuildBishopAttacks() {
-	// Load magic numbers from CSV
+	BuildBishopAttacksWithOption(false)
+}
+
+// BuildBishopAttacksWithOption loads or generates bishop magic numbers based on options.
+// If autoGenerate is true and the CSV file doesn't exist, it will generate and save magic numbers.
+func BuildBishopAttacksWithOption(autoGenerate bool) {
+	// Try to load magic numbers from CSV
 	magics, err := LoadMagicsFromCSV("data/bishop_magic.csv")
 	if err != nil {
-		panic("Failed to load bishop magic numbers: " + err.Error())
+		// Only auto-generate if the file doesn't exist
+		// For other errors (permissions, corrupt data), fail immediately
+		if autoGenerate && os.IsNotExist(err) {
+			// Generate magic numbers if they don't exist
+			magics = GenerateBishopMagics()
+			// Validate generated magics
+			if magics == nil || len(magics) != 64 {
+				panic("Failed to generate valid bishop magic numbers")
+			}
+			// Try to save them for future use
+			if saveErr := SaveBishopMagicsToCSV(magics, "data/bishop_magic.csv"); saveErr != nil {
+				// Log warning but continue - generation succeeded
+				fmt.Fprintf(os.Stderr, "Warning: Failed to save bishop magic numbers: %v\n", saveErr)
+			}
+		} else {
+			panic("Failed to load bishop magic numbers: " + err.Error())
+		}
 	}
 	
 	// Initialize arrays
