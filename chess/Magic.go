@@ -284,7 +284,7 @@ func BuildPawnAttacks() {
 
 // BuildRookAttacks loads the magic numbers and generates the attack lookup tables for rooks.
 // This function initializes the ROOK_MAGIC and ROOK_ATTACKS global variables.
-// If autoGenerate is true and the CSV file doesn't exist, it will generate magic numbers automatically.
+// It will panic if the CSV file doesn't exist. For auto-generation support, use BuildRookAttacksWithOption(true).
 func BuildRookAttacks() {
 	BuildRookAttacksWithOption(false)
 }
@@ -298,6 +298,10 @@ func BuildRookAttacksWithOption(autoGenerate bool) {
 		if autoGenerate {
 			// Generate magic numbers if they don't exist
 			magics = GenerateRookMagics()
+			// Validate generated magics
+			if magics == nil || len(magics) != 64 {
+				panic("Failed to generate valid rook magic numbers")
+			}
 			// Try to save them for future use
 			if saveErr := SaveRookMagicsToCSV(magics, "data/rook_magic.csv"); saveErr != nil {
 				// Log warning but continue - generation succeeded
@@ -343,7 +347,7 @@ func BuildRookAttacksWithOption(autoGenerate bool) {
 
 // BuildBishopAttacks loads the magic numbers and generates the attack lookup tables for bishops.
 // This function initializes the BISHOP_MAGIC and BISHOP_ATTACKS global variables.
-// If autoGenerate is true and the CSV file doesn't exist, it will generate magic numbers automatically.
+// It will panic if the CSV file doesn't exist. For auto-generation support, use BuildBishopAttacksWithOption(true).
 func BuildBishopAttacks() {
 	BuildBishopAttacksWithOption(false)
 }
@@ -357,6 +361,10 @@ func BuildBishopAttacksWithOption(autoGenerate bool) {
 		if autoGenerate {
 			// Generate magic numbers if they don't exist
 			magics = GenerateBishopMagics()
+			// Validate generated magics
+			if magics == nil || len(magics) != 64 {
+				panic("Failed to generate valid bishop magic numbers")
+			}
 			// Try to save them for future use
 			if saveErr := SaveBishopMagicsToCSV(magics, "data/bishop_magic.csv"); saveErr != nil {
 				// Log warning but continue - generation succeeded
