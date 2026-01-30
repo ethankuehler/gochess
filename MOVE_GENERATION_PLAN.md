@@ -64,52 +64,127 @@ This document outlines the work needed to complete the chess move generation sys
   - Reads 64-entry attack tables efficiently
   - Error handling for file I/O and data validation
 
-### 🚧 In Progress / Incomplete Components
+### ✅ Completed Components (Updated)
 
-#### 1. Rook Move Generation
-- **Status**: PARTIAL - Infrastructure exists, needs completion
+#### 1. Knight Moves
+- **Status**: COMPLETE
+- **Implementation**: Pre-computed attack table loaded from CSV
+- **File**: `data/knight_attacks.csv` (64 entries)
+- **Function**: `BuildKnightAttacks()` in `Magic.go`
+- **Global Variable**: `KNIGHT_ATTACKS []BitBoard`
+- **Details**: Knights have fixed L-shaped move patterns that don't depend on board occupancy, making them ideal for simple lookup tables.
+
+#### 2. King Moves
+- **Status**: COMPLETE
+- **Implementation**: Pre-computed attack table loaded from CSV
+- **File**: `data/king_attacks.csv` (64 entries)
+- **Function**: `BuildKingAttacks()` in `Magic.go`
+- **Global Variable**: `KING_ATTACKS []BitBoard`
+- **Details**: Kings move one square in any direction. Like knights, these patterns are constant regardless of board occupancy.
+
+#### 3. Pawn Moves
+- **Status**: COMPLETE
+- **Implementation**: Pre-computed tables for both colors (forward movement)
+- **Files**: 
+  - `data/white_pawn_move.csv` (64 entries)
+  - `data/black_pawn_move.csv` (64 entries)
+- **Function**: `BuildPawnMoves()` in `Magic.go`
+- **Global Variables**: 
+  - `WHITE_PAWN_MOVES []BitBoard`
+  - `BLACK_PAWN_MOVES []BitBoard`
+- **Details**: Pawns have directional movement (white moves up, black moves down). Tables include single and double-step moves from starting positions.
+
+#### 4. Pawn Attacks
+- **Status**: COMPLETE
+- **Implementation**: Pre-computed tables for both colors (diagonal captures)
+- **Files**:
+  - `data/white_pawn_attacks.csv` (64 entries)
+  - `data/black_pawn_attacks.csv` (64 entries)
+- **Function**: `BuildPawnAttacks()` in `Magic.go`
+- **Global Variables**:
+  - `WHITE_PAWN_ATTACKS []BitBoard`
+  - `BLACK_PAWN_ATTACKS []BitBoard`
+- **Details**: Pawn captures are diagonal and directional, different from forward movement.
+
+#### 5. Rook Move Generation
+- **Status**: ✅ COMPLETE (with flexible loading options)
 - **Current State**:
-  - ✅ `GetRookAttack()` function defined and commented
+  - ✅ `GetRookAttack()` function implemented and tested
   - ✅ `GetRookMask()` function implemented
+  - ✅ `BuildRookAttacks()` function implemented
+  - ✅ `BuildRookAttacksWithOption()` function with auto-generation support
+  - ✅ `GenerateRookMagics()` function in `generate_magics.go`
   - ✅ `TryRookMagic()` function implemented (validates magic numbers)
   - ✅ `FindMagic()` function implemented (searches for valid magic numbers)
   - ✅ `ROOK_RAY` directions defined: `{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}`
   - ✅ RayCast works correctly for rook movement patterns (tested)
-  - ❌ `BuildRookAttacks()` function NOT implemented
-  - ❌ Magic numbers NOT generated/loaded
-  - ❌ Attack tables NOT populated
-  - ❌ CSV data file does NOT exist
+  - ✅ Magic numbers generated and loaded from CSV
+  - ✅ Attack tables populated
+  - ✅ CSV data file exists: `data/rook_magic.csv`
+  - ✅ Command-line tool for regenerating magics: `cmd/generate_magic/main.go`
   
-- **Global Variables Declared**:
-  - `ROOK_MAGIC []MagicEntry` (empty)
-  - `ROOK_ATTACKS [][]BitBoard` (empty)
+- **Global Variables**:
+  - `ROOK_MAGIC []MagicEntry` (loaded from CSV or generated)
+  - `ROOK_ATTACKS [][]BitBoard` (populated at runtime)
 
-#### 2. Bishop Move Generation
-- **Status**: PARTIAL - Infrastructure exists, needs completion
+- **Loading Options**:
+  - `BuildRookAttacks()` - Loads from CSV, panics if file doesn't exist
+  - `BuildRookAttacksWithOption(true)` - Auto-generates and saves if CSV doesn't exist
+  - `cmd/generate_magic` - CLI tool to regenerate magic numbers
+
+#### 6. Bishop Move Generation
+- **Status**: ✅ COMPLETE (with flexible loading options)
 - **Current State**:
-  - ✅ `GetBishopAttack()` function defined and commented
+  - ✅ `GetBishopAttack()` function implemented and tested
+  - ✅ `GetBishopMask()` function implemented
+  - ✅ `BuildBishopAttacks()` function implemented
+  - ✅ `BuildBishopAttacksWithOption()` function with auto-generation support
+  - ✅ `GenerateBishopMagics()` function in `generate_magics.go`
   - ✅ `BISHOP_RAY` directions defined: `{{1, 1}, {-1, -1}, {1, -1}, {-1, 1}}`
   - ✅ RayCast works correctly for bishop movement patterns (tested)
-  - ⚠️ `GetBishopMask()` function declared but returns 0 (TODO comment present)
-  - ❌ `BuildBishopAttacks()` function NOT implemented
-  - ❌ Magic numbers NOT generated/loaded
-  - ❌ Attack tables NOT populated
-  - ❌ CSV data file does NOT exist
+  - ✅ Magic numbers generated and loaded from CSV
+  - ✅ Attack tables populated
+  - ✅ CSV data file exists: `data/bishop_magic.csv`
+  - ✅ Command-line tool for regenerating magics: `cmd/generate_magic/main.go`
 
-- **Global Variables Declared**:
-  - `BISHOP_MAGIC []MagicEntry` (empty)
-  - `BISHOP_ATTACKS [][]BitBoard` (empty)
+- **Global Variables**:
+  - `BISHOP_MAGIC []MagicEntry` (loaded from CSV or generated)
+  - `BISHOP_ATTACKS [][]BitBoard` (populated at runtime)
 
-#### 3. Queen Move Generation
-- **Status**: NOT STARTED
+- **Loading Options**:
+  - `BuildBishopAttacks()` - Loads from CSV, panics if file doesn't exist
+  - `BuildBishopAttacksWithOption(true)` - Auto-generates and saves if CSV doesn't exist
+  - `cmd/generate_magic` - CLI tool to regenerate magic numbers
+
+#### 7. Queen Move Generation
+- **Status**: ✅ COMPLETE
 - **Current State**:
-  - ❌ No functions defined
-  - ❌ No global variables declared
-  - ❌ No Ray directions defined (should combine rook + bishop rays)
-  - ❌ `BuildQueenAttacks()` function NOT implemented
-  - ❌ CSV data file does NOT exist
+  - ✅ `GetQueenAttack()` function implemented
+  - ✅ Combines rook and bishop attacks: `GetRookAttack() | GetBishopAttack()`
+  - ✅ Tested and working correctly
+  - ❌ No separate CSV needed (leverages rook + bishop tables)
+  
+- **Details**: Queens move like rooks and bishops combined. The implementation efficiently reuses both attack tables without additional storage.
 
-- **Note**: Queens move like rooks and bishops combined, so the implementation can leverage both `GetRookAttack()` and `GetBishopAttack()`.
+#### 8. Supporting Infrastructure
+- **RayCast Function**: COMPLETE
+  - Generates sliding piece attacks by casting rays in specified directions
+  - Handles blockers correctly (includes blocker square, stops beyond it)
+  - Well-tested with comprehensive test suite in `Magic_test.go`
+  - Parameters: starting position, blockers, mask, ray directions
+  
+- **Coordinate System**: FIXED
+  - `Coordinates` struct now uses proper field names: `rank` and `file`
+  - All coordinate conversions working correctly
+  - `CoordsFromShift()` and `ShiftFromCoords()` functions operational
+
+- **CSV Loading**: COMPLETE
+  - `LoadAttacks()` function in `Utils.go` handles CSV parsing
+  - `LoadMagicsFromCSV()` in `generate_magics.go` loads magic numbers
+  - `SaveRookMagicsToCSV()` and `SaveBishopMagicsToCSV()` for persistence
+  - Error handling for file I/O and data validation
+
+### 🚧 Remaining Work
 
 ## Magic Bitboard Technique
 
@@ -158,155 +233,124 @@ ROOK_ATTACKS[square][hash_index] = attack_bitboard
 - **Bishop**: ~40 KB total (fewer relevant squares on diagonals, ~9 bits average)
 - **Queen**: Can reuse rook + bishop tables OR use combined approach
 
-## Implementation Steps
+## Implementation Steps (Completed)
 
-### Phase 1: Bishop Mask Function
-**Priority**: HIGH - Required before Bishop magic generation
+All phases of the magic bitboard implementation have been completed. Here's what was implemented:
 
-1. **Implement `GetBishopMask(coord Coordinates) BitBoard`**
-   - Location: `Magic.go`
-   - Generate diagonal mask for a given square
-   - Include all diagonal squares passing through the position
-   - Typically exclude edge squares for optimization (common in magic bitboard implementations)
-   - Similar to `GetRookMask()` but for diagonals
+### ✅ Phase 1: Bishop Mask Function (COMPLETE)
+The `GetBishopMask(coord Coordinates) BitBoard` function has been implemented in `Magic.go`. It generates diagonal masks for bishops at any square, excluding edge squares for optimization as per standard magic bitboard practice.
 
-   **Algorithm**:
-   ```go
-   func GetBishopMask(coord Coordinates) BitBoard {
-       rank, file := coord.rank, coord.file
-       var mask BitBoard = 0
-       
-       // For each of the 4 diagonal directions
-       for _, dir := range BISHOP_RAY {
-           rankDelta, fileDelta := dir[0], dir[1]
-           r, f := int(rank), int(file)
-           
-           // Move in direction until edge
-           for {
-               r += rankDelta
-               f += fileDelta
-               
-               // Stop at board edges
-               if r < 0 || r >= 8 || f < 0 || f >= 8 {
-                   break
-               }
-               
-               // Add square to mask (optionally exclude edges)
-               square := Shift(f + r*8)
-               mask |= BitBoard(1) << square
-           }
-       }
-       
-       return mask
-   }
-   ```
+### ✅ Phase 2: Magic Number Generation (COMPLETE)
 
-### Phase 2: Generate Magic Numbers
+**Both options have been implemented:**
 
-**Priority**: HIGH - Can be done offline or at runtime
+**Option A: Runtime Generation**
+- `GenerateRookMagics()` in `generate_magics.go` - Generates magic numbers for all 64 rook squares
+- `GenerateBishopMagics()` in `generate_magics.go` - Generates magic numbers for all 64 bishop squares
+- Uses brute-force random search to find valid magic numbers
+- Can be invoked via `BuildRookAttacksWithOption(true)` or `BuildBishopAttacksWithOption(true)`
 
-**Option A: Runtime Generation** (slower startup, no CSV needed)
-1. Create `GenerateRookMagics() []MagicEntry` function
-2. For each square (0-63):
-   - Get occupancy mask using `GetRookMask()`
-   - Count bits in mask to determine table size
-   - Use `FindMagic()` to search for valid magic number
-   - Store in ROOK_MAGIC array
-3. Similarly, create `GenerateBishopMagics() []MagicEntry`
+**Option B: Pre-computed CSV Files** (Recommended for production)
+- CSV files exist and are ready to use:
+  - `data/rook_magic.csv` - Contains 64 magic entries for rooks
+  - `data/bishop_magic.csv` - Contains 64 magic entries for bishops
+- Format: `square,mask,magic,index_bits`
+- Can be loaded via `BuildRookAttacks()` or `BuildBishopAttacks()`
+- Can be regenerated using `cmd/generate_magic/main.go`
 
-**Option B: Pre-compute and Store in CSV** (faster startup, recommended)
-1. Write utility program to generate magic numbers offline
-2. Save to CSV files:
-   - `data/rook_magic.csv`: columns = square, mask, magic_number, index_bits
-   - `data/bishop_magic.csv`: columns = square, mask, magic_number, index_bits
-3. Load at runtime like other attack tables
+### ✅ Phase 3: Attack Table Generation (COMPLETE)
 
-### Phase 3: Generate and Store Attack Tables
+**Implemented Functions:**
+1. `BuildRookAttacks()` - Loads from CSV, panics if missing
+2. `BuildRookAttacksWithOption(autoGenerate bool)` - Flexible loading with optional auto-generation
+3. `BuildBishopAttacks()` - Loads from CSV, panics if missing
+4. `BuildBishopAttacksWithOption(autoGenerate bool)` - Flexible loading with optional auto-generation
+5. `BuildAllAttacks()` - Initializes all attack tables (loads from CSV)
+6. `BuildAllAttacksWithOption(autoGenerate bool)` - Initializes with optional auto-generation
 
-**Priority**: HIGH - Required for move generation
+**How It Works:**
+- Loads magic numbers from CSV files (or generates if autoGenerate=true)
+- For each square, allocates attack table of size 2^(index_bits)
+- Iterates through all possible blocker configurations using the Carry-Rippler trick
+- Computes attacks using RayCast for each configuration
+- Stores attacks in lookup table at index computed by MagicIndex function
 
-1. **Create `BuildRookAttacks()` function**
-   ```go
-   func BuildRookAttacks() {
-       // Initialize arrays
-       ROOK_MAGIC = make([]MagicEntry, 64)
-       ROOK_ATTACKS = make([][]BitBoard, 64)
-       
-       // For each square
-       for square := Shift(0); square < 64; square++ {
-           coord := CoordsFromShift(square)
-           mask := GetRookMask(coord)
-           
-           // Load or generate magic entry
-           magic := loadOrGenerateRookMagic(square, mask)
-           ROOK_MAGIC[square] = magic
-           
-           // Generate all attack patterns for this square
-           tableSize := 1 << magic.Index
-           ROOK_ATTACKS[square] = make([]BitBoard, tableSize)
-           
-           // Iterate through all possible blocker configurations
-           blockers := BitBoard(0)
-           for {
-               // Generate attacks for this blocker configuration
-               attacks := RayCast(square, blockers, mask, ROOK_RAY)
-               
-               // Store in table at hashed index
-               index := MagicIndex(magic, blockers)
-               ROOK_ATTACKS[square][index] = attacks
-               
-               // Next blocker configuration (Carry-Rippler trick)
-               blockers = (blockers - mask) & mask
-               if blockers == 0 {
-                   break
-               }
-           }
-       }
-   }
-   ```
+### ✅ Phase 4: Queen Attacks (COMPLETE)
+The `GetQueenAttack(loc Shift, board BitBoard)` function has been implemented. It efficiently combines rook and bishop attacks: `GetRookAttack(loc, board) | GetBishopAttack(loc, board)`. No separate CSV or magic numbers needed.
 
-2. **Create `BuildBishopAttacks()` function**
-   - Similar to `BuildRookAttacks()` but using bishop functions
-   - Use `GetBishopMask()`, `BISHOP_RAY`, etc.
+## Usage Guide
 
-3. **Update `BuildAllAttacks()`**
-   ```go
-   func BuildAllAttacks() {
-       BuildKnightAttacks()
-       BuildKingAttacks()
-       BuildPawnMoves()
-       BuildPawnAttacks()
-       BuildRookAttacks()    // UNCOMMENT
-       BuildBishopAttacks()  // UNCOMMENT
-       // BuildQueenAttacks() is optional if using rook+bishop combination
-   }
-   ```
-
-### Phase 4: Queen Move Generation
-
-**Priority**: MEDIUM - Can be implemented multiple ways
-
-**Option A: Combine Rook + Bishop** (simplest, no new tables needed)
+### For End Users (Normal Usage)
 ```go
-func GetQueenAttack(loc Shift, board BitBoard) BitBoard {
-    rookAttacks := GetRookAttack(loc, board)
-    bishopAttacks := GetBishopAttack(loc, board)
-    return rookAttacks | bishopAttacks
+import "github.com/ethankuehler/gochess/chess"
+
+func main() {
+    // Load all attack tables from pre-computed CSV files
+    chess.BuildAllAttacks()
+    
+    // Now you can use attack generation
+    occupied := chess.BitBoard(0x1234567890ABCDEF)
+    rookAttacks := chess.GetRookAttack(chess.Shift(27), occupied)   // d4
+    bishopAttacks := chess.GetBishopAttack(chess.Shift(27), occupied)
+    queenAttacks := chess.GetQueenAttack(chess.Shift(27), occupied)
 }
 ```
 
-**Option B: Separate Queen Tables** (uses more memory but simpler lookup)
-- Similar to rook/bishop implementation
-- QUEEN_RAY would be all 8 directions combined
-- Would need separate QUEEN_MAGIC and QUEEN_ATTACKS arrays
+### For Developers (Auto-Generation Option)
+```go
+import "github.com/ethankuehler/gochess/chess"
 
-**Recommendation**: Use Option A (combine rook + bishop) as it:
-- Reuses existing infrastructure
-- Saves memory
-- Simpler to implement and maintain
-- Only slightly slower (one extra bitwise OR operation)
+func main() {
+    // Auto-generate magic numbers if CSV files don't exist
+    // (Slower on first run, but convenient for development)
+    chess.BuildAllAttacksWithOption(true)
+    
+    // Use attack generation normally
+    attacks := chess.GetRookAttack(chess.Shift(0), 0)
+}
+```
 
-### Phase 5: Integration with Move Generation
+### For Regenerating Magic Numbers
+```bash
+# Use the CLI tool to regenerate magic numbers
+cd cmd/generate_magic
+go run main.go
+
+# This will:
+# 1. Generate new magic numbers for rooks and bishops
+# 2. Save them to data/rook_magic.csv and data/bishop_magic.csv
+# 3. Print progress information
+```
+
+## Files
+
+### Core Implementation
+- `chess/Magic.go` - Attack lookup functions, table building, main runtime code
+- `chess/generate_magics.go` - Magic number generation, CSV I/O, validation functions
+- `chess/Const.go` - Constants including ROOK_RAY and BISHOP_RAY definitions
+- `chess/Utils.go` - CSV loading utilities for simple attack tables
+
+### Data Files
+- `data/rook_magic.csv` - Pre-computed rook magic numbers (64 entries)
+- `data/bishop_magic.csv` - Pre-computed bishop magic numbers (64 entries)
+- `data/knight_attacks.csv` - Knight attack patterns
+- `data/king_attacks.csv` - King attack patterns
+- `data/white_pawn_attacks.csv` / `data/black_pawn_attacks.csv` - Pawn attacks
+- `data/white_pawn_move.csv` / `data/black_pawn_move.csv` - Pawn moves
+
+### Tools
+- `cmd/generate_magic/main.go` - CLI tool for generating/regenerating magic numbers
+
+### Tests
+- `chess/Magic_test.go` - Comprehensive test suite including:
+  - RayCast tests with various configurations
+  - Magic number validation
+  - Attack generation verification
+  - FEN-based integration tests
+
+## Next Steps (Future Work)
+
+### Phase 5: Integration with Legal Move Generation
 
 **Priority**: HIGH - Final goal of the system
 
