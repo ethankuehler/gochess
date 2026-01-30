@@ -2,7 +2,9 @@ package chess
 
 import (
 	"errors"
+	"fmt"
 	"math/rand/v2"
+	"os"
 )
 
 // there are only 64 knight moves on a chess board
@@ -295,7 +297,9 @@ func BuildRookAttacksWithOption(autoGenerate bool) {
 	// Try to load magic numbers from CSV
 	magics, err := LoadMagicsFromCSV("data/rook_magic.csv")
 	if err != nil {
-		if autoGenerate {
+		// Only auto-generate if the file doesn't exist
+		// For other errors (permissions, corrupt data), fail immediately
+		if autoGenerate && os.IsNotExist(err) {
 			// Generate magic numbers if they don't exist
 			magics = GenerateRookMagics()
 			// Validate generated magics
@@ -305,7 +309,7 @@ func BuildRookAttacksWithOption(autoGenerate bool) {
 			// Try to save them for future use
 			if saveErr := SaveRookMagicsToCSV(magics, "data/rook_magic.csv"); saveErr != nil {
 				// Log warning but continue - generation succeeded
-				println("Warning: Failed to save rook magic numbers:", saveErr.Error())
+				fmt.Fprintf(os.Stderr, "Warning: Failed to save rook magic numbers: %v\n", saveErr)
 			}
 		} else {
 			panic("Failed to load rook magic numbers: " + err.Error())
@@ -358,7 +362,9 @@ func BuildBishopAttacksWithOption(autoGenerate bool) {
 	// Try to load magic numbers from CSV
 	magics, err := LoadMagicsFromCSV("data/bishop_magic.csv")
 	if err != nil {
-		if autoGenerate {
+		// Only auto-generate if the file doesn't exist
+		// For other errors (permissions, corrupt data), fail immediately
+		if autoGenerate && os.IsNotExist(err) {
 			// Generate magic numbers if they don't exist
 			magics = GenerateBishopMagics()
 			// Validate generated magics
@@ -368,7 +374,7 @@ func BuildBishopAttacksWithOption(autoGenerate bool) {
 			// Try to save them for future use
 			if saveErr := SaveBishopMagicsToCSV(magics, "data/bishop_magic.csv"); saveErr != nil {
 				// Log warning but continue - generation succeeded
-				println("Warning: Failed to save bishop magic numbers:", saveErr.Error())
+				fmt.Fprintf(os.Stderr, "Warning: Failed to save bishop magic numbers: %v\n", saveErr)
 			}
 		} else {
 			panic("Failed to load bishop magic numbers: " + err.Error())
