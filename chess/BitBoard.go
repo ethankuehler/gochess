@@ -20,6 +20,26 @@ type BoardState struct {
 	fullmove_number uint16       //Number of full moves.
 }
 
+func (b BitBoard) String() string {
+	var buffer bytes.Buffer
+	var mask BitBoard = 1 << 63
+
+	for i := range 64 + 8 {
+		if i%9 == 0 {
+			buffer.WriteRune('\n')
+			continue
+		}
+		if b&mask > 0 {
+			buffer.WriteString(" 1 ")
+		} else {
+			buffer.WriteString(" . ")
+		}
+		mask = mask >> 1
+	}
+
+	return buffer.String()
+}
+
 // New BitBoard with starting setup
 func NewBoardDefault() *BoardState {
 	b := BoardState{}
