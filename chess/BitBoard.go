@@ -22,7 +22,7 @@ type BoardState struct {
 
 func (b BitBoard) String() string {
 	var buffer bytes.Buffer
-	var mask BitBoard = 1 << 63
+	var mask BitBoard = 1
 
 	for i := range 64 + 8 {
 		if i%9 == 0 {
@@ -34,7 +34,7 @@ func (b BitBoard) String() string {
 		} else {
 			buffer.WriteString(" . ")
 		}
-		mask = mask >> 1
+		mask = mask << 1
 	}
 
 	return buffer.String()

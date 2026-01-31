@@ -121,5 +121,5 @@ var (
 	PICECES_SYM     = []string{"P", "B", "N", "R", "Q", "K", "p", "b", "n", "r", "q", "k"}
 	UNI_PICECES_SYM = []string{"♙", "♗", "♘", "♖", "♕", "♔", "♟", "♝", "♞", "♜", "♛", "♚"}
 	CASTLE_SYM      = []string{"K", "Q", "k", "q"}
-	COLUMNS         = []rune{'h', 'g', 'f', 'e', 'd', 'c', 'b', 'a'}
+	COLUMNS         = []rune{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'}
 )
