@@ -58,11 +58,19 @@ func main() {
 	case "king":
 		moves = chess.KING_ATTACKS[shift]
 	case "pawn":
+		var attacks, forward chess.BitBoard
 		if colour == chess.WHITE {
-			moves = chess.WHITE_PAWN_ATTACKS[shift] | chess.WHITE_PAWN_MOVES[shift]
+			attacks = chess.WHITE_PAWN_ATTACKS[shift]
+			forward = chess.WHITE_PAWN_MOVES[shift]
 		} else {
-			moves = chess.BLACK_PAWN_ATTACKS[shift] | chess.BLACK_PAWN_MOVES[shift]
+			attacks = chess.BLACK_PAWN_ATTACKS[shift]
+			forward = chess.BLACK_PAWN_MOVES[shift]
 		}
+		enemy := chess.WHITE
+		if colour == chess.WHITE {
+			enemy = chess.BLACK
+		}
+		moves = (attacks & board.Occupied(enemy)) | (forward &^ board.Occupied(chess.BOTH))
 	default:
 		log.Fatalf("unsupported piece type: %s", piece)
 	}
