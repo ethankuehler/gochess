@@ -22,7 +22,7 @@ type BoardState struct {
 
 func (b BitBoard) String() string {
 	var buffer bytes.Buffer
-	var mask BitBoard = 1
+	var mask BitBoard = 1 << 63
 
 	for i := range 64 + 8 {
 		if i%9 == 0 {
@@ -34,7 +34,7 @@ func (b BitBoard) String() string {
 		} else {
 			buffer.WriteString(" . ")
 		}
-		mask = mask << 1
+		mask = mask >> 1
 	}
 
 	return buffer.String()
@@ -79,17 +79,21 @@ func NewBoardFEN(FEN string) (*BoardState, error) {
 		return nil, errors.New("invalid FEN")
 	}
 
+	var rows = strings.Split(fields[0], "/")
+	if len(rows) != 8 {
+		return nil, errors.New("invalid FEN, piece placement invalid")
+	}
 	var mask BitBoard = 1 << 63
-	for _, v := range fields[0] {
-		if v == '/' {
-			continue
-		}
-		idx := slices.Index(PICECES_SYM, string(v))
-		if idx != -1 {
-			b.pieces[idx] |= mask
-			mask = mask >> 1
-		} else {
-			mask = mask >> (v - 48)
+	for _, row := range rows {
+		for i := len(row) - 1; i >= 0; i-- {
+			v := row[i]
+			idx := slices.Index(PICECES_SYM, string(v))
+			if idx != -1 {
+				b.pieces[idx] |= mask
+				mask = mask >> 1
+			} else {
+				mask = mask >> (v - 48)
+			}
 		}
 	}
 	if mask != 0 {
@@ -186,11 +190,10 @@ func (b *BoardState) toString(piceces []string) string {
 	//we start at the top right
 	var mask BitBoard = 1 << 63
 
-	for i := range 64 + 8 {
+	for i := range 64 {
 		//insert a newline at the end of every row.
-		if i%9 == 0 {
+		if i%8 == 0 {
 			boardStr += "\n"
-			continue
 		}
 
 		//Now find if there is a piece at the location loc and write it to s which by default is " _ ".

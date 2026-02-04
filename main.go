@@ -15,6 +15,7 @@ func main() {
 		fmt.Println(err)
 	}
 	fmt.Println(b.StringUni())
+	fmt.Println(b.String())
 	fmt.Println(b.FEN())
 
 	// manual testing of various functions
