@@ -187,30 +187,21 @@ func (b *BoardState) InfoString() string {
 
 func (b *BoardState) toString(piceces []string) string {
 	boardStr := ""
-	//we start at the top right
-	var mask BitBoard = 1 << 63
-
-	for i := range 64 {
-		//insert a newline at the end of every row.
-		if i%8 == 0 {
-			boardStr += "\n"
-		}
-
-		//Now find if there is a piece at the location loc and write it to s which by default is " _ ".
-		s := " _ "
-		for k, p := range b.pieces {
-			if mask&p > 0 {
-				s = " " + piceces[k] + " "
-				break
+	for row := 7; row >= 0; row-- {
+		for col := 0; col < 8; col++ {
+			mask := BitBoard(1) << (uint(row*8 + col))
+			s := " _ "
+			for k, p := range b.pieces {
+				if mask&p > 0 {
+					s = " " + piceces[k] + " "
+					break
+				}
 			}
+			boardStr += s
 		}
-		boardStr += s
-
-		mask = mask >> 1
+		boardStr += "\n"
 	}
-
 	boardStr += b.InfoString()
-
 	return boardStr
 }
 
@@ -223,7 +214,7 @@ func (b *BoardState) StringUni() string {
 	return b.toString(UNI_PICECES_SYM)
 }
 
-func (b *BoardState) FEN() string {
+func (b *BoardState) FENOld() string {
 	var buffer bytes.Buffer
 
 	row_count := 0
@@ -264,6 +255,45 @@ func (b *BoardState) FEN() string {
 
 	buffer.WriteString(b.InfoString())
 
+	return buffer.String()
+}
+
+func (b *BoardState) FEN() string {
+	var buffer bytes.Buffer
+
+	for row := 7; row >= 0; row-- {
+		emptyCount := 0
+		for col := 0; col < 8; col++ {
+			mask := BitBoard(1) << (uint(row*8 + col))
+
+			// determins if there is a piece at the location loc
+			found := false
+			for i, v := range b.pieces {
+				if v&mask > 0 {
+					if emptyCount > 0 {
+						buffer.WriteString(strconv.Itoa(emptyCount))
+						emptyCount = 0
+					}
+					buffer.WriteString(PICECES_SYM[i])
+					found = true
+					break
+				}
+			}
+
+			// if no piece is found
+			if !found {
+				emptyCount += 1
+			}
+
+		}
+		if emptyCount != 0 {
+			buffer.WriteString(strconv.Itoa(emptyCount))
+		}
+		if row != 0 {
+			buffer.WriteRune('/')
+		}
+	}
+	buffer.WriteString(b.InfoString())
 	return buffer.String()
 }
 
