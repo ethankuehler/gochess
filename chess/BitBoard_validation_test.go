@@ -434,10 +434,14 @@ func TestDisplayOrder(t *testing.T) {
 
 	// The rook should be on the last board line (rank 1 is at the bottom)
 	// Count non-empty board lines
+	// Board lines contain either empty squares (_) or pieces (like R)
 	boardLineCount := 0
 	lastBoardLineIndex := -1
+	const emptySquareChar = "_"
+	pieceChar := "R"
 	for i, line := range lines {
-		if len(strings.TrimSpace(line)) > 0 && (strings.Contains(line, "_") || strings.Contains(line, "R")) {
+		trimmed := strings.TrimSpace(line)
+		if len(trimmed) > 0 && (strings.Contains(line, emptySquareChar) || strings.Contains(line, pieceChar)) {
 			boardLineCount++
 			lastBoardLineIndex = i
 		}
