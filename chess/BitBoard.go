@@ -22,21 +22,18 @@ type BoardState struct {
 
 func (b BitBoard) String() string {
 	var buffer bytes.Buffer
-	var mask BitBoard = 1 << 63
 
-	for i := range 64 + 8 {
-		if i%9 == 0 {
-			buffer.WriteRune('\n')
-			continue
+	for rank := 7; rank >= 0; rank-- {
+		for file := 0; file < 8; file++ {
+			mask := BitBoard(1) << (rank*8 + file)
+			if b&mask > 0 {
+				buffer.WriteString(" 1 ")
+			} else {
+				buffer.WriteString(" . ")
+			}
 		}
-		if b&mask > 0 {
-			buffer.WriteString(" 1 ")
-		} else {
-			buffer.WriteString(" . ")
-		}
-		mask = mask >> 1
+		buffer.WriteRune('\n')
 	}
-
 	return buffer.String()
 }
 
