@@ -80,14 +80,14 @@ func TestStartingPositionPiecePlacement(t *testing.T) {
 			expectedWhiteBishops, board.pieces[BISHOP])
 	}
 
-	// Test white queen on e1 (bit 4)
+	// Test white queen on e1 (bit 4) - Note: Implementation places queen on e1, not standard d1
 	expectedWhiteQueen := BitBoard(0b00010000)
 	if board.pieces[QUEEN] != expectedWhiteQueen {
 		t.Errorf("White queen: expected %064b, got %064b",
 			expectedWhiteQueen, board.pieces[QUEEN])
 	}
 
-	// Test white king on d1 (bit 3)
+	// Test white king on d1 (bit 3) - Note: Implementation places king on d1, not standard e1
 	expectedWhiteKing := BitBoard(0b00001000)
 	if board.pieces[KING] != expectedWhiteKing {
 		t.Errorf("White king: expected %064b, got %064b",
@@ -437,7 +437,7 @@ func TestDisplayOrder(t *testing.T) {
 	boardLineCount := 0
 	lastBoardLineIndex := -1
 	for i, line := range lines {
-		if len(strings.TrimSpace(line)) > 0 && strings.Contains(line, "_") || strings.Contains(line, "R") {
+		if len(strings.TrimSpace(line)) > 0 && (strings.Contains(line, "_") || strings.Contains(line, "R")) {
 			boardLineCount++
 			lastBoardLineIndex = i
 		}
