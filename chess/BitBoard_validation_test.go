@@ -52,57 +52,75 @@ func TestBitboardCoordinateMapping(t *testing.T) {
 func TestStartingPositionPiecePlacement(t *testing.T) {
 	board := NewBoardDefault()
 
-	// Test white pawns on rank 2 (bits 8-15)
-	expectedWhitePawns := BitBoard(0b1111111100000000)
+	// Test white pawns on rank 2 (a2-h2)
+	var expectedWhitePawns BitBoard = 0
+	for _, file := range []string{"a2", "b2", "c2", "d2", "e2", "f2", "g2", "h2"} {
+		loc, _ := LocFromAlg(file)
+		expectedWhitePawns |= loc
+	}
 	if board.pieces[PAWN] != expectedWhitePawns {
 		t.Errorf("White pawns: expected %064b, got %064b",
 			expectedWhitePawns, board.pieces[PAWN])
 	}
 
-	// Test white rooks on a1 and h1 (bits 0 and 7)
-	expectedWhiteRooks := BitBoard(0b10000001)
+	// Test white rooks on a1 and h1
+	a1, _ := LocFromAlg("a1")
+	h1, _ := LocFromAlg("h1")
+	expectedWhiteRooks := a1 | h1
 	if board.pieces[ROOK] != expectedWhiteRooks {
 		t.Errorf("White rooks: expected %064b, got %064b",
 			expectedWhiteRooks, board.pieces[ROOK])
 	}
 
-	// Test white knights on b1 and g1 (bits 1 and 6)
-	expectedWhiteKnights := BitBoard(0b01000010)
+	// Test white knights on b1 and g1
+	b1, _ := LocFromAlg("b1")
+	g1, _ := LocFromAlg("g1")
+	expectedWhiteKnights := b1 | g1
 	if board.pieces[KNIGHT] != expectedWhiteKnights {
 		t.Errorf("White knights: expected %064b, got %064b",
 			expectedWhiteKnights, board.pieces[KNIGHT])
 	}
 
-	// Test white bishops on c1 and f1 (bits 2 and 5)
-	expectedWhiteBishops := BitBoard(0b00100100)
+	// Test white bishops on c1 and f1
+	c1, _ := LocFromAlg("c1")
+	f1, _ := LocFromAlg("f1")
+	expectedWhiteBishops := c1 | f1
 	if board.pieces[BISHOP] != expectedWhiteBishops {
 		t.Errorf("White bishops: expected %064b, got %064b",
 			expectedWhiteBishops, board.pieces[BISHOP])
 	}
 
-	// Test white queen on d1 (bit 3) - standard chess position
-	expectedWhiteQueen := BitBoard(0b00001000)
+	// Test white queen on d1 - standard chess position
+	d1, _ := LocFromAlg("d1")
+	expectedWhiteQueen := d1
 	if board.pieces[QUEEN] != expectedWhiteQueen {
 		t.Errorf("White queen: expected %064b, got %064b",
 			expectedWhiteQueen, board.pieces[QUEEN])
 	}
 
-	// Test white king on e1 (bit 4) - standard chess position
-	expectedWhiteKing := BitBoard(0b00010000)
+	// Test white king on e1 - standard chess position
+	e1, _ := LocFromAlg("e1")
+	expectedWhiteKing := e1
 	if board.pieces[KING] != expectedWhiteKing {
 		t.Errorf("White king: expected %064b, got %064b",
 			expectedWhiteKing, board.pieces[KING])
 	}
 
-	// Test black pawns on rank 7 (bits 48-55)
-	expectedBlackPawns := BitBoard(0b1111111100000000) << 40
+	// Test black pawns on rank 7 (a7-h7)
+	var expectedBlackPawns BitBoard = 0
+	for _, file := range []string{"a7", "b7", "c7", "d7", "e7", "f7", "g7", "h7"} {
+		loc, _ := LocFromAlg(file)
+		expectedBlackPawns |= loc
+	}
 	if board.pieces[PAWN+BLACK_OFFSET] != expectedBlackPawns {
 		t.Errorf("Black pawns: expected %064b, got %064b",
 			expectedBlackPawns, board.pieces[PAWN+BLACK_OFFSET])
 	}
 
-	// Test black pieces on rank 8 (bits 56-63)
-	expectedBlackRooks := BitBoard(0b10000001) << 56
+	// Test black pieces on rank 8
+	a8, _ := LocFromAlg("a8")
+	h8, _ := LocFromAlg("h8")
+	expectedBlackRooks := a8 | h8
 	if board.pieces[ROOK+BLACK_OFFSET] != expectedBlackRooks {
 		t.Errorf("Black rooks: expected %064b, got %064b",
 			expectedBlackRooks, board.pieces[ROOK+BLACK_OFFSET])
@@ -460,24 +478,24 @@ func TestPawnDirections(t *testing.T) {
 	BuildPawnMoves()
 	BuildPawnAttacks()
 
-	// Test white pawn on e2 (square 12)
-	whitePawnSquare := Shift(12) // e2
+	// Test white pawn on e2
+	whitePawnSquare, _ := ShiftFromAlg("e2")
 	whiteMoves := WHITE_PAWN_MOVES[whitePawnSquare]
 
 	// White pawns should be able to move up (to e3 and e4)
-	e3 := BitBoard(1) << 20 // e3
+	e3, _ := LocFromAlg("e3")
 
 	// Should include at least e3
 	if whiteMoves&e3 == 0 {
 		t.Error("White pawn on e2 should be able to move to e3")
 	}
 
-	// Test black pawn on e7 (square 52)
-	blackPawnSquare := Shift(52) // e7
+	// Test black pawn on e7
+	blackPawnSquare, _ := ShiftFromAlg("e7")
 	blackMoves := BLACK_PAWN_MOVES[blackPawnSquare]
 
 	// Black pawns should be able to move down (to e6 and e5)
-	e6 := BitBoard(1) << 44 // e6
+	e6, _ := LocFromAlg("e6")
 
 	// Should include at least e6
 	if blackMoves&e6 == 0 {
@@ -489,13 +507,13 @@ func TestPawnDirections(t *testing.T) {
 func TestPawnAttacksDiagonal(t *testing.T) {
 	BuildPawnAttacks()
 
-	// Test white pawn on e4 (square 28)
-	whitePawnSquare := Shift(28) // e4
+	// Test white pawn on e4
+	whitePawnSquare, _ := ShiftFromAlg("e4")
 	whiteAttacks := WHITE_PAWN_ATTACKS[whitePawnSquare]
 
-	// Should attack d5 and f5 (squares 35 and 37)
-	d5 := BitBoard(1) << 35
-	f5 := BitBoard(1) << 37
+	// Should attack d5 and f5
+	d5, _ := LocFromAlg("d5")
+	f5, _ := LocFromAlg("f5")
 
 	if whiteAttacks&d5 == 0 {
 		t.Error("White pawn on e4 should attack d5")
@@ -504,13 +522,13 @@ func TestPawnAttacksDiagonal(t *testing.T) {
 		t.Error("White pawn on e4 should attack f5")
 	}
 
-	// Test black pawn on e5 (square 36)
-	blackPawnSquare := Shift(36) // e5
+	// Test black pawn on e5
+	blackPawnSquare, _ := ShiftFromAlg("e5")
 	blackAttacks := BLACK_PAWN_ATTACKS[blackPawnSquare]
 
-	// Should attack d4 and f4 (squares 27 and 29)
-	d4 := BitBoard(1) << 27
-	f4 := BitBoard(1) << 29
+	// Should attack d4 and f4
+	d4, _ := LocFromAlg("d4")
+	f4, _ := LocFromAlg("f4")
 
 	if blackAttacks&d4 == 0 {
 		t.Error("Black pawn on e5 should attack d4")
@@ -524,24 +542,16 @@ func TestPawnAttacksDiagonal(t *testing.T) {
 func TestKnightLShapeAttacks(t *testing.T) {
 	BuildKnightAttacks()
 
-	// Test knight on d4 (square 27)
-	knightSquare := Shift(27) // d4
+	// Test knight on d4
+	knightSquare, _ := ShiftFromAlg("d4")
 	attacks := KNIGHT_ATTACKS[knightSquare]
 
 	// Knight on d4 should attack these squares:
 	// c2, e2, b3, f3, b5, f5, c6, e6
-	expectedSquares := []Shift{
-		10, // c2
-		12, // e2
-		17, // b3
-		21, // f3
-		33, // b5
-		37, // f5
-		42, // c6
-		44, // e6
-	}
+	expectedSquares := []string{"c2", "e2", "b3", "f3", "b5", "f5", "c6", "e6"}
 
-	for _, sq := range expectedSquares {
+	for _, algSquare := range expectedSquares {
+		sq, _ := ShiftFromAlg(algSquare)
 		if attacks&(BitBoard(1)<<sq) == 0 {
 			coord := CoordsFromShift(sq)
 			t.Errorf("Knight on d4 should attack %c%d", COLUMNS[coord.file], coord.rank+1)
@@ -564,24 +574,16 @@ func TestKnightLShapeAttacks(t *testing.T) {
 func TestKingAdjacentSquareAttacks(t *testing.T) {
 	BuildKingAttacks()
 
-	// Test king on d4 (square 27)
-	kingSquare := Shift(27) // d4
+	// Test king on d4
+	kingSquare, _ := ShiftFromAlg("d4")
 	attacks := KING_ATTACKS[kingSquare]
 
 	// King on d4 should attack all 8 adjacent squares:
 	// c3, d3, e3, c4, e4, c5, d5, e5
-	expectedSquares := []Shift{
-		18, // c3
-		19, // d3
-		20, // e3
-		26, // c4
-		28, // e4
-		34, // c5
-		35, // d5
-		36, // e5
-	}
+	expectedSquares := []string{"c3", "d3", "e3", "c4", "e4", "c5", "d5", "e5"}
 
-	for _, sq := range expectedSquares {
+	for _, algSquare := range expectedSquares {
+		sq, _ := ShiftFromAlg(algSquare)
 		if attacks&(BitBoard(1)<<sq) == 0 {
 			coord := CoordsFromShift(sq)
 			t.Errorf("King on d4 should attack %c%d", COLUMNS[coord.file], coord.rank+1)
@@ -600,7 +602,7 @@ func TestKingAdjacentSquareAttacks(t *testing.T) {
 	}
 
 	// Test king in corner (a1) - should have fewer attacks
-	cornerKingSquare := Shift(0) // a1
+	cornerKingSquare, _ := ShiftFromAlg("a1")
 	cornerAttacks := KING_ATTACKS[cornerKingSquare]
 
 	cornerAttackCount := 0
