@@ -48,9 +48,8 @@ func NewBoardDefault() *BoardState {
 	b.pieces[BISHOP] = 0b00100100
 	b.pieces[KNIGHT] = 0b01000010
 	b.pieces[ROOK] = 0b10000001
-	// TODO/FIXME: BUG - Queen and King are swapped! Should be Queen=0b00001000 (d1), King=0b00010000 (e1)
-	b.pieces[QUEEN] = 0b00010000 // WRONG: e1, should be d1 for standard chess
-	b.pieces[KING] = 0b00001000  // WRONG: d1, should be e1 for standard chess
+	b.pieces[QUEEN] = 0b00001000 // d1 (bit 3) - standard chess position
+	b.pieces[KING] = 0b00010000  // e1 (bit 4) - standard chess position
 
 	//copying over the piceces but now for black
 	b.pieces[PAWN+BLACK_OFFSET] = b.pieces[PAWN] << 40

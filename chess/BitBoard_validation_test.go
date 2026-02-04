@@ -5,12 +5,6 @@ import (
 	"testing"
 )
 
-// KNOWN BUG: The current implementation has Queen and King positions swapped from standard chess.
-// Standard chess starting position: Queen on d1, King on e1 (for white)
-// Current implementation (INCORRECT): Queen on e1, King on d1 (for white)
-// This affects BitBoard.go NewBoardDefault() and should be fixed.
-// Tests below validate the CURRENT (incorrect) behavior until the bug is corrected.
-
 // TestBitboardCoordinateMapping validates that bit positions 0-63 map correctly to squares a1-h8
 func TestBitboardCoordinateMapping(t *testing.T) {
 	// Test that square a1 is bit 0
@@ -86,20 +80,15 @@ func TestStartingPositionPiecePlacement(t *testing.T) {
 			expectedWhiteBishops, board.pieces[BISHOP])
 	}
 
-	// TODO/FIXME: BUG - Queen and King positions are swapped from standard chess!
-	// Standard chess: Queen on d1 (bit 3), King on e1 (bit 4)
-	// Current implementation (INCORRECT): Queen on e1 (bit 4), King on d1 (bit 3)
-	// This test validates the CURRENT (incorrect) behavior until the bug is fixed.
-	
-	// Test white queen - currently INCORRECTLY on e1 (bit 4) instead of d1 (bit 3)
-	expectedWhiteQueen := BitBoard(0b00010000) // e1 (bit 4) - WRONG, should be d1
+	// Test white queen on d1 (bit 3) - standard chess position
+	expectedWhiteQueen := BitBoard(0b00001000)
 	if board.pieces[QUEEN] != expectedWhiteQueen {
 		t.Errorf("White queen: expected %064b, got %064b",
 			expectedWhiteQueen, board.pieces[QUEEN])
 	}
 
-	// Test white king - currently INCORRECTLY on d1 (bit 3) instead of e1 (bit 4)
-	expectedWhiteKing := BitBoard(0b00001000) // d1 (bit 3) - WRONG, should be e1
+	// Test white king on e1 (bit 4) - standard chess position
+	expectedWhiteKing := BitBoard(0b00010000)
 	if board.pieces[KING] != expectedWhiteKing {
 		t.Errorf("White king: expected %064b, got %064b",
 			expectedWhiteKing, board.pieces[KING])
