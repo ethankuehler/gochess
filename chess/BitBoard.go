@@ -23,9 +23,9 @@ type BoardState struct {
 func (b BitBoard) String() string {
 	var buffer bytes.Buffer
 
-	for rank := 7; rank >= 0; rank-- {
-		for file := 0; file < 8; file++ {
-			mask := BitBoard(1) << (rank*8 + file)
+	for rank := RANK_FILE_SIZE - 1; rank >= 0; rank-- {
+		for file := 0; file < RANK_FILE_SIZE; file++ {
+			mask := BitBoard(1) << ShiftFromCoords(Coordinates{uint64(file), uint64(rank)})
 			if b&mask > 0 {
 				buffer.WriteString(" 1 ")
 			} else {
@@ -209,50 +209,6 @@ func (b *BoardState) String() string {
 
 func (b *BoardState) StringUni() string {
 	return b.toString(UNI_PICECES_SYM)
-}
-
-func (b *BoardState) FENOld() string {
-	var buffer bytes.Buffer
-
-	row_count := 0
-	count := 0
-	for mask := BitBoard(1) << 63; 0 < mask; mask = mask >> 1 {
-
-		// determins if there is a piece at the location loc
-		found := false
-		for i, v := range b.pieces {
-			if v&mask > 0 {
-				if count > 0 {
-					buffer.WriteString(strconv.Itoa(count))
-					count = 0
-				}
-				buffer.WriteString(PICECES_SYM[i])
-				found = true
-				break
-			}
-		}
-
-		// if no piece is found
-		if !found {
-			count += 1
-		}
-
-		row_count += 1
-		if row_count == 8 {
-			if count != 0 {
-				buffer.WriteString(strconv.Itoa(count))
-				count = 0
-			}
-			if mask != 1 {
-				buffer.WriteRune('/')
-			}
-			row_count = 0
-		}
-	}
-
-	buffer.WriteString(b.InfoString())
-
-	return buffer.String()
 }
 
 func (b *BoardState) FEN() string {
