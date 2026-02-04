@@ -48,8 +48,8 @@ func NewBoardDefault() *BoardState {
 	b.pieces[BISHOP] = 0b00100100
 	b.pieces[KNIGHT] = 0b01000010
 	b.pieces[ROOK] = 0b10000001
-	b.pieces[QUEEN] = 0b00010000
-	b.pieces[KING] = 0b00001000
+	b.pieces[QUEEN] = 0b00001000 // d1 (bit 3) - standard chess position
+	b.pieces[KING] = 0b00010000  // e1 (bit 4) - standard chess position
 
 	//copying over the piceces but now for black
 	b.pieces[PAWN+BLACK_OFFSET] = b.pieces[PAWN] << 40
