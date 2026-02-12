@@ -210,7 +210,7 @@ func TestMinimalPosition(t *testing.T) {
 // TestEnPassantEncoding tests en passant square encoding and decoding
 func TestEnPassantEncoding(t *testing.T) {
 	testCases := []struct {
-		fen             string
+		fen               string
 		expectedEnpassant string
 	}{
 		{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", "-"},
