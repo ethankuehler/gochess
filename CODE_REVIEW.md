@@ -566,7 +566,7 @@ for row := 7; row >= 0; row-- {
 #### Issue 2: Magic Table Size Calculation
 ```go
 // Magic.go:161
-table := make([]BitBoard, 1<<(64-magic.Index)) //TODO: this need to be check to see if its correct
+table := make([]BitBoard, 1<<(64-magic.Index)) //TODO: this needs to be checked to see if its correct
 ```
 
 **Issue:** The TODO suggests uncertainty. Let me verify:
