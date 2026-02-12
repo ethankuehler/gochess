@@ -77,15 +77,15 @@ func TestRayCastRookCenter(t *testing.T) {
 	// Mask should allow all squares on the same rank and file
 	// Note: Need parentheses due to operator precedence: << and * have same precedence
 	mask := (COLUMN_MASK << 3) | (ROW_MASK << (3 * 8)) // d-file and 4th rank
-	
+
 	result := RayCast(initial, blockers, mask, ROOK_RAY)
-	
+
 	// Should be able to move to all squares on d-file and 4th rank except starting square
 	// d-file: d1, d2, d3, d5, d6, d7, d8 (7 squares)
 	// 4th rank: a4, b4, c4, e4, f4, g4, h4 (7 squares)
 	// Total: 14 squares
 	expected := mask & ^(BitBoard(1) << initial) // All mask squares except starting position
-	
+
 	if result != expected {
 		t.Errorf("RayCast rook center failed: got %064b, want %064b", result, expected)
 	}
@@ -98,9 +98,9 @@ func TestRayCastRookWithBlocker(t *testing.T) {
 	d6Shift, _ := ShiftFromAlg("d6")
 	blockers := BitBoard(1) << d6Shift
 	mask := (COLUMN_MASK << 3) | (ROW_MASK << (3 * 8)) // d-file and 4th rank
-	
+
 	result := RayCast(initial, blockers, mask, ROOK_RAY)
-	
+
 	// Should include d6 (the blocker) but not d7, d8
 	// Should include all of 4th rank and d1, d2, d3, d5, d6
 	expected := BitBoard(0)
@@ -121,7 +121,7 @@ func TestRayCastRookWithBlocker(t *testing.T) {
 	g4, _ := ShiftFromAlg("g4")
 	h4, _ := ShiftFromAlg("h4")
 	expected |= (1 << a4) | (1 << b4) | (1 << c4) | (1 << e4) | (1 << f4) | (1 << g4) | (1 << h4)
-	
+
 	if result != expected {
 		t.Errorf("RayCast rook with blocker failed:\ngot  %064b\nwant %064b", result, expected)
 	}
@@ -132,13 +132,13 @@ func TestRayCastBishopCenter(t *testing.T) {
 	// Test bishop at d4 with no blockers
 	initial, _ := ShiftFromAlg("d4")
 	blockers := BitBoard(0)
-	
+
 	// For bishop, mask should include all diagonal squares
 	// Create a simple mask that includes the main diagonals through d4
 	var mask BitBoard = 0
 	coord := CoordsFromShift(initial)
 	rank, file := coord.rank, coord.file
-	
+
 	// Add all diagonal squares to mask
 	for i := 0; i < 8; i++ {
 		for j := 0; j < 8; j++ {
@@ -148,12 +148,12 @@ func TestRayCastBishopCenter(t *testing.T) {
 			}
 		}
 	}
-	
+
 	result := RayCast(initial, blockers, mask, BISHOP_RAY)
-	
+
 	// Should be able to move to all diagonal squares except starting square
 	expected := mask & ^(BitBoard(1) << initial)
-	
+
 	if result != expected {
 		t.Errorf("RayCast bishop center failed:\ngot  %064b\nwant %064b", result, expected)
 	}
@@ -165,12 +165,12 @@ func TestRayCastBishopWithBlocker(t *testing.T) {
 	initial, _ := ShiftFromAlg("d4")
 	f6Shift, _ := ShiftFromAlg("f6")
 	blockers := BitBoard(1) << f6Shift
-	
+
 	// Create diagonal mask
 	var mask BitBoard = 0
 	coord := CoordsFromShift(initial)
 	rank, file := coord.rank, coord.file
-	
+
 	for i := 0; i < 8; i++ {
 		for j := 0; j < 8; j++ {
 			// Check if on same diagonal (i is rank, j is file)
@@ -179,15 +179,15 @@ func TestRayCastBishopWithBlocker(t *testing.T) {
 			}
 		}
 	}
-	
+
 	result := RayCast(initial, blockers, mask, BISHOP_RAY)
-	
+
 	// Should include f6 (the blocker) but not g7, h8
 	// Verify the blocker is included
 	if result&blockers == 0 {
 		t.Error("RayCast bishop with blocker did not include the blocker square")
 	}
-	
+
 	// Verify g7 is NOT included
 	g7Shift, _ := ShiftFromAlg("g7")
 	if result&(BitBoard(1)<<g7Shift) != 0 {
@@ -201,12 +201,12 @@ func TestRayCastCorner(t *testing.T) {
 	initial, _ := ShiftFromAlg("a1")
 	blockers := BitBoard(0)
 	mask := (COLUMN_MASK << 0) | (ROW_MASK << (0 * 8)) // a-file and 1st rank
-	
+
 	result := RayCast(initial, blockers, mask, ROOK_RAY)
-	
+
 	// Should be able to move to all squares on a-file and 1st rank except a1
 	expected := mask & ^(BitBoard(1) << initial)
-	
+
 	if result != expected {
 		t.Errorf("RayCast corner failed:\ngot  %064b\nwant %064b", result, expected)
 	}
@@ -223,12 +223,12 @@ func TestRayCastBlocked(t *testing.T) {
 	e4Shift, _ := ShiftFromAlg("e4")
 	blockers := (BitBoard(1) << d3Shift) | (BitBoard(1) << d5Shift) | (BitBoard(1) << c4Shift) | (BitBoard(1) << e4Shift)
 	mask := (COLUMN_MASK << 3) | (ROW_MASK << (3 * 8))
-	
+
 	result := RayCast(initial, blockers, mask, ROOK_RAY)
-	
+
 	// Should only include the 4 blocker squares
 	expected := blockers
-	
+
 	if result != expected {
 		t.Errorf("RayCast blocked failed:\ngot  %064b\nwant %064b", result, expected)
 	}
@@ -240,9 +240,9 @@ func TestRayCastEmptyRay(t *testing.T) {
 	blockers := BitBoard(0)
 	mask := BitBoard(0xFFFFFFFFFFFFFFFF) // All squares
 	emptyRay := Ray{}
-	
+
 	result := RayCast(initial, blockers, mask, emptyRay)
-	
+
 	// Should return empty bitboard with no directions
 	if result != 0 {
 		t.Errorf("RayCast with empty ray should return 0, got %064b", result)
@@ -257,17 +257,17 @@ func TestRayCastEmptyRay(t *testing.T) {
 func parseFENToBlockers(fen string) BitBoard {
 	var blockers BitBoard = 0
 	ranks := strings.Split(fen, "/")
-	
+
 	// Validate that we have exactly 8 ranks
 	if len(ranks) != 8 {
 		return blockers // Return empty if invalid
 	}
-	
+
 	// FEN starts from rank 8 down to rank 1
 	for rankIdx, rankStr := range ranks {
 		rank := 7 - rankIdx // Convert to 0-indexed from bottom
 		file := 0
-		
+
 		for _, ch := range rankStr {
 			if ch >= '1' && ch <= '8' {
 				// Number means empty squares
@@ -281,11 +281,11 @@ func parseFENToBlockers(fen string) BitBoard {
 				file++
 			}
 		}
-		
+
 		// Each rank should have exactly 8 squares
 		// If file > 8, the FEN was malformed, but we continue processing
 	}
-	
+
 	return blockers
 }
 
@@ -295,7 +295,7 @@ func parseExpectedSquares(squaresStr string) (BitBoard, error) {
 	if squaresStr == "" {
 		return expected, nil
 	}
-	
+
 	squares := strings.Split(squaresStr, ",")
 	for _, sq := range squares {
 		sq = strings.TrimSpace(sq)
@@ -308,7 +308,7 @@ func parseExpectedSquares(squaresStr string) (BitBoard, error) {
 		}
 		expected |= loc
 	}
-	
+
 	return expected, nil
 }
 
@@ -328,7 +328,7 @@ func getRayForPieceType(pieceType string) Ray {
 func getMaskForPieceType(pieceType string, square Shift) BitBoard {
 	coord := CoordsFromShift(square)
 	rank, file := coord.rank, coord.file
-	
+
 	switch strings.ToLower(pieceType) {
 	case "rook":
 		// Rook can move along file and rank
@@ -357,66 +357,66 @@ func TestRayCastFromConfig(t *testing.T) {
 		t.Fatalf("Failed to open raycast_tests.csv: %v", err)
 	}
 	defer file.Close()
-	
+
 	reader := csv.NewReader(file)
 	records, err := reader.ReadAll()
 	if err != nil {
 		t.Fatalf("Failed to read CSV: %v", err)
 	}
-	
+
 	// Skip header row
 	for i, record := range records[1:] {
 		// Skip empty records
 		if len(record) == 0 || (len(record) == 1 && record[0] == "") {
 			continue
 		}
-		
+
 		if len(record) != 5 {
 			t.Logf("Test %d: Skipping invalid record format, expected 5 fields, got %d", i, len(record))
 			continue
 		}
-		
+
 		name := strings.TrimSpace(record[0])
 		pieceType := strings.TrimSpace(record[1])
 		pieceSquare := strings.TrimSpace(record[2])
 		fenBlockers := strings.TrimSpace(record[3])
 		expectedSquaresStr := strings.TrimSpace(record[4])
-		
+
 		// Validate test name is not empty
 		if name == "" {
 			t.Logf("Test %d: Skipping test with empty name", i)
 			continue
 		}
-		
+
 		t.Run(name, func(t *testing.T) {
 			// Parse piece square
 			square, err := ShiftFromAlg(pieceSquare)
 			if err != nil {
 				t.Fatalf("Invalid piece square %s: %v", pieceSquare, err)
 			}
-			
+
 			// Parse FEN to blockers
 			blockers := parseFENToBlockers(fenBlockers)
-			
+
 			// Get mask for piece type
 			mask := getMaskForPieceType(pieceType, square)
-			
+
 			// Get ray for piece type
 			ray := getRayForPieceType(pieceType)
-			
+
 			// Run RayCast
 			result := RayCast(square, blockers, mask, ray)
-			
+
 			// Parse expected squares
 			expected, err := parseExpectedSquares(expectedSquaresStr)
 			if err != nil {
 				t.Fatalf("Failed to parse expected squares: %v", err)
 			}
-			
+
 			// Compare result with expected
 			if result != expected {
 				t.Errorf("RayCast failed for %s:\n  Got:      %064b\n  Expected: %064b", name, result, expected)
-				
+
 				// Show which squares differ for debugging
 				diff := result ^ expected
 				if diff != 0 {
@@ -445,7 +445,7 @@ func TestRayCastFromConfig(t *testing.T) {
 func TestAttacksFromFEN(t *testing.T) {
 	// Initialize all attack tables
 	BuildAllAttacks()
-	
+
 	// Test 1: Rook in center with no blockers should attack entire rank and file
 	t.Run("rook_center_no_blockers", func(t *testing.T) {
 		fen := "8/8/8/8/3R4/8/8/8 w - - 0 1"
@@ -453,9 +453,9 @@ func TestAttacksFromFEN(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to parse FEN: %v", err)
 		}
-		
+
 		occupied := board.Occupied(BOTH)
-		
+
 		// Find where the rook actually is (due to FEN parsing quirks)
 		rookSquare := Shift(0)
 		rookBB := board.GetPieces(WHITE, ROOK)
@@ -465,9 +465,9 @@ func TestAttacksFromFEN(t *testing.T) {
 				break
 			}
 		}
-		
+
 		attacks := GetRookAttack(rookSquare, occupied)
-		
+
 		// Rook should attack at least 14 squares (7 on rank + 7 on file)
 		attackCount := 0
 		for sq := Shift(0); sq < 64; sq++ {
@@ -479,7 +479,7 @@ func TestAttacksFromFEN(t *testing.T) {
 			t.Errorf("Rook in center should attack at least 14 squares, got %d", attackCount)
 		}
 	})
-	
+
 	// Test 2: Bishop in center should attack diagonals
 	t.Run("bishop_center_no_blockers", func(t *testing.T) {
 		fen := "8/8/8/8/3B4/8/8/8 w - - 0 1"
@@ -487,9 +487,9 @@ func TestAttacksFromFEN(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to parse FEN: %v", err)
 		}
-		
+
 		occupied := board.Occupied(BOTH)
-		
+
 		// Find where the bishop actually is
 		bishopSquare := Shift(0)
 		bishopBB := board.GetPieces(WHITE, BISHOP)
@@ -499,9 +499,9 @@ func TestAttacksFromFEN(t *testing.T) {
 				break
 			}
 		}
-		
+
 		attacks := GetBishopAttack(bishopSquare, occupied)
-		
+
 		// Bishop in center should attack at least 9 squares on diagonals
 		attackCount := 0
 		for sq := Shift(0); sq < 64; sq++ {
@@ -513,7 +513,7 @@ func TestAttacksFromFEN(t *testing.T) {
 			t.Errorf("Bishop in center should attack at least 9 squares, got %d", attackCount)
 		}
 	})
-	
+
 	// Test 3: Queen should combine rook and bishop attacks
 	t.Run("queen_combines_rook_bishop", func(t *testing.T) {
 		fen := "8/8/8/8/3Q4/8/8/8 w - - 0 1"
@@ -521,9 +521,9 @@ func TestAttacksFromFEN(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to parse FEN: %v", err)
 		}
-		
+
 		occupied := board.Occupied(BOTH)
-		
+
 		// Find where the queen actually is
 		queenSquare := Shift(0)
 		queenBB := board.GetPieces(WHITE, QUEEN)
@@ -533,18 +533,18 @@ func TestAttacksFromFEN(t *testing.T) {
 				break
 			}
 		}
-		
+
 		queenAttacks := GetQueenAttack(queenSquare, occupied)
 		rookAttacks := GetRookAttack(queenSquare, occupied)
 		bishopAttacks := GetBishopAttack(queenSquare, occupied)
-		
+
 		// Queen attacks should equal rook | bishop
 		expected := rookAttacks | bishopAttacks
 		if queenAttacks != expected {
 			t.Error("Queen attacks should be union of rook and bishop attacks")
 		}
 	})
-	
+
 	// Test 4: Blocked rook should not attack beyond blocker
 	t.Run("rook_blocked_stops_at_blocker", func(t *testing.T) {
 		fen := "8/8/3P4/8/3R4/8/8/8 w - - 0 1"
@@ -552,9 +552,9 @@ func TestAttacksFromFEN(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to parse FEN: %v", err)
 		}
-		
+
 		occupied := board.Occupied(BOTH)
-		
+
 		// Find rook and blocker positions
 		rookSquare := Shift(0)
 		rookBB := board.GetPieces(WHITE, ROOK)
@@ -564,7 +564,7 @@ func TestAttacksFromFEN(t *testing.T) {
 				break
 			}
 		}
-		
+
 		pawnSquare := Shift(0)
 		pawnBB := board.GetPieces(WHITE, PAWN)
 		for sq := Shift(0); sq < 64; sq++ {
@@ -573,13 +573,13 @@ func TestAttacksFromFEN(t *testing.T) {
 				break
 			}
 		}
-		
+
 		attacks := GetRookAttack(rookSquare, occupied)
-		
+
 		// Rook should not attack squares on same file beyond the pawn
 		rookFile := rookSquare % 8
 		pawnFile := pawnSquare % 8
-		
+
 		if rookFile == pawnFile {
 			// Check squares beyond pawn on same file
 			pawnRank := pawnSquare / 8
@@ -591,7 +591,7 @@ func TestAttacksFromFEN(t *testing.T) {
 			}
 		}
 	})
-	
+
 	// Test 5: Knight attacks in starting position
 	t.Run("knight_starting_position", func(t *testing.T) {
 		fen := "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -599,7 +599,7 @@ func TestAttacksFromFEN(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to parse FEN: %v", err)
 		}
-		
+
 		// Find a knight
 		knightBB := board.GetPieces(WHITE, KNIGHT)
 		knightSquare := Shift(0)
@@ -609,9 +609,9 @@ func TestAttacksFromFEN(t *testing.T) {
 				break
 			}
 		}
-		
+
 		attacks := KNIGHT_ATTACKS[knightSquare]
-		
+
 		// Knight should attack some squares (at least 2 from starting position)
 		attackCount := 0
 		for sq := Shift(0); sq < 64; sq++ {
@@ -623,7 +623,7 @@ func TestAttacksFromFEN(t *testing.T) {
 			t.Errorf("Knight should attack at least 2 squares, got %d", attackCount)
 		}
 	})
-	
+
 	// Test 6: King attacks
 	t.Run("king_center_attacks_8_squares", func(t *testing.T) {
 		fen := "8/8/8/8/3K4/8/8/8 w - - 0 1"
@@ -631,7 +631,7 @@ func TestAttacksFromFEN(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to parse FEN: %v", err)
 		}
-		
+
 		// Find king
 		kingBB := board.GetPieces(WHITE, KING)
 		kingSquare := Shift(0)
@@ -641,9 +641,9 @@ func TestAttacksFromFEN(t *testing.T) {
 				break
 			}
 		}
-		
+
 		attacks := KING_ATTACKS[kingSquare]
-		
+
 		// King in center should attack exactly 8 squares
 		attackCount := 0
 		for sq := Shift(0); sq < 64; sq++ {
@@ -655,7 +655,7 @@ func TestAttacksFromFEN(t *testing.T) {
 			t.Errorf("King in center should attack 8 squares, got %d", attackCount)
 		}
 	})
-	
+
 	// Test 7: Pawn attacks
 	t.Run("pawn_attacks_diagonally", func(t *testing.T) {
 		fen := "8/8/8/8/3P4/8/8/8 w - - 0 1"
@@ -663,7 +663,7 @@ func TestAttacksFromFEN(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to parse FEN: %v", err)
 		}
-		
+
 		// Find pawn
 		pawnBB := board.GetPieces(WHITE, PAWN)
 		pawnSquare := Shift(0)
@@ -673,9 +673,9 @@ func TestAttacksFromFEN(t *testing.T) {
 				break
 			}
 		}
-		
+
 		attacks := WHITE_PAWN_ATTACKS[pawnSquare]
-		
+
 		// Pawn should attack 2 diagonal squares (if not on edge)
 		attackCount := 0
 		for sq := Shift(0); sq < 64; sq++ {
@@ -683,7 +683,7 @@ func TestAttacksFromFEN(t *testing.T) {
 				attackCount++
 			}
 		}
-		
+
 		// Pawn not on edge files should attack 2 squares
 		pawnFile := pawnSquare % 8
 		if pawnFile > 0 && pawnFile < 7 {
@@ -697,24 +697,24 @@ func TestAttacksFromFEN(t *testing.T) {
 // TestGetBishopMask tests the GetBishopMask function for various squares
 func TestGetBishopMask(t *testing.T) {
 	tests := []struct {
-		name     string
-		square   string
-		minBits  int // Minimum number of bits that should be set
-		maxBits  int // Maximum number of bits that should be set
+		name    string
+		square  string
+		minBits int // Minimum number of bits that should be set
+		maxBits int // Maximum number of bits that should be set
 	}{
-		{"center_d4", "d4", 7, 11},  // Center square should have good diagonal coverage
-		{"corner_a1", "a1", 0, 7},   // Corner has limited diagonal
-		{"corner_h8", "h8", 0, 7},   // Corner has limited diagonal
-		{"edge_e1", "e1", 4, 7},     // Edge square
+		{"center_d4", "d4", 7, 11},      // Center square should have good diagonal coverage
+		{"corner_a1", "a1", 0, 7},       // Corner has limited diagonal
+		{"corner_h8", "h8", 0, 7},       // Corner has limited diagonal
+		{"edge_e1", "e1", 4, 7},         // Edge square
 		{"near_center_d5", "d5", 7, 11}, // Near center
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			square, _ := ShiftFromAlg(tt.square)
 			coord := CoordsFromShift(square)
 			mask := GetBishopMask(coord)
-			
+
 			// Count bits in mask
 			bitCount := 0
 			for i := Shift(0); i < 64; i++ {
@@ -722,11 +722,11 @@ func TestGetBishopMask(t *testing.T) {
 					bitCount++
 				}
 			}
-			
+
 			if bitCount < tt.minBits || bitCount > tt.maxBits {
 				t.Errorf("Mask bit count %d not in range [%d, %d]", bitCount, tt.minBits, tt.maxBits)
 			}
-			
+
 			// Verify the square itself is not in the mask
 			if mask&(BitBoard(1)<<square) != 0 {
 				t.Error("Mask should not include the piece's own square")
@@ -738,33 +738,33 @@ func TestGetBishopMask(t *testing.T) {
 // TestBuildRookAttacks tests that rook attacks are built correctly
 func TestBuildRookAttacks(t *testing.T) {
 	BuildRookAttacks()
-	
+
 	if ROOK_MAGIC == nil {
 		t.Fatal("ROOK_MAGIC is nil")
 	}
-	
+
 	if len(ROOK_MAGIC) != 64 {
 		t.Fatalf("ROOK_MAGIC should have 64 entries, got %d", len(ROOK_MAGIC))
 	}
-	
+
 	if ROOK_ATTACKS == nil {
 		t.Fatal("ROOK_ATTACKS is nil")
 	}
-	
+
 	if len(ROOK_ATTACKS) != 64 {
 		t.Fatalf("ROOK_ATTACKS should have 64 entries, got %d", len(ROOK_ATTACKS))
 	}
-	
+
 	// Test a simple case: rook at d4 with no blockers
 	square, _ := ShiftFromAlg("d4")
 	board := BitBoard(0)
 	attacks := GetRookAttack(square, board)
-	
+
 	// Should be able to attack along rank and file
 	coord := CoordsFromShift(square)
 	mask := (COLUMN_MASK << coord.file) | (ROW_MASK << (coord.rank * 8))
 	expectedAttacks := mask & ^(BitBoard(1) << square) // Exclude starting square
-	
+
 	if attacks != expectedAttacks {
 		t.Errorf("Rook attacks from d4 with no blockers incorrect:\n  Got:      %064b\n  Expected: %064b", attacks, expectedAttacks)
 	}
@@ -773,31 +773,31 @@ func TestBuildRookAttacks(t *testing.T) {
 // TestBuildBishopAttacks tests that bishop attacks are built correctly
 func TestBuildBishopAttacks(t *testing.T) {
 	BuildBishopAttacks()
-	
+
 	if BISHOP_MAGIC == nil {
 		t.Fatal("BISHOP_MAGIC is nil")
 	}
-	
+
 	if len(BISHOP_MAGIC) != 64 {
 		t.Fatalf("BISHOP_MAGIC should have 64 entries, got %d", len(BISHOP_MAGIC))
 	}
-	
+
 	if BISHOP_ATTACKS == nil {
 		t.Fatal("BISHOP_ATTACKS is nil")
 	}
-	
+
 	if len(BISHOP_ATTACKS) != 64 {
 		t.Fatalf("BISHOP_ATTACKS should have 64 entries, got %d", len(BISHOP_ATTACKS))
 	}
-	
+
 	// Test a simple case: bishop at d4 with no blockers
 	square, _ := ShiftFromAlg("d4")
 	board := BitBoard(0)
 	attacks := GetBishopAttack(square, board)
-	
+
 	// Should attack diagonals - verify it attacks some key squares
 	keySquares := []string{"c3", "e3", "c5", "e5"}
-	
+
 	for _, algSquare := range keySquares {
 		sq, _ := ShiftFromAlg(algSquare)
 		if attacks&(BitBoard(1)<<sq) == 0 {
@@ -810,19 +810,19 @@ func TestBuildBishopAttacks(t *testing.T) {
 // TestGetRookAttackWithBlockers tests rook attacks with various blocker configurations
 func TestGetRookAttackWithBlockers(t *testing.T) {
 	BuildRookAttacks()
-	
+
 	// Rook at d4 with blocker at d6
 	square, _ := ShiftFromAlg("d4")
 	d6Shift, _ := ShiftFromAlg("d6")
 	d7Shift, _ := ShiftFromAlg("d7")
 	blocker := BitBoard(1) << d6Shift
 	attacks := GetRookAttack(square, blocker)
-	
+
 	// Should include d6 but not d7
 	if attacks&(BitBoard(1)<<d6Shift) == 0 {
 		t.Error("Rook should attack the blocker square")
 	}
-	
+
 	if attacks&(BitBoard(1)<<d7Shift) != 0 {
 		t.Error("Rook should not attack beyond the blocker")
 	}
@@ -831,19 +831,19 @@ func TestGetRookAttackWithBlockers(t *testing.T) {
 // TestGetBishopAttackWithBlockers tests bishop attacks with various blocker configurations
 func TestGetBishopAttackWithBlockers(t *testing.T) {
 	BuildBishopAttacks()
-	
+
 	// Bishop at d4 with blocker at f6
 	square, _ := ShiftFromAlg("d4")
 	f6Shift, _ := ShiftFromAlg("f6")
 	g7Shift, _ := ShiftFromAlg("g7")
 	blocker := BitBoard(1) << f6Shift
 	attacks := GetBishopAttack(square, blocker)
-	
+
 	// Should include f6 but not g7
 	if attacks&(BitBoard(1)<<f6Shift) == 0 {
 		t.Error("Bishop should attack the blocker square")
 	}
-	
+
 	if attacks&(BitBoard(1)<<g7Shift) != 0 {
 		t.Error("Bishop should not attack beyond the blocker")
 	}
@@ -853,22 +853,22 @@ func TestGetBishopAttackWithBlockers(t *testing.T) {
 func TestGetQueenAttack(t *testing.T) {
 	BuildRookAttacks()
 	BuildBishopAttacks()
-	
+
 	// Queen at d4 with no blockers
 	square, _ := ShiftFromAlg("d4")
 	board := BitBoard(0)
-	
+
 	queenAttacks := GetQueenAttack(square, board)
 	rookAttacks := GetRookAttack(square, board)
 	bishopAttacks := GetBishopAttack(square, board)
-	
+
 	// Queen attacks should be the union of rook and bishop attacks
 	expected := rookAttacks | bishopAttacks
-	
+
 	if queenAttacks != expected {
 		t.Error("Queen attacks should be the union of rook and bishop attacks")
 	}
-	
+
 	// Verify queen attacks in all 8 directions
 	// Horizontal/Vertical (rook moves)
 	keyRookSquares := []string{"d3", "d5", "c4", "e4"}
@@ -878,7 +878,7 @@ func TestGetQueenAttack(t *testing.T) {
 			t.Errorf("Queen should attack square %s (rook direction)", algSquare)
 		}
 	}
-	
+
 	// Diagonal (bishop moves)
 	keyBishopSquares := []string{"c3", "e3", "c5", "e5"}
 	for _, algSquare := range keyBishopSquares {
@@ -892,36 +892,36 @@ func TestGetQueenAttack(t *testing.T) {
 // TestBuildAllAttacks tests that BuildAllAttacks initializes everything
 func TestBuildAllAttacks(t *testing.T) {
 	BuildAllAttacks()
-	
+
 	// Verify all attack tables are initialized
 	if KNIGHT_ATTACKS == nil {
 		t.Error("KNIGHT_ATTACKS not initialized")
 	}
-	
+
 	if KING_ATTACKS == nil {
 		t.Error("KING_ATTACKS not initialized")
 	}
-	
+
 	if WHITE_PAWN_ATTACKS == nil {
 		t.Error("WHITE_PAWN_ATTACKS not initialized")
 	}
-	
+
 	if BLACK_PAWN_ATTACKS == nil {
 		t.Error("BLACK_PAWN_ATTACKS not initialized")
 	}
-	
+
 	if ROOK_MAGIC == nil {
 		t.Error("ROOK_MAGIC not initialized")
 	}
-	
+
 	if ROOK_ATTACKS == nil {
 		t.Error("ROOK_ATTACKS not initialized")
 	}
-	
+
 	if BISHOP_MAGIC == nil {
 		t.Error("BISHOP_MAGIC not initialized")
 	}
-	
+
 	if BISHOP_ATTACKS == nil {
 		t.Error("BISHOP_ATTACKS not initialized")
 	}
@@ -931,50 +931,50 @@ func TestBuildAllAttacks(t *testing.T) {
 func TestBuildAllAttacksWithOption(t *testing.T) {
 	// Test with autoGenerate=false (should work with existing CSV files)
 	BuildAllAttacksWithOption(false)
-	
+
 	// Verify all attack tables are initialized
 	if KNIGHT_ATTACKS == nil {
 		t.Error("KNIGHT_ATTACKS not initialized")
 	}
-	
+
 	if KING_ATTACKS == nil {
 		t.Error("KING_ATTACKS not initialized")
 	}
-	
+
 	if WHITE_PAWN_ATTACKS == nil {
 		t.Error("WHITE_PAWN_ATTACKS not initialized")
 	}
-	
+
 	if BLACK_PAWN_ATTACKS == nil {
 		t.Error("BLACK_PAWN_ATTACKS not initialized")
 	}
-	
+
 	if ROOK_MAGIC == nil {
 		t.Error("ROOK_MAGIC not initialized")
 	}
-	
+
 	if ROOK_ATTACKS == nil {
 		t.Error("ROOK_ATTACKS not initialized")
 	}
-	
+
 	if BISHOP_MAGIC == nil {
 		t.Error("BISHOP_MAGIC not initialized")
 	}
-	
+
 	if BISHOP_ATTACKS == nil {
 		t.Error("BISHOP_ATTACKS not initialized")
 	}
-	
+
 	// Verify the attacks work correctly
 	square, _ := ShiftFromAlg("d4")
 	board := BitBoard(0)
-	
+
 	// Test rook attack
 	rookAttacks := GetRookAttack(square, board)
 	if rookAttacks == 0 {
 		t.Error("Rook attacks should not be zero")
 	}
-	
+
 	// Test bishop attack
 	bishopAttacks := GetBishopAttack(square, board)
 	if bishopAttacks == 0 {
@@ -986,28 +986,28 @@ func TestBuildAllAttacksWithOption(t *testing.T) {
 func TestBuildRookAttacksWithOption(t *testing.T) {
 	// Test with autoGenerate=false (should load from existing CSV)
 	BuildRookAttacksWithOption(false)
-	
+
 	if ROOK_MAGIC == nil {
 		t.Fatal("ROOK_MAGIC is nil")
 	}
-	
+
 	if len(ROOK_MAGIC) != 64 {
 		t.Fatalf("ROOK_MAGIC should have 64 entries, got %d", len(ROOK_MAGIC))
 	}
-	
+
 	if ROOK_ATTACKS == nil {
 		t.Fatal("ROOK_ATTACKS is nil")
 	}
-	
+
 	if len(ROOK_ATTACKS) != 64 {
 		t.Fatalf("ROOK_ATTACKS should have 64 entries, got %d", len(ROOK_ATTACKS))
 	}
-	
+
 	// Verify attacks work correctly
 	square := Shift(27) // d4
 	board := BitBoard(0)
 	attacks := GetRookAttack(square, board)
-	
+
 	if attacks == 0 {
 		t.Error("Rook attacks should not be zero for d4 with no blockers")
 	}
@@ -1017,28 +1017,28 @@ func TestBuildRookAttacksWithOption(t *testing.T) {
 func TestBuildBishopAttacksWithOption(t *testing.T) {
 	// Test with autoGenerate=false (should load from existing CSV)
 	BuildBishopAttacksWithOption(false)
-	
+
 	if BISHOP_MAGIC == nil {
 		t.Fatal("BISHOP_MAGIC is nil")
 	}
-	
+
 	if len(BISHOP_MAGIC) != 64 {
 		t.Fatalf("BISHOP_MAGIC should have 64 entries, got %d", len(BISHOP_MAGIC))
 	}
-	
+
 	if BISHOP_ATTACKS == nil {
 		t.Fatal("BISHOP_ATTACKS is nil")
 	}
-	
+
 	if len(BISHOP_ATTACKS) != 64 {
 		t.Fatalf("BISHOP_ATTACKS should have 64 entries, got %d", len(BISHOP_ATTACKS))
 	}
-	
+
 	// Verify attacks work correctly
 	square := Shift(27) // d4
 	board := BitBoard(0)
 	attacks := GetBishopAttack(square, board)
-	
+
 	if attacks == 0 {
 		t.Error("Bishop attacks should not be zero for d4 with no blockers")
 	}

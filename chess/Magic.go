@@ -23,9 +23,9 @@ var (
 
 // sliding pieces
 var (
-	ROOK_MAGIC   []MagicEntry //magic numbers
-	BISHOP_MAGIC []MagicEntry
-	ROOK_ATTACKS [][]BitBoard
+	ROOK_MAGIC     []MagicEntry //magic numbers
+	BISHOP_MAGIC   []MagicEntry
+	ROOK_ATTACKS   [][]BitBoard
 	BISHOP_ATTACKS [][]BitBoard
 )
 
@@ -62,6 +62,7 @@ func MagicIndex(entry MagicEntry, board BitBoard) uint64 {
 // Parameters:
 //   - loc: Square position of the rook (0-63)
 //   - board: BitBoard representing all occupied squares
+//
 // Returns: BitBoard with all squares the rook can attack
 func GetRookAttack(loc Shift, board BitBoard) BitBoard {
 	magic := ROOK_MAGIC[loc]
@@ -74,6 +75,7 @@ func GetRookAttack(loc Shift, board BitBoard) BitBoard {
 // Parameters:
 //   - loc: Square position of the bishop (0-63)
 //   - board: BitBoard representing all occupied squares
+//
 // Returns: BitBoard with all squares the bishop can attack
 func GetBishopAttack(loc Shift, board BitBoard) BitBoard {
 	magic := BISHOP_MAGIC[loc]
@@ -86,6 +88,7 @@ func GetBishopAttack(loc Shift, board BitBoard) BitBoard {
 // Parameters:
 //   - loc: Square position of the queen (0-63)
 //   - board: BitBoard representing all occupied squares
+//
 // Returns: BitBoard with all squares the queen can attack
 func GetQueenAttack(loc Shift, board BitBoard) BitBoard {
 	return GetRookAttack(loc, board) | GetBishopAttack(loc, board)
@@ -104,22 +107,22 @@ func GetRookMask(coord Coordinates) BitBoard {
 func GetBishopMask(coord Coordinates) BitBoard {
 	rank, file := coord.rank, coord.file
 	var mask BitBoard = 0
-	
+
 	// For each of the 4 diagonal directions
 	for _, dir := range BISHOP_RAY {
 		rankDelta, fileDelta := dir[0], dir[1]
 		r, f := int(rank), int(file)
-		
+
 		// Move in direction until edge
 		for {
 			r += rankDelta
 			f += fileDelta
-			
+
 			// Stop at board edges
 			if r < 0 || r >= 8 || f < 0 || f >= 8 {
 				break
 			}
-			
+
 			// Optionally exclude edge squares for optimization
 			// (common practice in magic bitboards to reduce table size)
 			if r > 0 && r < 7 && f > 0 && f < 7 {
@@ -128,7 +131,7 @@ func GetBishopMask(coord Coordinates) BitBoard {
 			}
 		}
 	}
-	
+
 	return mask
 }
 
@@ -156,6 +159,7 @@ func FindMagic(coord Coordinates) []BitBoard {
 // Parameters:
 //   - loc: Square position of the rook (0-63)
 //   - magic: MagicEntry containing the magic number and mask to test
+//
 // Returns: The attack table if successful, or an error if the magic number causes collisions
 func TryRookMagic(loc Shift, magic MagicEntry) ([]BitBoard, error) {
 	table := make([]BitBoard, 1<<(64-magic.Index)) //TODO: this need to be check to see if its correct
@@ -187,50 +191,51 @@ func TryRookMagic(loc Shift, magic MagicEntry) ([]BitBoard, error) {
 //   - blockers: BitBoard of occupied squares that block movement
 //   - mask: BitBoard mask limiting valid squares for this piece type
 //   - r: Array of direction vectors [rank_delta, file_delta] to cast rays in
+//
 // Returns: BitBoard with all valid destination squares
 func RayCast(initial Shift, blockers BitBoard, mask BitBoard, r Ray) BitBoard {
 	var result BitBoard = 0
 	coord := CoordsFromShift(initial)
 	rank, file := coord.rank, coord.file
-	
+
 	// Cast a ray in each direction
 	for _, dir := range r {
 		rankDelta := dir[0]
 		fileDelta := dir[1]
-		
+
 		// Skip directions with no movement (would cause infinite loop)
 		if rankDelta == 0 && fileDelta == 0 {
 			continue
 		}
-		
+
 		// Start from the initial position and move in the direction
 		currentRank := int(rank) + rankDelta
 		currentFile := int(file) + fileDelta
-		
+
 		// Continue casting the ray until we hit a blocker or edge
 		for currentRank >= 0 && currentRank < 8 && currentFile >= 0 && currentFile < 8 {
 			// Calculate the shift for this square
 			// shift = file + rank * 8
 			square := Shift(currentFile + currentRank*8)
 			squareBit := BitBoard(1) << square
-			
+
 			// Check if this square is within the mask
 			if mask&squareBit != 0 {
 				// Add this square to the result
 				result |= squareBit
-				
+
 				// If this square has a blocker, stop the ray here (but include the blocker)
 				if blockers&squareBit != 0 {
 					break
 				}
 			}
-			
+
 			// Move to the next square in this direction
 			currentRank += rankDelta
 			currentFile += fileDelta
 		}
 	}
-	
+
 	return result
 }
 
@@ -315,31 +320,31 @@ func BuildRookAttacksWithOption(autoGenerate bool) {
 			panic("Failed to load rook magic numbers: " + err.Error())
 		}
 	}
-	
+
 	// Initialize arrays
 	ROOK_MAGIC = magics
 	ROOK_ATTACKS = make([][]BitBoard, 64)
-	
+
 	// For each square, generate all attack patterns
 	for square := Shift(0); square < 64; square++ {
 		magic := ROOK_MAGIC[square]
-		
+
 		// Allocate attack table for this square
 		tableSize := 1 << magic.Index
 		ROOK_ATTACKS[square] = make([]BitBoard, tableSize)
-		
+
 		// Generate all possible blocker configurations
 		var blockers BitBoard = 0
 		mask := magic.Mask
-		
+
 		for {
 			// Generate attacks for this blocker configuration
 			attacks := RayCast(square, blockers, mask, ROOK_RAY)
-			
+
 			// Store in table at hashed index
 			index := MagicIndex(magic, blockers)
 			ROOK_ATTACKS[square][index] = attacks
-			
+
 			// Next blocker configuration (Carry-Rippler trick)
 			blockers = (blockers - mask) & mask
 			if blockers == 0 {
@@ -380,31 +385,31 @@ func BuildBishopAttacksWithOption(autoGenerate bool) {
 			panic("Failed to load bishop magic numbers: " + err.Error())
 		}
 	}
-	
+
 	// Initialize arrays
 	BISHOP_MAGIC = magics
 	BISHOP_ATTACKS = make([][]BitBoard, 64)
-	
+
 	// For each square, generate all attack patterns
 	for square := Shift(0); square < 64; square++ {
 		magic := BISHOP_MAGIC[square]
-		
+
 		// Allocate attack table for this square
 		tableSize := 1 << magic.Index
 		BISHOP_ATTACKS[square] = make([]BitBoard, tableSize)
-		
+
 		// Generate all possible blocker configurations
 		var blockers BitBoard = 0
 		mask := magic.Mask
-		
+
 		for {
 			// Generate attacks for this blocker configuration
 			attacks := RayCast(square, blockers, mask, BISHOP_RAY)
-			
+
 			// Store in table at hashed index
 			index := MagicIndex(magic, blockers)
 			BISHOP_ATTACKS[square][index] = attacks
-			
+
 			// Next blocker configuration (Carry-Rippler trick)
 			blockers = (blockers - mask) & mask
 			if blockers == 0 {

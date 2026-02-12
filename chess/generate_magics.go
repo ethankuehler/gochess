@@ -11,18 +11,18 @@ import (
 // GenerateRookMagics generates magic numbers for all 64 squares for rooks
 func GenerateRookMagics() []MagicEntry {
 	magics := make([]MagicEntry, 64)
-	
+
 	for square := Shift(0); square < 64; square++ {
 		coord := CoordsFromShift(square)
 		mask := GetRookMask(coord)
-		
+
 		// Count bits in mask to determine index size
 		bitCount := Shift(countBits(uint64(mask)))
-		
+
 		// Find a valid magic number
 		fmt.Printf("Finding magic for rook square %d...\n", square)
 		magicNumber := findRookMagic(square, mask, bitCount)
-		
+
 		magics[square] = MagicEntry{
 			Mask:  mask,
 			Magic: magicNumber,
@@ -30,25 +30,25 @@ func GenerateRookMagics() []MagicEntry {
 		}
 		fmt.Printf("  Found: 0x%X (bits: %d)\n", magicNumber, bitCount)
 	}
-	
+
 	return magics
 }
 
 // GenerateBishopMagics generates magic numbers for all 64 squares for bishops
 func GenerateBishopMagics() []MagicEntry {
 	magics := make([]MagicEntry, 64)
-	
+
 	for square := Shift(0); square < 64; square++ {
 		coord := CoordsFromShift(square)
 		mask := GetBishopMask(coord)
-		
+
 		// Count bits in mask to determine index size
 		bitCount := Shift(countBits(uint64(mask)))
-		
+
 		// Find a valid magic number
 		fmt.Printf("Finding magic for bishop square %d...\n", square)
 		magicNumber := findBishopMagic(square, mask, bitCount)
-		
+
 		magics[square] = MagicEntry{
 			Mask:  mask,
 			Magic: magicNumber,
@@ -56,7 +56,7 @@ func GenerateBishopMagics() []MagicEntry {
 		}
 		fmt.Printf("  Found: 0x%X (bits: %d)\n", magicNumber, bitCount)
 	}
-	
+
 	return magics
 }
 
@@ -65,7 +65,7 @@ func findRookMagic(square Shift, mask BitBoard, indexBits Shift) uint64 {
 	for {
 		// Generate random magic candidate (sparse random number)
 		testMagic := rand.Uint64() & rand.Uint64() & rand.Uint64()
-		
+
 		magicEntry := MagicEntry{mask, testMagic, indexBits}
 		if tryRookMagicForGeneration(square, magicEntry) {
 			return testMagic
@@ -78,7 +78,7 @@ func findBishopMagic(square Shift, mask BitBoard, indexBits Shift) uint64 {
 	for {
 		// Generate random magic candidate (sparse random number)
 		testMagic := rand.Uint64() & rand.Uint64() & rand.Uint64()
-		
+
 		magicEntry := MagicEntry{mask, testMagic, indexBits}
 		if tryBishopMagicForGeneration(square, magicEntry) {
 			return testMagic
@@ -91,14 +91,14 @@ func tryRookMagicForGeneration(loc Shift, magic MagicEntry) bool {
 	tableSize := 1 << magic.Index
 	table := make([]BitBoard, tableSize)
 	used := make([]bool, tableSize)
-	
+
 	var blockers BitBoard = 0
 	mask := magic.Mask
-	
+
 	for {
 		attacks := RayCast(loc, blockers, mask, ROOK_RAY)
 		index := MagicIndex(magic, blockers)
-		
+
 		if used[index] {
 			if table[index] != attacks {
 				return false
@@ -107,13 +107,13 @@ func tryRookMagicForGeneration(loc Shift, magic MagicEntry) bool {
 			table[index] = attacks
 			used[index] = true
 		}
-		
+
 		blockers = (blockers - mask) & mask
 		if blockers == 0 {
 			break
 		}
 	}
-	
+
 	return true
 }
 
@@ -122,14 +122,14 @@ func tryBishopMagicForGeneration(loc Shift, magic MagicEntry) bool {
 	tableSize := 1 << magic.Index
 	table := make([]BitBoard, tableSize)
 	used := make([]bool, tableSize)
-	
+
 	var blockers BitBoard = 0
 	mask := magic.Mask
-	
+
 	for {
 		attacks := RayCast(loc, blockers, mask, BISHOP_RAY)
 		index := MagicIndex(magic, blockers)
-		
+
 		if used[index] {
 			if table[index] != attacks {
 				return false
@@ -138,13 +138,13 @@ func tryBishopMagicForGeneration(loc Shift, magic MagicEntry) bool {
 			table[index] = attacks
 			used[index] = true
 		}
-		
+
 		blockers = (blockers - mask) & mask
 		if blockers == 0 {
 			break
 		}
 	}
-	
+
 	return true
 }
 
@@ -165,13 +165,13 @@ func SaveRookMagicsToCSV(magics []MagicEntry, filename string) error {
 		return err
 	}
 	defer file.Close()
-	
+
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
-	
+
 	// Write header
 	writer.Write([]string{"square", "mask", "magic", "index_bits"})
-	
+
 	// Write magic entries
 	for i, magic := range magics {
 		row := []string{
@@ -184,7 +184,7 @@ func SaveRookMagicsToCSV(magics []MagicEntry, filename string) error {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 
@@ -195,13 +195,13 @@ func SaveBishopMagicsToCSV(magics []MagicEntry, filename string) error {
 		return err
 	}
 	defer file.Close()
-	
+
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
-	
+
 	// Write header
 	writer.Write([]string{"square", "mask", "magic", "index_bits"})
-	
+
 	// Write magic entries
 	for i, magic := range magics {
 		row := []string{
@@ -214,7 +214,7 @@ func SaveBishopMagicsToCSV(magics []MagicEntry, filename string) error {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 
@@ -225,29 +225,29 @@ func LoadMagicsFromCSV(filename string) ([]MagicEntry, error) {
 		return nil, err
 	}
 	defer file.Close()
-	
+
 	reader := csv.NewReader(file)
 	records, err := reader.ReadAll()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Skip header
 	records = records[1:]
-	
+
 	magics := make([]MagicEntry, 64)
 	for _, record := range records {
 		square, _ := strconv.Atoi(record[0])
 		mask, _ := strconv.ParseUint(record[1], 10, 64)
 		magic, _ := strconv.ParseUint(record[2], 10, 64)
 		indexBits, _ := strconv.Atoi(record[3])
-		
+
 		magics[square] = MagicEntry{
 			Mask:  BitBoard(mask),
 			Magic: magic,
 			Index: Shift(indexBits),
 		}
 	}
-	
+
 	return magics, nil
 }

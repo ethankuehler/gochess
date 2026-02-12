@@ -9,6 +9,7 @@ type Shift int
 const SHIFT_START = 1
 const SHIFT_STOP = 64 + 1
 const SHIFT_SIZE = 64
+const RANK_FILE_SIZE = 8
 
 type Coordinates struct {
 	file uint64 // file (column) 0-7, corresponds to a-h
