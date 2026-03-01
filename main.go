@@ -20,7 +20,11 @@ func main() {
 		fmt.Println(err)
 	}
 	fmt.Println(b.StringUni())
-
+	var bb chess.BitBoard = 0
+	for i := range chess.PiecesIter(chess.WHITE) {
+		bb |= b.GetPieces(chess.WHITE, i)
+	}
+	fmt.Println(bb.String())
 	m, err := chess.NewMoveUCI("e2e4")
 	if err != nil {
 		fmt.Println(err)

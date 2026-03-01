@@ -9,7 +9,7 @@ type Shift int
 const SHIFT_START = 1
 const SHIFT_STOP = 64 + 1
 const SHIFT_SIZE = 64
-const RANK_FILE_SIZE = 8
+const ROW_COL_SIZE = 8
 
 type Coordinates struct {
 	row uint64
@@ -17,13 +17,13 @@ type Coordinates struct {
 }
 
 func CoordsFromShift(shift Shift) Coordinates {
-	col := shift % RANK_FILE_SIZE
-	row := shift / RANK_FILE_SIZE
+	col := shift % ROW_COL_SIZE
+	row := shift / ROW_COL_SIZE
 	return Coordinates{uint64(row), uint64(col)}
 }
 
 func ShiftFromCoords(coord Coordinates) Shift {
-	return Shift(coord.col + coord.row*RANK_FILE_SIZE)
+	return Shift(coord.col + coord.row*ROW_COL_SIZE)
 }
 
 // index for certin pieces.

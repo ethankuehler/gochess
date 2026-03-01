@@ -23,9 +23,9 @@ type BoardState struct {
 func (b BitBoard) String() string {
 	var buffer bytes.Buffer
 
-	for rank := RANK_FILE_SIZE - 1; rank >= 0; rank-- {
-		for file := 0; file < RANK_FILE_SIZE; file++ {
-			mask := BitBoard(1) << ShiftFromCoords(Coordinates{uint64(file), uint64(rank)})
+	for row := ROW_COL_SIZE - 1; row >= 0; row-- {
+		for col := 0; col < ROW_COL_SIZE; col++ {
+			mask := BitBoard(1) << ShiftFromCoords(Coordinates{uint64(row), uint64(col)})
 			if b&mask > 0 {
 				buffer.WriteString(" 1 ")
 			} else {
