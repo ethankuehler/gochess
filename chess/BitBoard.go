@@ -20,6 +20,23 @@ type BoardState struct {
 	fullmove_number uint16       //Number of full moves.
 }
 
+func (b BitBoard) String() string {
+	var buffer bytes.Buffer
+
+	for rank := RANK_FILE_SIZE - 1; rank >= 0; rank-- {
+		for file := 0; file < RANK_FILE_SIZE; file++ {
+			mask := BitBoard(1) << ShiftFromCoords(Coordinates{uint64(file), uint64(rank)})
+			if b&mask > 0 {
+				buffer.WriteString(" 1 ")
+			} else {
+				buffer.WriteString(" . ")
+			}
+		}
+		buffer.WriteRune('\n')
+	}
+	return buffer.String()
+}
+
 // New BitBoard with starting setup
 func NewBoardDefault() *BoardState {
 	b := BoardState{}
@@ -28,8 +45,8 @@ func NewBoardDefault() *BoardState {
 	b.pieces[BISHOP] = 0b00100100
 	b.pieces[KNIGHT] = 0b01000010
 	b.pieces[ROOK] = 0b10000001
-	b.pieces[QUEEN] = 0b00010000
-	b.pieces[KING] = 0b00001000
+	b.pieces[QUEEN] = 0b00001000 // d1 (bit 3) - standard chess position
+	b.pieces[KING] = 0b00010000  // e1 (bit 4) - standard chess position
 
 	//copying over the piceces but now for black
 	b.pieces[PAWN+BLACK_OFFSET] = b.pieces[PAWN] << 40
@@ -59,17 +76,21 @@ func NewBoardFEN(FEN string) (*BoardState, error) {
 		return nil, errors.New("invalid FEN")
 	}
 
+	var rows = strings.Split(fields[0], "/")
+	if len(rows) != 8 {
+		return nil, errors.New("invalid FEN, piece placement invalid")
+	}
 	var mask BitBoard = 1 << 63
-	for _, v := range fields[0] {
-		if v == '/' {
-			continue
-		}
-		idx := slices.Index(PICECES_SYM, string(v))
-		if idx != -1 {
-			b.pieces[idx] |= mask
-			mask = mask >> 1
-		} else {
-			mask = mask >> (v - 48)
+	for _, row := range rows {
+		for i := len(row) - 1; i >= 0; i-- {
+			v := row[i]
+			idx := slices.Index(PICECES_SYM, string(v))
+			if idx != -1 {
+				b.pieces[idx] |= mask
+				mask = mask >> 1
+			} else {
+				mask = mask >> (v - 48)
+			}
 		}
 	}
 	if mask != 0 {
@@ -163,31 +184,21 @@ func (b *BoardState) InfoString() string {
 
 func (b *BoardState) toString(piceces []string) string {
 	boardStr := ""
-	//we start at the top right
-	var mask BitBoard = 1 << 63
-
-	for i := range 64 + 8 {
-		//insert a newline at the end of every row.
-		if i%9 == 0 {
-			boardStr += "\n"
-			continue
-		}
-
-		//Now find if there is a piece at the location loc and write it to s which by default is " _ ".
-		s := " _ "
-		for k, p := range b.pieces {
-			if mask&p > 0 {
-				s = " " + piceces[k] + " "
-				break
+	for row := 7; row >= 0; row-- {
+		for col := 0; col < 8; col++ {
+			mask := BitBoard(1) << (uint(row*8 + col))
+			s := " _ "
+			for k, p := range b.pieces {
+				if mask&p > 0 {
+					s = " " + piceces[k] + " "
+					break
+				}
 			}
+			boardStr += s
 		}
-		boardStr += s
-
-		mask = mask >> 1
+		boardStr += "\n"
 	}
-
 	boardStr += b.InfoString()
-
 	return boardStr
 }
 
@@ -203,44 +214,39 @@ func (b *BoardState) StringUni() string {
 func (b *BoardState) FEN() string {
 	var buffer bytes.Buffer
 
-	row_count := 0
-	count := 0
-	for mask := BitBoard(1) << 63; 0 < mask; mask = mask >> 1 {
+	for row := 7; row >= 0; row-- {
+		emptyCount := 0
+		for col := 0; col < 8; col++ {
+			mask := BitBoard(1) << (uint(row*8 + col))
 
-		// determins if there is a piece at the location loc
-		found := false
-		for i, v := range b.pieces {
-			if v&mask > 0 {
-				if count > 0 {
-					buffer.WriteString(strconv.Itoa(count))
-					count = 0
+			// determins if there is a piece at the location loc
+			found := false
+			for i, v := range b.pieces {
+				if v&mask > 0 {
+					if emptyCount > 0 {
+						buffer.WriteString(strconv.Itoa(emptyCount))
+						emptyCount = 0
+					}
+					buffer.WriteString(PICECES_SYM[i])
+					found = true
+					break
 				}
-				buffer.WriteString(PICECES_SYM[i])
-				found = true
-				break
 			}
-		}
 
-		// if no piece is found
-		if !found {
-			count += 1
-		}
+			// if no piece is found
+			if !found {
+				emptyCount += 1
+			}
 
-		row_count += 1
-		if row_count == 8 {
-			if count != 0 {
-				buffer.WriteString(strconv.Itoa(count))
-				count = 0
-			}
-			if mask != 1 {
-				buffer.WriteRune('/')
-			}
-			row_count = 0
+		}
+		if emptyCount != 0 {
+			buffer.WriteString(strconv.Itoa(emptyCount))
+		}
+		if row != 0 {
+			buffer.WriteRune('/')
 		}
 	}
-
 	buffer.WriteString(b.InfoString())
-
 	return buffer.String()
 }
 
