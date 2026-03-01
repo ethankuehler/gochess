@@ -19,7 +19,7 @@ type Coordinates struct {
 func CoordsFromShift(shift Shift) Coordinates {
 	col := shift % RANK_FILE_SIZE
 	row := shift / RANK_FILE_SIZE
-	return Coordinates{uint64(col), uint64(row)}
+	return Coordinates{uint64(row), uint64(col)}
 }
 
 func ShiftFromCoords(coord Coordinates) Shift {
