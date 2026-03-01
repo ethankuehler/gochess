@@ -62,7 +62,7 @@ func GetBishopAttack(loc Shift, board BitBoard) BitBoard {
 
 func GetRookMask(coord Coordinates) BitBoard {
 	row, col := coord.col, coord.row
-	return (COLUMN_MASK << col) | (ROW_MASK << row * 8)
+	return (COLUMN_MASK << col) | (ROW_MASK << row * ROW_COL_SIZE)
 }
 
 func GetBishopMask(coord Coordinates) BitBoard {
@@ -90,7 +90,7 @@ func TryRookMagic(loc Shift, magic MagicEntry) ([]BitBoard, error) {
 	mask := magic.Mask
 
 	for true {
-		moves := RayCast(loc, blockers, mask, Ray{})
+		moves := RayCast(loc, blockers, mask, ROOK_RAY)
 		table_entry := &table[MagicIndex(magic, blockers)]
 		if *table_entry == 0 {
 			*table_entry = moves
@@ -107,10 +107,29 @@ func TryRookMagic(loc Shift, magic MagicEntry) ([]BitBoard, error) {
 	return table, nil
 }
 
-// TODO:: fix types, this is also a sign that the inital types aren't that good and will need to be changed.
-func RayCast(inital Shift, blockers BitBoard, mask BitBoard, r Ray) BitBoard {
+func RayCast(inital Shift, blockers BitBoard, _ BitBoard, r Ray) BitBoard {
+	coord := CoordsFromShift(inital)
+	row, col := int(coord.row), int(coord.col)
+	var attacks BitBoard = 0
 
-	return 0
+	for _, direction := range r {
+		dRow, dCol := direction[0], direction[1]
+		if dRow == 0 && dCol == 0 {
+			continue
+		}
+		rayRow, rayCol := row+dRow, col+dCol
+		for rayRow >= 0 && rayRow < ROW_COL_SIZE && rayCol >= 0 && rayCol < ROW_COL_SIZE {
+			loc := BitBoard(1) << ShiftFromCoords(Coordinates{uint64(rayRow), uint64(rayCol)})
+			attacks |= loc
+			if blockers&loc > 0 {
+				break
+			}
+			rayRow += dRow
+			rayCol += dCol
+		}
+	}
+
+	return attacks
 }
 
 func BuildAllAttacks() {

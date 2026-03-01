@@ -1,0 +1,44 @@
+[
+  {
+    "name": "rook center mixed blockers",
+    "start": "d4",
+    "blockers": ["d6", "b4", "f4"],
+    "expected": ["d5", "d6", "d3", "d2", "d1", "c4", "b4", "e4", "f4"],
+    "ray": "rook"
+  },
+  {
+    "name": "rook adjacent blocker",
+    "start": "d4",
+    "blockers": ["d5"],
+    "expected": ["d5", "d3", "d2", "d1", "c4", "b4", "a4", "e4", "f4", "g4", "h4"],
+    "ray": "rook"
+  },
+  {
+    "name": "rook corner no blockers",
+    "start": "a1",
+    "blockers": [],
+    "expected": ["a2", "a3", "a4", "a5", "a6", "a7", "a8", "b1", "c1", "d1", "e1", "f1", "g1", "h1"],
+    "ray": "rook"
+  },
+  {
+    "name": "bishop center mixed blockers",
+    "start": "d4",
+    "blockers": ["f6", "b2", "f2"],
+    "expected": ["e5", "f6", "c5", "b6", "a7", "e3", "f2", "c3", "b2"],
+    "ray": "bishop"
+  },
+  {
+    "name": "bishop corner no blockers",
+    "start": "a1",
+    "blockers": [],
+    "expected": ["b2", "c3", "d4", "e5", "f6", "g7", "h8"],
+    "ray": "bishop"
+  },
+  {
+    "name": "bishop edge blockers",
+    "start": "c1",
+    "blockers": ["e3", "a3"],
+    "expected": ["d2", "e3", "b2", "a3"],
+    "ray": "bishop"
+  }
+]

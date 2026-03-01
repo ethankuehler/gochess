@@ -98,3 +98,49 @@ func TestOccupied(t *testing.T) {
 	}
 
 }
+
+func TestSquaresToBitBoard(t *testing.T) {
+	t.Run("converts square list", func(t *testing.T) {
+		got, err := SquaresToBitBoard([]string{"a1", "d4", "h8"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		a1, _ := LocFromAlg("a1")
+		d4, _ := LocFromAlg("d4")
+		h8, _ := LocFromAlg("h8")
+		want := a1 | d4 | h8
+		if got != want {
+			t.Fatalf("expected %d, got %d", want, got)
+		}
+	})
+
+	t.Run("handles duplicates", func(t *testing.T) {
+		got, err := SquaresToBitBoard([]string{"a1", "a1"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		want, _ := LocFromAlg("a1")
+		if got != want {
+			t.Fatalf("expected %d, got %d", want, got)
+		}
+	})
+
+	t.Run("empty input returns empty board", func(t *testing.T) {
+		got, err := SquaresToBitBoard([]string{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != 0 {
+			t.Fatalf("expected empty board, got %d", got)
+		}
+	})
+
+	t.Run("invalid square returns error", func(t *testing.T) {
+		_, err := SquaresToBitBoard([]string{"a1", "z9"})
+		if err == nil {
+			t.Fatal("expected error for invalid square")
+		}
+	})
+}

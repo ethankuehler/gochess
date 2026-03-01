@@ -3,6 +3,7 @@ package chess
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -35,6 +36,19 @@ func (b BitBoard) String() string {
 		buffer.WriteRune('\n')
 	}
 	return buffer.String()
+}
+
+// SquaresToBitBoard converts algebraic square strings (e.g. "a1", "e4") to a bitboard mask.
+func SquaresToBitBoard(squares []string) (BitBoard, error) {
+	var board BitBoard = 0
+	for _, square := range squares {
+		loc, err := LocFromAlg(square)
+		if err != nil {
+			return 0, fmt.Errorf("invalid square %q: %w", square, err)
+		}
+		board |= loc
+	}
+	return board, nil
 }
 
 // New BitBoard with starting setup
