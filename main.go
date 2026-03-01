@@ -21,9 +21,18 @@ func main() {
 	}
 	fmt.Println(b.StringUni())
 
-	m, err := chess.NewMoveUCI("e2e4")
+	// manual testing of various functions
+	fmt.Println("testing bishope moves at c1")
+	loc, err := chess.ShiftFromAlg("c1") // locaton of bishop
 	if err != nil {
 		fmt.Println(err)
 	}
-	fmt.Println(m)
+	fmt.Println(loc)
+	blockers := b.Occupied(chess.BOTH)
+	fmt.Printf("blockers: %064b\n", blockers)
+	fmt.Println(blockers.String())
+	mask := chess.GetBishopAttack(loc, blockers)
+	fmt.Println(mask.String())
+	newloc, _ := chess.LocFromAlg("c1")
+	fmt.Println(newloc.String())
 }

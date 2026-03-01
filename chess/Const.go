@@ -12,8 +12,8 @@ const SHIFT_SIZE = 64
 const RANK_FILE_SIZE = 8
 
 type Coordinates struct {
-	row uint64
-	col uint64
+	file uint64 // file (column) 0-7, corresponds to a-h
+	rank uint64 // rank (row) 0-7, corresponds to 1-8
 }
 
 func CoordsFromShift(shift Shift) Coordinates {
@@ -26,7 +26,7 @@ func ShiftFromCoords(coord Coordinates) Shift {
 	return Shift(coord.col + coord.row*RANK_FILE_SIZE)
 }
 
-// index for certin pieces.
+// index for certain pieces.
 type Piece int
 
 const (
