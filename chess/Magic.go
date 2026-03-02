@@ -5,6 +5,9 @@ import (
 	"math/rand/v2"
 )
 
+// Magic limit
+const MAGIC_LIMIT = 1_000_000
+
 // there are only 64 knight moves on a chess board
 // each index is the shift of the knight, the value is the attack
 var KNIGHT_ATTACKS []BitBoard
@@ -66,22 +69,23 @@ func GetRookMask(coord Coordinates) BitBoard {
 }
 
 func GetBishopMask(coord Coordinates) BitBoard {
-	//TODO: not done
-	return 0
+	return RayCast(ShiftFromCoords(coord), 0, 0, BISHOP_RAY)
 }
 
-func FindMagic(coord Coordinates) []BitBoard {
+func FindMagic(coord Coordinates) ([]BitBoard, error) {
 	mask := GetRookMask(coord)
 	shift := ShiftFromCoords(coord)
-	for {
+	for _ = range MAGIC_LIMIT {
 		test_magic := rand.Uint64() & rand.Uint64() & rand.Uint64()
 		magicE := MagicEntry{mask, test_magic, shift}
 		table, err := TryRookMagic(shift, magicE)
 		if err != nil {
 			continue
 		}
-		return table
+		return table, nil
 	}
+	return nil, errors.New("hit magic limit, magic not found")
+
 }
 
 func TryRookMagic(loc Shift, magic MagicEntry) ([]BitBoard, error) {

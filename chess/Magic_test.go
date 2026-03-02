@@ -202,3 +202,54 @@ func TestRayCastWithEmptyRay(t *testing.T) {
 		t.Fatalf("expected no attacks for empty ray, got:\n%s", got.String())
 	}
 }
+
+type bishopMaskExample struct {
+	Name     string   `json:"name"`
+	Start    string   `json:"start"`
+	Expected []string `json:"expected"`
+}
+
+func loadBishopMaskExamples(path string) ([]bishopMaskExample, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	tests := make([]bishopMaskExample, 0)
+	if err := json.Unmarshal(data, &tests); err != nil {
+		return nil, err
+	}
+	return tests, nil
+}
+
+func TestGetBishopMask(t *testing.T) {
+	tests, err := loadBishopMaskExamples("data/bishop_mask_examples.json")
+	if err != nil {
+		t.Fatalf("could not load bishop mask examples: %v", err)
+	}
+
+	for _, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			shift, err := ShiftFromAlg(test.Start)
+			if err != nil {
+				t.Fatalf("bad start square %q: %v", test.Start, err)
+			}
+
+			mask := GetBishopMask(CoordsFromShift(shift))
+
+			expected, err := SquaresToBitBoard(test.Expected)
+			if err != nil {
+				t.Fatalf("bad expected squares %v: %v", test.Expected, err)
+			}
+
+			if mask != expected {
+				t.Errorf("bishop mask mismatch for %s\nexpected:\n%s\ngot:\n%s", test.Start, expected.String(), mask.String())
+			}
+
+			source := BitBoard(1) << shift
+			if mask&source != 0 {
+				t.Errorf("source square %s should not be in bishop mask", test.Start)
+			}
+		})
+	}
+}
