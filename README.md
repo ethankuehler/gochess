@@ -129,11 +129,13 @@ sliding attacks in `data/sliding_attacks_examples.json`, and perft positions in
 `data/perft.csv` (rows with `deep=1` only run with `PERFT_DEEP=1`). The fast
 suite covers FEN parsing, magic tables, move generation, evaluation, search
 limits, the UCI protocol, and the web endpoints; `cmd/uci` tests build and run
-the binary from an empty temporary directory. The Stockfish comparison and
-`cmd/perft -compare` are opt-in and not required for CI.
+the binary from an empty temporary directory. The Stockfish differential test
+runs in CI and locally when `STOCKFISH_BIN` is set; `cmd/perft -compare` remains
+an opt-in debugging tool.
 
-CI checks `gofmt`, `go build`, `go vet`, `go test -race ./...`, a `bench` smoke
-test, and a Windows/macOS cross-compile. Run `gofmt -l .` before pushing.
+CI checks `gofmt`, `go build`, `go vet`, `go test -race ./...`, a Stockfish
+perft comparison, a `bench` smoke test, and a Windows/macOS cross-compile. Run
+`gofmt -l .` before pushing.
 
 ## Layout
 

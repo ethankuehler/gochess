@@ -39,6 +39,16 @@ jobs:
       - name: Test
         run: go test -race ./...
 
+      - name: Install Stockfish
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y stockfish
+
+      - name: Perft against Stockfish
+        env:
+          STOCKFISH_BIN: /usr/games/stockfish
+        run: go test -count=1 -timeout 5m ./chess -run '^TestPerftAgainstStockfish$' -v
+
       - name: UCI smoke test
         run: |
           go build -o gochess ./cmd/uci

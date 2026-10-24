@@ -179,8 +179,8 @@ to the repo root — preserve that pattern if you add tests that touch `data/`.
 add it to the `//go:embed` list in `data/assets.go` and to the FS loader.
 
 CI runs on pushes to `main` and on pull requests: `gofmt` check, `go build`,
-`go vet`, and `go test -race ./...`. The compiled `gochess` binary,
-`gochess-uci`, `.vscode/`, the local Go caches
+`go vet`, `go test -race ./...`, and the Stockfish perft differential test. The
+compiled `gochess` binary, `gochess-uci`, `.vscode/`, the local Go caches
 (`.gocache/`, `.gomodcache/`, `.gopath/`), and local planning notes in
 `plans/` are gitignored.
 
@@ -194,7 +194,7 @@ Bitboard representation:
   `file`/`rank` coordinates; convert with `SquareFromFileRank` /
   `FileRankFromSquare`. Use named fields in `FileRank` literals.
 - `Position.pieceBitboards` is a `[12]BitBoard` array: indices 0–5 are white
-  `Pawn`, `Bishop`, `Knight`, `Rook`, `Queen`, `King`; black pieces are the
+  `Pawn`, `Knight`, `Bishop`, `Rook`, `Queen`, `King`; black pieces are the
   same order offset by `blackPieceOffset` (6).
 - `Position.flags` (uint8) packs side-to-move (`whiteToMove`) and the four
   castling rights (`whiteKingsideCastling`, `whiteQueensideCastling`,
@@ -358,8 +358,8 @@ UCI protocol:
 
 Things to be careful with:
 
-- `pieceSymbols` follows the `Piece` constant order (white Pawn, Bishop,
-  Knight, Rook, Queen, King, then the black pieces). That order is
+- `pieceSymbols` follows the standard `Piece` constant order (white Pawn,
+  Knight, Bishop, Rook, Queen, King, then the black pieces). That order is
   load-bearing across FEN parsing, board printing, and promotion encoding;
   don't reorder it without updating every table.
 - `tryMagic` uses a zero table slot as "not yet written"; that sentinel is
@@ -445,8 +445,9 @@ Things to be careful with:
 - `cmd/search` tests call `run` with buffers and cover `-eval`, mate/checkmate
   output, and invalid depth, arguments, and FENs. Its `TestMain` changes to the
   repo root because `BuildAllAttacks` reads `data/`.
-- `TestPerftAgainstStockfish` is opt-in via `STOCKFISH_BIN` and compares a
-  deterministic random game with Stockfish, which is not required in CI.
+- `TestPerftAgainstStockfish` compares a deterministic random game with
+  Stockfish at every position. It skips unless `STOCKFISH_BIN` is set; CI
+  installs Stockfish and runs it in a dedicated step.
 - `cmd/web` tests exercise the state, move, reset, and undo endpoints with
   `httptest`, plus engine settings/depth validation, UCI engine replies for
   either colour, the human-move guard, engine-aware undo, reset preserving the

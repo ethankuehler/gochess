@@ -38,8 +38,8 @@ type Piece int
 const (
 	NoPiece Piece = -1
 	Pawn    Piece = 0
-	Bishop  Piece = 1
-	Knight  Piece = 2
+	Knight  Piece = 1
+	Bishop  Piece = 2
 	Rook    Piece = 3
 	Queen   Piece = 4
 	King    Piece = 5
@@ -133,10 +133,11 @@ const (
 )
 
 // Piece and board notation tables. The piece symbols follow the Piece
-// constants: white pieces first, then black pieces offset by blackPieceOffset.
+// constants in the standard order P N B R Q K, white pieces first, then black
+// pieces offset by blackPieceOffset.
 var (
-	pieceSymbols        = []string{"P", "B", "N", "R", "Q", "K", "p", "b", "n", "r", "q", "k"}
-	unicodePieceSymbols = []string{"♙", "♗", "♘", "♖", "♕", "♔", "♟", "♝", "♞", "♜", "♛", "♚"}
+	pieceSymbols        = []string{"P", "N", "B", "R", "Q", "K", "p", "n", "b", "r", "q", "k"}
+	unicodePieceSymbols = []string{"♙", "♘", "♗", "♖", "♕", "♔", "♟", "♞", "♝", "♜", "♛", "♚"}
 	castlingSymbols     = []string{"K", "Q", "k", "q"}
 	fileNames           = []rune{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'}
 )

@@ -120,7 +120,7 @@ func (b *Position) makeMove(m Move) Position {
 	// Place the moving piece, replacing it with the promotion piece if needed.
 	if m.flags&promotionFlag != 0 {
 		promotion, ok := m.Promotion()
-		if !ok || promotion < Bishop || promotion > Queen {
+		if !ok || promotion < Knight || promotion > Queen {
 			panic("makeMove: invalid promotion piece")
 		}
 		next.pieceBitboards[promotion+offset] |= toMask

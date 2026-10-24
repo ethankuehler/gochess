@@ -440,7 +440,7 @@ func TestMoveFlagsConsistent(t *testing.T) {
 					if piece != Pawn || !isPromotionRank(us, m.To()) {
 						t.Errorf("%s: promotion flag on a non-promotion", m)
 					}
-					if promotion < Bishop || promotion > Queen {
+					if promotion < Knight || promotion > Queen {
 						t.Errorf("%s: invalid promotion piece %v", m, promotion)
 					}
 				} else if piece == Pawn && isPromotionRank(us, m.To()) {

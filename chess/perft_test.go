@@ -140,16 +140,17 @@ func stockfishPerft(t *testing.T, path, fen string, depth int) uint64 {
 	return 0
 }
 
-// TestPerftAgainstStockfish is opt-in because it needs a Stockfish binary.
-// It plays a deterministic random game from the start position and compares
-// Perft(3) with Stockfish at every position.
+// TestPerftAgainstStockfish compares move generation with Stockfish. It is
+// skipped unless STOCKFISH_BIN is set; CI installs Stockfish and runs this
+// test in a dedicated step. It plays a deterministic random game from the
+// start position and compares Perft(3) with Stockfish at every position.
 func TestPerftAgainstStockfish(t *testing.T) {
 	path := os.Getenv("STOCKFISH_BIN")
 	if path == "" {
 		t.Skip("set STOCKFISH_BIN to run the Stockfish differential test")
 	}
 	if _, err := exec.LookPath(path); err != nil {
-		t.Skipf("Stockfish not found: %v", err)
+		t.Fatalf("STOCKFISH_BIN %q not found: %v", path, err)
 	}
 
 	b := NewStartingPosition()

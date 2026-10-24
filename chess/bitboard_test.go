@@ -153,6 +153,26 @@ func TestNewStartingPosition(t *testing.T) {
 	}
 }
 
+func TestPieceSymbolsFollowStandardOrder(t *testing.T) {
+	want := []string{"P", "N", "B", "R", "Q", "K", "p", "n", "b", "r", "q", "k"}
+	wantUnicode := []string{"♙", "♘", "♗", "♖", "♕", "♔", "♟", "♞", "♝", "♜", "♛", "♚"}
+
+	if len(pieceSymbols) != len(want) {
+		t.Fatalf("pieceSymbols length = %d, want %d", len(pieceSymbols), len(want))
+	}
+	for i := range want {
+		if pieceSymbols[i] != want[i] {
+			t.Errorf("pieceSymbols[%d] = %q, want %q", i, pieceSymbols[i], want[i])
+		}
+		if unicodePieceSymbols[i] != wantUnicode[i] {
+			t.Errorf("unicodePieceSymbols[%d] = %q, want %q", i, unicodePieceSymbols[i], wantUnicode[i])
+		}
+	}
+	if pieceSymbols[Knight] != "N" || pieceSymbols[Bishop] != "B" {
+		t.Errorf("Knight/Bishop symbols are swapped: N=%q B=%q", pieceSymbols[Knight], pieceSymbols[Bishop])
+	}
+}
+
 func TestParseFENValid(t *testing.T) {
 	cases := []string{
 		"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
