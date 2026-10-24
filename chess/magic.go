@@ -40,7 +40,7 @@ var (
 var (
 	ROOK_MAGIC     []MagicEntry //magic numbers
 	BISHOP_MAGIC   []MagicEntry
-	ROOK_ATTTACKS  [][]BitBoard
+	rookAttacks    [][]BitBoard
 	BISHOP_ATTACKS [][]BitBoard
 )
 
@@ -76,7 +76,7 @@ func MagicIndex(entry MagicEntry, board BitBoard) uint64 {
 func GetRookAttack(loc Shift, board BitBoard) BitBoard {
 	magic := ROOK_MAGIC[loc]
 	idx := MagicIndex(magic, board)
-	return ROOK_ATTTACKS[loc][idx]
+	return rookAttacks[loc][idx]
 }
 
 func GetBishopAttack(loc Shift, board BitBoard) BitBoard {
@@ -127,13 +127,13 @@ func FindMagic(coord Coordinates, ray Ray) (MagicEntry, []BitBoard, error) {
 	mask := RelevantBlockers(coord, ray)
 	shift := ShiftFromCoords(coord)
 	for _ = range MAGIC_LIMIT {
-		test_magic := rand.Uint64() & rand.Uint64() & rand.Uint64()
-		magicE := NewMagicEntry(mask, test_magic)
-		table, err := TryMagic(shift, magicE, ray)
+		candidate := rand.Uint64() & rand.Uint64() & rand.Uint64()
+		entry := NewMagicEntry(mask, candidate)
+		table, err := TryMagic(shift, entry, ray)
 		if err != nil {
 			continue
 		}
-		return magicE, table, nil
+		return entry, table, nil
 	}
 	return MagicEntry{}, nil, errors.New("hit magic limit, magic not found")
 
@@ -166,8 +166,8 @@ func TryMagic(loc Shift, magic MagicEntry, ray Ray) ([]BitBoard, error) {
 	return table, nil
 }
 
-func RayCast(inital Shift, blockers BitBoard, r Ray) BitBoard {
-	coord := CoordsFromShift(inital)
+func RayCast(square Shift, blockers BitBoard, r Ray) BitBoard {
+	coord := CoordsFromShift(square)
 	row, col := int(coord.row), int(coord.col)
 	var attacks BitBoard = 0
 
@@ -200,9 +200,9 @@ func BuildAllAttacks() {
 	BuildBishopAttacks()
 }
 
-// BuildRookAttacks fills ROOK_MAGIC and ROOK_ATTTACKS for every square.
+// BuildRookAttacks fills ROOK_MAGIC and rookAttacks for every square.
 func BuildRookAttacks() {
-	ROOK_MAGIC, ROOK_ATTTACKS = buildSliderAttacks(ROOK_RAY, "data/rook_magics.csv")
+	ROOK_MAGIC, rookAttacks = buildSliderAttacks(ROOK_RAY, "data/rook_magics.csv")
 }
 
 // BuildBishopAttacks fills BISHOP_MAGIC and BISHOP_ATTACKS for every square.
@@ -213,9 +213,9 @@ func BuildBishopAttacks() {
 // buildSliderAttacks generates magic numbers and attack tables for every
 // square. By default the magics are restored from the given CSV; when that
 // file is missing or invalid the builder falls back to a random search.
-func buildSliderAttacks(ray Ray, file_name string) ([]MagicEntry, [][]BitBoard) {
+func buildSliderAttacks(ray Ray, fileName string) ([]MagicEntry, [][]BitBoard) {
 	if LoadMagicsFromDisk {
-		magics, err := tryLoadMagics(file_name)
+		magics, err := tryLoadMagics(fileName)
 		if err == nil {
 			tables, buildErr := buildMagicTables(magics, ray)
 			if buildErr == nil {
@@ -223,7 +223,7 @@ func buildSliderAttacks(ray Ray, file_name string) ([]MagicEntry, [][]BitBoard) 
 			}
 			err = buildErr
 		}
-		log.Printf("could not use magics from %s (%v); searching for new magics", file_name, err)
+		log.Printf("could not use magics from %s (%v); searching for new magics", fileName, err)
 	}
 
 	magics := make([]MagicEntry, SHIFT_SIZE)
@@ -239,7 +239,7 @@ func buildSliderAttacks(ray Ray, file_name string) ([]MagicEntry, [][]BitBoard) 
 	}
 
 	if SaveMagicsToDisk {
-		SaveMagics(file_name, magics)
+		SaveMagics(fileName, magics)
 	}
 	return magics, tables
 }
@@ -259,26 +259,26 @@ func buildMagicTables(magics []MagicEntry, ray Ray) ([][]BitBoard, error) {
 }
 
 func BuildKnightAttacks() {
-	file_name := "data/knight_attacks.csv"
-	KNIGHT_ATTACKS = LoadAttacks(file_name)
+	fileName := "data/knight_attacks.csv"
+	KNIGHT_ATTACKS = LoadAttacks(fileName)
 }
 
 func BuildKingAttacks() {
-	file_name := "data/king_attacks.csv"
-	KING_ATTACKS = LoadAttacks(file_name)
+	fileName := "data/king_attacks.csv"
+	KING_ATTACKS = LoadAttacks(fileName)
 }
 
 func BuildPawnMoves() {
-	file_name := "data/white_pawn_move.csv"
-	WHITE_PAWN_MOVES = LoadAttacks(file_name)
-	file_name = "data/black_pawn_move.csv"
-	BLACK_PAWN_MOVES = LoadAttacks(file_name)
+	fileName := "data/white_pawn_move.csv"
+	WHITE_PAWN_MOVES = LoadAttacks(fileName)
+	fileName = "data/black_pawn_move.csv"
+	BLACK_PAWN_MOVES = LoadAttacks(fileName)
 }
 
 func BuildPawnAttacks() {
-	file_name := "data/white_pawn_attacks.csv"
-	WHITE_PAWN_ATTACKS = LoadAttacks(file_name)
-	file_name = "data/black_pawn_attacks.csv"
-	BLACK_PAWN_ATTACKS = LoadAttacks(file_name)
+	fileName := "data/white_pawn_attacks.csv"
+	WHITE_PAWN_ATTACKS = LoadAttacks(fileName)
+	fileName = "data/black_pawn_attacks.csv"
+	BLACK_PAWN_ATTACKS = LoadAttacks(fileName)
 
 }

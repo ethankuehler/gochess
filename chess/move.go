@@ -2,8 +2,6 @@ package chess
 
 import (
 	"fmt"
-	"iter"
-	"log"
 	"math/bits"
 	"slices"
 	"strings"
@@ -64,7 +62,7 @@ func NewMoveUCI(UCI string) (*Move, error) {
 func (m Move) String() string {
 	uci := AlgFromLoc(m.start) + AlgFromLoc(m.end)
 	if promotion, ok := m.Promotion(); ok {
-		uci += strings.ToLower(PICECES_SYM[promotion])
+		uci += strings.ToLower(pieceSymbols[promotion])
 	}
 	return uci
 }
@@ -129,29 +127,11 @@ func ShiftFromAlg(alg string) (Shift, error) {
 	return ShiftFromCoords(Coordinates{row: row, col: col}), nil
 }
 
-// Given algerbraic notation for a position (e.g. c5) calculate the position.
+// Given algebraic notation for a position (e.g. c5) calculate the position.
 func LocFromAlg(alg string) (BitBoard, error) {
 	shift, err := ShiftFromAlg(alg)
 	if err != nil {
 		return 0, err
 	}
 	return 1 << shift, nil
-}
-
-func ShiftIter(start_str, stop_str string) iter.Seq[Shift] {
-	start, err := ShiftFromAlg(start_str)
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-	stop, err := ShiftFromAlg(stop_str)
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-	return func(yield func(Shift) bool) {
-		for i := start; i <= stop; i++ {
-			if !yield(i) {
-				return
-			}
-		}
-	}
 }

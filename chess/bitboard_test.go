@@ -13,7 +13,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestNewBaordFEN(t *testing.T) {
+func TestNewBoardFEN(t *testing.T) {
 	// Open the CSV file
 	file, err := os.Open("data/FEN.csv")
 	if err != nil {
@@ -40,7 +40,7 @@ func TestNewBaordFEN(t *testing.T) {
 		}
 		out := b.FEN()
 		if out != record[0] {
-			t.Errorf("FEN dose not match, input = %s, output = %s", record[0], out)
+			t.Errorf("FEN does not match, input = %s, output = %s", record[0], out)
 		}
 	}
 
@@ -178,8 +178,8 @@ func TestNewBoardFENEnPassantSquare(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	want, _ := LocFromAlg("e3")
-	if b.enpassant != want {
-		t.Errorf("en passant square = %d, want %d", b.enpassant, want)
+	if b.enPassantSquare != want {
+		t.Errorf("en passant square = %d, want %d", b.enPassantSquare, want)
 	}
 }
 

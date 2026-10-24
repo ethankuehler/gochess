@@ -485,8 +485,8 @@ func TestBuildAllAttacks(t *testing.T) {
 		}
 	}
 
-	if len(ROOK_MAGIC) != SHIFT_SIZE || len(ROOK_ATTTACKS) != SHIFT_SIZE {
-		t.Errorf("rook tables have %d magics and %d attack tables", len(ROOK_MAGIC), len(ROOK_ATTTACKS))
+	if len(ROOK_MAGIC) != SHIFT_SIZE || len(rookAttacks) != SHIFT_SIZE {
+		t.Errorf("rook tables have %d magics and %d attack tables", len(ROOK_MAGIC), len(rookAttacks))
 	}
 	if len(BISHOP_MAGIC) != SHIFT_SIZE || len(BISHOP_ATTACKS) != SHIFT_SIZE {
 		t.Errorf("bishop tables have %d magics and %d attack tables", len(BISHOP_MAGIC), len(BISHOP_ATTACKS))
