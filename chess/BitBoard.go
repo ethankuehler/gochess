@@ -26,7 +26,7 @@ func (b BitBoard) String() string {
 
 	for row := ROW_COL_SIZE - 1; row >= 0; row-- {
 		for col := 0; col < ROW_COL_SIZE; col++ {
-			mask := BitBoard(1) << ShiftFromCoords(Coordinates{uint64(row), uint64(col)})
+			mask := BitBoard(1) << ShiftFromCoords(Coordinates{row: uint64(row), col: uint64(col)})
 			if b&mask > 0 {
 				buffer.WriteString(" 1 ")
 			} else {
@@ -200,7 +200,7 @@ func (b *BoardState) toString(piceces []string) string {
 	boardStr := ""
 	for row := 7; row >= 0; row-- {
 		for col := 0; col < 8; col++ {
-			mask := BitBoard(1) << (uint(row*8 + col))
+			mask := BitBoard(1) << ShiftFromCoords(Coordinates{row: uint64(row), col: uint64(col)})
 			s := " _ "
 			for k, p := range b.pieces {
 				if mask&p > 0 {
@@ -231,7 +231,7 @@ func (b *BoardState) FEN() string {
 	for row := 7; row >= 0; row-- {
 		emptyCount := 0
 		for col := 0; col < 8; col++ {
-			mask := BitBoard(1) << (uint(row*8 + col))
+			mask := BitBoard(1) << ShiftFromCoords(Coordinates{row: uint64(row), col: uint64(col)})
 
 			// determins if there is a piece at the location loc
 			found := false

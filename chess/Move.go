@@ -98,7 +98,7 @@ func ShiftFromAlg(alg string) (Shift, error) {
 	if err != nil {
 		return 0, err
 	}
-	return Shift(col + row*8), nil
+	return ShiftFromCoords(Coordinates{row: row, col: col}), nil
 }
 
 // Given algerbraic notation for a position (e.g. c5) calculate the position.

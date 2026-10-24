@@ -3,7 +3,10 @@ package chess
 import (
 	"encoding/json"
 	"fmt"
+	"math/bits"
+	"math/rand/v2"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -150,7 +153,7 @@ func TestRayCastExamples(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := RayCast(start, blockers, 0, ray)
+			got := RayCast(start, blockers, ray)
 
 			if got != expected {
 				t.Errorf("raycast mismatch\nexpected:\n%s\ngot:\n%s", expected.String(), got.String())
@@ -174,7 +177,7 @@ func TestRayCastReferenceCoverage(t *testing.T) {
 
 		for _, blockers := range occupancies {
 			rookExpected := rayCastReference(start, blockers, ROOK_RAY)
-			rookGot := RayCast(start, blockers, 0, ROOK_RAY)
+			rookGot := RayCast(start, blockers, ROOK_RAY)
 			if rookGot != rookExpected {
 				t.Fatalf("rook mismatch at start=%d blockers=%d", start, blockers)
 			}
@@ -183,7 +186,7 @@ func TestRayCastReferenceCoverage(t *testing.T) {
 			}
 
 			bishopExpected := rayCastReference(start, blockers, BISHOP_RAY)
-			bishopGot := RayCast(start, blockers, 0, BISHOP_RAY)
+			bishopGot := RayCast(start, blockers, BISHOP_RAY)
 			if bishopGot != bishopExpected {
 				t.Fatalf("bishop mismatch at start=%d blockers=%d", start, blockers)
 			}
@@ -197,7 +200,7 @@ func TestRayCastReferenceCoverage(t *testing.T) {
 func TestRayCastWithEmptyRay(t *testing.T) {
 	start, _ := ShiftFromAlg("d4")
 	blockers, _ := SquaresToBitBoard([]string{"d5", "e4", "e5"})
-	got := RayCast(start, blockers, 0, Ray{})
+	got := RayCast(start, blockers, Ray{})
 	if got != 0 {
 		t.Fatalf("expected no attacks for empty ray, got:\n%s", got.String())
 	}
@@ -251,5 +254,109 @@ func TestGetBishopMask(t *testing.T) {
 				t.Errorf("source square %s should not be in bishop mask", test.Start)
 			}
 		})
+	}
+}
+
+func TestRelevantBlockers(t *testing.T) {
+	cases := []struct {
+		square string
+		ray    Ray
+		bits   int
+	}{
+		{"a1", ROOK_RAY, 12},
+		{"a4", ROOK_RAY, 11},
+		{"d4", ROOK_RAY, 10},
+		{"h8", ROOK_RAY, 12},
+		{"a1", BISHOP_RAY, 6},
+		{"d4", BISHOP_RAY, 9},
+		{"h8", BISHOP_RAY, 6},
+	}
+
+	for _, c := range cases {
+		shift, err := ShiftFromAlg(c.square)
+		if err != nil {
+			t.Fatalf("bad square %q: %v", c.square, err)
+		}
+		mask := RelevantBlockers(CoordsFromShift(shift), c.ray)
+		if got := bits.OnesCount64(uint64(mask)); got != c.bits {
+			t.Errorf("%s: expected %d relevant bits, got %d", c.square, c.bits, got)
+		}
+		if mask&(BitBoard(1)<<shift) != 0 {
+			t.Errorf("%s: mask includes origin square", c.square)
+		}
+	}
+}
+
+func TestMagicAttacksAgainstRayCast(t *testing.T) {
+	BuildRookAttacks()
+	BuildBishopAttacks()
+
+	rng := rand.New(rand.NewPCG(1, 2))
+	for shift := Shift(0); shift < SHIFT_SIZE; shift++ {
+		for range 200 {
+			occupancy := BitBoard(rng.Uint64())
+			rookWant := RayCast(shift, occupancy, ROOK_RAY)
+			if got := GetRookAttack(shift, occupancy); got != rookWant {
+				t.Fatalf("rook mismatch at shift=%d\nexpected:\n%s\ngot:\n%s", shift, rookWant.String(), got.String())
+			}
+			bishopWant := RayCast(shift, occupancy, BISHOP_RAY)
+			if got := GetBishopAttack(shift, occupancy); got != bishopWant {
+				t.Fatalf("bishop mismatch at shift=%d\nexpected:\n%s\ngot:\n%s", shift, bishopWant.String(), got.String())
+			}
+		}
+	}
+}
+
+func TestMagicsSaveLoadRoundTrip(t *testing.T) {
+	BuildRookAttacks()
+
+	path := filepath.Join(t.TempDir(), "rook_magics.csv")
+	SaveMagics(path, ROOK_MAGIC)
+	loaded := LoadMagics(path)
+
+	if len(loaded) != len(ROOK_MAGIC) {
+		t.Fatalf("loaded %d entries, expected %d", len(loaded), len(ROOK_MAGIC))
+	}
+	for i := range ROOK_MAGIC {
+		if loaded[i] != ROOK_MAGIC[i] {
+			t.Errorf("square %d: loaded %+v != generated %+v", i, loaded[i], ROOK_MAGIC[i])
+		}
+	}
+}
+
+func TestBuildMagicsFromDisk(t *testing.T) {
+	LoadMagicsFromDisk = true
+	defer func() { LoadMagicsFromDisk = false }()
+
+	BuildRookAttacks()
+	BuildBishopAttacks()
+
+	rng := rand.New(rand.NewPCG(3, 4))
+	for shift := Shift(0); shift < SHIFT_SIZE; shift++ {
+		for range 10 {
+			occupancy := BitBoard(rng.Uint64())
+			if got, want := GetRookAttack(shift, occupancy), RayCast(shift, occupancy, ROOK_RAY); got != want {
+				t.Fatalf("disk-loaded rook mismatch at shift=%d\nexpected:\n%s\ngot:\n%s", shift, want.String(), got.String())
+			}
+			if got, want := GetBishopAttack(shift, occupancy), RayCast(shift, occupancy, BISHOP_RAY); got != want {
+				t.Fatalf("disk-loaded bishop mismatch at shift=%d\nexpected:\n%s\ngot:\n%s", shift, want.String(), got.String())
+			}
+		}
+	}
+}
+
+func TestSaveMagicsToDiskFlag(t *testing.T) {
+	LoadMagicsFromDisk = false
+	SaveMagicsToDisk = true
+	defer func() { SaveMagicsToDisk = false }()
+
+	path := filepath.Join(t.TempDir(), "rook_magics.csv")
+	magics, _ := buildSliderAttacks(ROOK_RAY, path)
+
+	loaded := LoadMagics(path)
+	for i := range magics {
+		if loaded[i] != magics[i] {
+			t.Errorf("square %d: saved %+v != generated %+v", i, loaded[i], magics[i])
+		}
 	}
 }
