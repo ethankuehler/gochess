@@ -1,62 +1,91 @@
 package chess
 
 import (
-	"errors"
 	"fmt"
 	"iter"
 	"log"
+	"math/bits"
 	"slices"
+	"strings"
 )
+
+// promotionFlag marks a move that promotes a pawn. The low three bits of
+// encoding then hold the promotion Piece (QUEEN, ROOK, BISHOP, or KNIGHT).
+const promotionFlag uint16 = 1 << 3
 
 type Move struct {
 	start    BitBoard //starting position of piece
 	end      BitBoard //ending position of piece
-	encoding uint16   //encoding for move information
+	encoding uint16   //flags; see promotionFlag
 }
 
-// Genrates a new move with no code, TODO: handel codes in the right way.
-// Idea for codes might be somthing that engine will generate after ponder.
+// NewMoveUCI creates a move from a UCI string such as "e2e4" or "e7e8q".
 func NewMoveUCI(UCI string) (*Move, error) {
-	s := fmt.Sprintf("Invalid UCI code %s", UCI)
-	if len(UCI) != 4 {
-		return nil, errors.New(s)
+	if len(UCI) != 4 && len(UCI) != 5 {
+		return nil, fmt.Errorf("invalid UCI move %q: expected 4 or 5 characters", UCI)
 	}
 
 	start, err := LocFromAlg(UCI[:2])
 	if err != nil {
-		return nil, errors.Join(errors.New(s), err)
+		return nil, fmt.Errorf("invalid UCI move %q: %w", UCI, err)
 	}
 
-	end, err := LocFromAlg(UCI[2:])
+	end, err := LocFromAlg(UCI[2:4])
 	if err != nil {
-		return nil, errors.Join(errors.New(s), err)
+		return nil, fmt.Errorf("invalid UCI move %q: %w", UCI, err)
 	}
 
-	return &Move{start, end, 0}, nil
+	if start == end {
+		return nil, fmt.Errorf("invalid UCI move %q: start and end squares are the same", UCI)
+	}
+
+	var encoding uint16
+	if len(UCI) == 5 {
+		var promotion Piece
+		switch strings.ToLower(UCI[4:]) {
+		case "q":
+			promotion = QUEEN
+		case "r":
+			promotion = ROOK
+		case "b":
+			promotion = BISHOP
+		case "n":
+			promotion = KNIGHT
+		default:
+			return nil, fmt.Errorf("invalid UCI move %q: promotion must be q, r, b, or n", UCI)
+		}
+		encoding = uint16(promotion) | promotionFlag
+	}
+
+	return &Move{start: start, end: end, encoding: encoding}, nil
 }
 
-func (m *Move) String() string {
-	scol, srow, ecol, erow := 0, 0, 0, 0
-	colMask := COLUMN_MASK
-	rowMask := ROW_MASK
-	for i := range 8 {
-		if (colMask & m.start) > 0 {
-			scol = i
-		}
-		if (rowMask & m.start) > 0 {
-			srow = i
-		}
-		if (colMask & m.end) > 0 {
-			ecol = i
-		}
-		if (rowMask & m.end) > 0 {
-			erow = i
-		}
-		colMask = colMask << 1
-		rowMask = rowMask << 8
+// String renders the move in UCI notation, including a promotion suffix.
+func (m Move) String() string {
+	uci := AlgFromLoc(m.start) + AlgFromLoc(m.end)
+	if promotion, ok := m.Promotion(); ok {
+		uci += strings.ToLower(PICECES_SYM[promotion])
 	}
+	return uci
+}
 
-	return fmt.Sprintf("%c%d%c%d", COLUMNS[scol], srow+1, COLUMNS[ecol], erow+1)
+// From returns the square the move starts on.
+func (m Move) From() Shift {
+	return Shift(bits.TrailingZeros64(uint64(m.start)))
+}
+
+// To returns the square the move ends on.
+func (m Move) To() Shift {
+	return Shift(bits.TrailingZeros64(uint64(m.end)))
+}
+
+// Promotion returns the piece a pawn promotes to. ok is false for moves that
+// are not promotions.
+func (m Move) Promotion() (promotion Piece, ok bool) {
+	if m.encoding&promotionFlag == 0 {
+		return ALL, false
+	}
+	return Piece(m.encoding & 0b111), true
 }
 
 // find algebraic position from position
@@ -79,17 +108,16 @@ func AlgFromLoc(loc BitBoard) string {
 }
 
 func RowColFromAlg(alg string) (uint64, uint64, error) {
-	col := slices.Index(COLUMNS, rune(alg[0]))
-	if col == -1 {
-		s := fmt.Sprintf("Invalid algerbraic notation %s", alg)
-		return 0, 0, errors.New(s)
+	if len(alg) != 2 {
+		return 0, 0, fmt.Errorf("invalid algebraic notation %q: expected two characters", alg)
 	}
 
-	row := int(alg[1]-'0') - 1 //its imporant to subtract by 1
-	if row < 0 || row >= 8 {
-		s := fmt.Sprintf("Invalid algerbraic notation %s", alg)
-		return 0, 0, errors.New(s)
+	col := slices.Index(COLUMNS, rune(alg[0]))
+	if col == -1 || alg[1] < '1' || alg[1] > '8' {
+		return 0, 0, fmt.Errorf("invalid algebraic notation %q", alg)
 	}
+
+	row := int(alg[1]-'0') - 1
 	return uint64(row), uint64(col), nil
 }
 

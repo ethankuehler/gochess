@@ -22,12 +22,14 @@ representation, FEN handling, and attack-table generation/lookup.
 - `cmd/genmagics/main.go` — regenerates `data/rook_magics.csv` and
   `data/bishop_magics.csv`; run from the repo root.
 - `chess/` — the engine library (`package chess`):
-  - `BitBoard.go` — `BitBoard` (`uint64`) type, `BoardState` struct, FEN
-    parse/serialize (`NewBoardFEN`, `FEN()`), board printing (`String`,
-    `StringUni`), `Occupied`, `GetPieces`. `LegalMoves()` is a TODO stub.
+  - `BitBoard.go` — `BitBoard` (`uint64`) type, `BoardState` struct, validated
+    FEN parse/serialize (`NewBoardFEN`, `FEN()`), board printing (`String`,
+    `StringUni`), `Occupied`, `GetPieces`. `LegalMoves()` is a TODO stub that
+    returns nil.
   - `Const.go` — `Shift`, `Coordinates`, `Piece` and `Colour` enums, bit masks
     for turn/castling encoding, piece symbol tables.
-  - `Move.go` — `Move` struct, `NewMoveUCI`, and algebraic-notation
+  - `Move.go` — `Move` struct with `From`/`To`/`Promotion` accessors,
+    `NewMoveUCI` (including promotion suffixes), and algebraic-notation
     conversions (`LocFromAlg`, `AlgFromLoc`, `ShiftFromAlg`, `ShiftIter`).
   - `Magic.go` — precomputed attack tables (knight, king, pawn) loaded from
     CSV, `RayCast` for sliding pieces, and magic-bitboard generation/lookup
@@ -116,6 +118,10 @@ Things to be careful with:
 - `TryMagic` uses a zero table slot as "not yet written"; that sentinel is
   safe only because rook/bishop attack sets are never empty. Keep that
   invariant in mind before reusing the pattern elsewhere.
+- `NewBoardFEN` is strict: it requires 8 ranks of 8 squares, exactly one king
+  per side, at most 16 pieces and 8 pawns per side, no pawns on the back
+  ranks, a fullmove number of at least 1, and an en passant square on rank 3
+  or 6. `NewBoardDefault` uses the standard start position (`... 0 1`).
 - `display_binary.py` is a one-off generator script, not part of the Go
   build; the CSVs it writes are committed and treated as source data.
 
@@ -126,8 +132,11 @@ Things to be careful with:
 - Tests are data-driven: FEN round-trip tests read `data/FEN.csv`, raycast
   and bishop-mask tests read the JSON fixtures in `data/`. Add new cases by
   extending those files rather than hardcoding positions, where practical.
-- Current suite covers FEN parse/serialize round-trips, `Occupied`,
-  `SquaresToBitBoard`, UCI move round-trips, pawn table loading, `RayCast`
+- Current suite covers FEN parse/serialize round-trips, rejection of
+  malformed FENs (placement, kings, pawns, clocks, castling, en passant),
+  the default board setup, `Occupied`, `SquaresToBitBoard`, UCI move
+  round-trips (including promotions and invalid moves), pawn table loading,
+  `RayCast`
   (fixtures plus an exhaustive reference comparison), `GetBishopMask`,
   `RelevantBlockers` popcounts, magic rook/bishop/queen lookups checked
   against `RayCast` for all squares with random blocker boards, a magic
@@ -142,6 +151,7 @@ Things to be careful with:
 - No network code, no external services, no secrets, no third-party Go
   modules — the attack surface is essentially nil.
 - Runtime input is limited to FEN/UCI strings and the local `data/` files;
-  parsers return errors on malformed input but are not hardened or fuzzed.
+  the parsers return errors on malformed input and are unit-tested against
+  invalid cases, but they are not fuzzed.
   `display_binary.py` requires `pandas` if you regenerate the CSVs — install
   it in a virtual environment, not system-wide.

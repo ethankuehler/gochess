@@ -2,8 +2,8 @@ package chess
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
+	"math/bits"
 	"slices"
 	"strconv"
 	"strings"
@@ -73,82 +73,151 @@ func NewBoardDefault() *BoardState {
 	//default encoding at the start of a chess game.
 	b.encoding |= TURN_MASK | WHITEOO_MASK | WHITEOOO_MASK | BLACKOO_MASK | BLACKOOO_MASK
 
-	//setting all move clocks to zero
+	// The halfmove clock starts at zero and the fullmove number at one.
 	b.halfmove_clock = 0
-	b.fullmove_number = 0
+	b.fullmove_number = 1
 
 	return &b
 }
 
-// Generates a bit board from a FEN notation.
+// NewBoardFEN builds a board from a FEN string, validating every field.
 func NewBoardFEN(FEN string) (*BoardState, error) {
 	b := BoardState{}
 
 	fields := strings.Fields(FEN)
-
 	if len(fields) != 6 {
-		return nil, errors.New("invalid FEN")
+		return nil, fmt.Errorf("invalid FEN %q: expected 6 fields, got %d", FEN, len(fields))
 	}
 
-	var rows = strings.Split(fields[0], "/")
+	rows := strings.Split(fields[0], "/")
 	if len(rows) != 8 {
-		return nil, errors.New("invalid FEN, piece placement invalid")
+		return nil, fmt.Errorf("invalid FEN %q: piece placement must have 8 ranks", FEN)
 	}
+
 	var mask BitBoard = 1 << 63
 	for _, row := range rows {
+		width := 0
 		for i := len(row) - 1; i >= 0; i-- {
 			v := row[i]
-			idx := slices.Index(PICECES_SYM, string(v))
-			if idx != -1 {
+			if idx := slices.Index(PICECES_SYM, string(v)); idx != -1 {
+				if width >= ROW_COL_SIZE {
+					return nil, fmt.Errorf("invalid FEN %q: rank %q has more than 8 squares", FEN, row)
+				}
 				b.pieces[idx] |= mask
-				mask = mask >> 1
-			} else {
-				mask = mask >> (v - 48)
+				mask >>= 1
+				width++
+				continue
 			}
+			if v < '1' || v > '8' {
+				return nil, fmt.Errorf("invalid FEN %q: unexpected %q in piece placement", FEN, v)
+			}
+			empty := int(v - '0')
+			if width+empty > ROW_COL_SIZE {
+				return nil, fmt.Errorf("invalid FEN %q: rank %q has more than 8 squares", FEN, row)
+			}
+			mask >>= empty
+			width += empty
+		}
+		if width != ROW_COL_SIZE {
+			return nil, fmt.Errorf("invalid FEN %q: rank %q does not have 8 squares", FEN, row)
 		}
 	}
 	if mask != 0 {
-		return nil, errors.New("invald FEN, piece placement invalid")
+		return nil, fmt.Errorf("invalid FEN %q: piece placement is invalid", FEN)
+	}
+
+	if bits.OnesCount64(uint64(b.pieces[KING])) != 1 {
+		return nil, fmt.Errorf("invalid FEN %q: white must have exactly one king", FEN)
+	}
+	if bits.OnesCount64(uint64(b.pieces[KING+BLACK_OFFSET])) != 1 {
+		return nil, fmt.Errorf("invalid FEN %q: black must have exactly one king", FEN)
+	}
+
+	for _, side := range []struct {
+		name   string
+		offset int
+	}{{"white", 0}, {"black", BLACK_OFFSET}} {
+		count := 0
+		for piece := PAWN; piece <= KING; piece++ {
+			count += bits.OnesCount64(uint64(b.pieces[int(piece)+side.offset]))
+		}
+		if count > 16 {
+			return nil, fmt.Errorf("invalid FEN %q: %s has more than 16 pieces", FEN, side.name)
+		}
+		if pawns := bits.OnesCount64(uint64(b.pieces[int(PAWN)+side.offset])); pawns > 8 {
+			return nil, fmt.Errorf("invalid FEN %q: %s has %d pawns, at most 8 are possible", FEN, side.name, pawns)
+		}
+	}
+
+	const lastRank BitBoard = ROW_MASK << 56
+	for _, offset := range []int{0, BLACK_OFFSET} {
+		if b.pieces[int(PAWN)+offset]&(ROW_MASK|lastRank) != 0 {
+			return nil, fmt.Errorf("invalid FEN %q: pawns cannot be on the first or last rank", FEN)
+		}
 	}
 
 	b.encoding = 0
 
-	//players turn
-	if fields[1] == "w" {
+	// Players turn.
+	switch fields[1] {
+	case "w":
 		b.encoding |= TURN_MASK
-	} else if fields[1] != "b" {
-		return nil, errors.New("invald FEN, invalid turn")
+	case "b":
+	default:
+		return nil, fmt.Errorf("invalid FEN %q: invalid side to move %q", FEN, fields[1])
 	}
 
-	//castling
+	// Castling rights.
 	castle_info := fields[2]
+	if castle_info != "-" {
+		seen := make(map[rune]bool, len(castle_info))
+		for _, v := range castle_info {
+			if !strings.ContainsRune("KQkq", v) {
+				return nil, fmt.Errorf("invalid FEN %q: invalid castling right %q", FEN, v)
+			}
+			if seen[v] {
+				return nil, fmt.Errorf("invalid FEN %q: duplicate castling right %q", FEN, v)
+			}
+			seen[v] = true
+		}
+	}
 	for i, v := range CASTLE_SYM {
 		if strings.Contains(castle_info, v) {
 			b.encoding |= 1 << (i + 1)
 		}
 	}
 
-	//Enpassant
+	// En passant target.
 	if fields[3] == "-" {
 		b.enpassant = 0
 	} else {
-		enpassant, err := LocFromAlg(fields[3])
+		row, col, err := RowColFromAlg(fields[3])
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("invalid FEN %q: en passant square: %w", FEN, err)
 		}
-		b.enpassant = enpassant
+		if row != 2 && row != 5 {
+			return nil, fmt.Errorf("invalid FEN %q: en passant square %q must be on rank 3 or 6", FEN, fields[3])
+		}
+		b.enpassant = BitBoard(1) << ShiftFromCoords(Coordinates{row: row, col: col})
 	}
 
-	//turn number
+	// Halfmove clock.
 	v, err := strconv.Atoi(fields[4])
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid FEN %q: halfmove clock %q is not a number", FEN, fields[4])
+	}
+	if v < 0 || v > 65535 {
+		return nil, fmt.Errorf("invalid FEN %q: halfmove clock %d is out of range", FEN, v)
 	}
 	b.halfmove_clock = uint16(v)
 
+	// Fullmove number. Standard FEN numbering starts at 1.
 	v, err = strconv.Atoi(fields[5])
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid FEN %q: fullmove number %q is not a number", FEN, fields[5])
+	}
+	if v < 1 || v > 65535 {
+		return nil, fmt.Errorf("invalid FEN %q: fullmove number %d is out of range", FEN, v)
 	}
 	b.fullmove_number = uint16(v)
 
@@ -264,9 +333,10 @@ func (b *BoardState) FEN() string {
 	return buffer.String()
 }
 
-// Returns a list of all legal moves from a current baord position
+// LegalMoves returns all legal moves from the current position. Move
+// generation is not implemented yet, so it returns nil.
 func (b *BoardState) LegalMoves() []Move {
-	return make([]Move, 1) //TODO: get this working
+	return nil //TODO: get this working
 }
 
 // Returns a mask of every Occupied sqaure on the chess board.
