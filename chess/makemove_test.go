@@ -264,3 +264,23 @@ func TestMakeMoveSequence(t *testing.T) {
 }
 
 func ptr(p Position) *Position { return &p }
+
+func TestPublicPositionHelpers(t *testing.T) {
+	b := NewStartingPosition()
+
+	if got := b.SideToMove(); got != White {
+		t.Errorf("SideToMove() = %v, want White", got)
+	}
+	colour, piece, ok := b.PieceAt(a1)
+	if !ok || colour != White || piece != Rook {
+		t.Errorf("PieceAt(a1) = (%v, %v, %v), want (White, Rook, true)", colour, piece, ok)
+	}
+	if _, _, ok := b.PieceAt(mustSquare(t, "d4")); ok {
+		t.Error("PieceAt(d4) reported an occupied square")
+	}
+
+	next := b.makeMove(mustTestMove(t, "e2e4", doublePushFlag))
+	if got := next.SideToMove(); got != Black {
+		t.Errorf("SideToMove() after e2e4 = %v, want Black", got)
+	}
+}

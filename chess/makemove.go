@@ -10,6 +10,9 @@ func (b *Position) sideToMove() Colour {
 	return Black
 }
 
+// SideToMove returns the colour whose turn it is.
+func (b *Position) SideToMove() Colour { return b.sideToMove() }
+
 // kingSquare returns the square of colour's king.
 func (b *Position) kingSquare(colour Colour) Square {
 	var kings BitBoard
@@ -37,6 +40,11 @@ func (b *Position) pieceAt(square Square) (colour Colour, piece Piece, ok bool) 
 		return White, Piece(i), true
 	}
 	return Both, NoPiece, false
+}
+
+// PieceAt returns the piece on square. ok is false when the square is empty.
+func (b *Position) PieceAt(square Square) (colour Colour, piece Piece, ok bool) {
+	return b.pieceAt(square)
 }
 
 // castlingRightsToClear returns the rights that a move from or to square

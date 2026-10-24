@@ -1,6 +1,9 @@
 package chess
 
-import "math/bits"
+import (
+	"fmt"
+	"math/bits"
+)
 
 // ensureAttackTables panics if the package-level attack tables have not been
 // built. Callers must run BuildAllAttacks (or the individual builders) first.
@@ -330,4 +333,16 @@ func (b *Position) InCheck() bool {
 	ensureAttackTables()
 	us := b.sideToMove()
 	return b.isSquareAttacked(b.kingSquare(us), us.Opposite())
+}
+
+// ApplyMove applies a legal move and returns the resulting position. It
+// returns an error if m is not one of the moves returned by LegalMoves.
+func (b *Position) ApplyMove(m Move) (*Position, error) {
+	for _, legal := range b.LegalMoves() {
+		if legal == m {
+			next := b.makeMove(m)
+			return &next, nil
+		}
+	}
+	return nil, fmt.Errorf("illegal move %s", m)
 }

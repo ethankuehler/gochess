@@ -502,3 +502,27 @@ func absInt(v int) int {
 	}
 	return v
 }
+
+func TestApplyMove(t *testing.T) {
+	b := NewStartingPosition()
+	m, ok := findMove(b.LegalMoves(), "e2e4")
+	if !ok {
+		t.Fatal("missing e2e4 in the starting position")
+	}
+
+	next, err := b.ApplyMove(m)
+	if err != nil {
+		t.Fatalf("ApplyMove(e2e4): %v", err)
+	}
+	const want = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
+	if got := next.FEN(); got != want {
+		t.Errorf("FEN after ApplyMove = %q, want %q", got, want)
+	}
+	if got := b.FEN(); got != NewStartingPosition().FEN() {
+		t.Errorf("ApplyMove mutated the original: %q", got)
+	}
+
+	if _, err := b.ApplyMove(mustTestMove(t, "e2e5", 0)); err == nil {
+		t.Error("ApplyMove accepted an illegal move")
+	}
+}
