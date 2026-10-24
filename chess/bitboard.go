@@ -92,13 +92,13 @@ func ParseFEN(fen string) (*Position, error) {
 		return nil, fmt.Errorf("invalid FEN %q: expected 6 fields, got %d", fen, len(fields))
 	}
 
-	rows := strings.Split(fields[0], "/")
-	if len(rows) != 8 {
+	ranks := strings.Split(fields[0], "/")
+	if len(ranks) != boardSize {
 		return nil, fmt.Errorf("invalid FEN %q: piece placement must have 8 ranks", fen)
 	}
 
 	var mask BitBoard = 1 << 63
-	for _, rank := range rows {
+	for _, rank := range ranks {
 		width := 0
 		for i := len(rank) - 1; i >= 0; i-- {
 			v := rank[i]
