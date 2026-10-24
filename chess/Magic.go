@@ -2,6 +2,7 @@ package chess
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"math/bits"
 	"math/rand/v2"
@@ -10,9 +11,11 @@ import (
 // Magic limit
 const MAGIC_LIMIT = 1_000_000
 
-// LoadMagicsFromDisk controls whether the sliding-piece builders search for
-// new magics (false) or restore them from the data/ CSVs (true).
-var LoadMagicsFromDisk = false
+// LoadMagicsFromDisk controls whether the sliding-piece builders restore
+// magics from the data/ CSVs (true) or search for new ones (false). It
+// defaults to true; when a CSV is missing or invalid the builder logs the
+// problem and falls back to a fresh search.
+var LoadMagicsFromDisk = true
 
 // SaveMagicsToDisk makes the sliding-piece builders write freshly generated
 // magics to the data/ CSVs after a random search. It has no effect when
@@ -207,25 +210,24 @@ func BuildBishopAttacks() {
 	BISHOP_MAGIC, BISHOP_ATTACKS = buildSliderAttacks(BISHOP_RAY, "data/bishop_magics.csv")
 }
 
-// buildSliderAttacks generates a magic number and attack table for every
-// square. When LoadMagicsFromDisk is set, the magics are loaded from the
-// given CSV instead of being found by random search; the tables are rebuilt
-// with TryMagic, which fails on an invalid stored magic.
+// buildSliderAttacks generates magic numbers and attack tables for every
+// square. By default the magics are restored from the given CSV; when that
+// file is missing or invalid the builder falls back to a random search.
 func buildSliderAttacks(ray Ray, file_name string) ([]MagicEntry, [][]BitBoard) {
+	if LoadMagicsFromDisk {
+		magics, err := tryLoadMagics(file_name)
+		if err == nil {
+			tables, buildErr := buildMagicTables(magics, ray)
+			if buildErr == nil {
+				return magics, tables
+			}
+			err = buildErr
+		}
+		log.Printf("could not use magics from %s (%v); searching for new magics", file_name, err)
+	}
+
 	magics := make([]MagicEntry, SHIFT_SIZE)
 	tables := make([][]BitBoard, SHIFT_SIZE)
-
-	if LoadMagicsFromDisk {
-		magics = LoadMagics(file_name)
-		for shift := Shift(0); shift < SHIFT_SIZE; shift++ {
-			table, err := TryMagic(shift, magics[shift], ray)
-			if err != nil {
-				log.Fatalf("invalid magic in %s for square %d: %v", file_name, shift, err)
-			}
-			tables[shift] = table
-		}
-		return magics, tables
-	}
 
 	for shift := Shift(0); shift < SHIFT_SIZE; shift++ {
 		entry, table, err := FindMagic(CoordsFromShift(shift), ray)
@@ -240,6 +242,20 @@ func buildSliderAttacks(ray Ray, file_name string) ([]MagicEntry, [][]BitBoard) 
 		SaveMagics(file_name, magics)
 	}
 	return magics, tables
+}
+
+// buildMagicTables rebuilds the attack tables for a set of magics, failing if
+// any stored magic does not produce a collision-free table.
+func buildMagicTables(magics []MagicEntry, ray Ray) ([][]BitBoard, error) {
+	tables := make([][]BitBoard, SHIFT_SIZE)
+	for shift := Shift(0); shift < SHIFT_SIZE; shift++ {
+		table, err := TryMagic(shift, magics[shift], ray)
+		if err != nil {
+			return nil, fmt.Errorf("square %d: %w", shift, err)
+		}
+		tables[shift] = table
+	}
+	return tables, nil
 }
 
 func BuildKnightAttacks() {

@@ -2,6 +2,7 @@ package chess
 
 import (
 	"encoding/csv"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -58,29 +59,48 @@ func readRecord(record []string) ([]uint64, error) {
 }
 
 // LoadMagics reads a CSV of magic entries (square, mask, magic), one row
-// per square. IndexBits is recomputed from the mask.
+// per square, and exits the process on failure. Callers that can recover
+// should use tryLoadMagics.
 func LoadMagics(csv_file_name string) []MagicEntry {
+	entries, err := tryLoadMagics(csv_file_name)
+	if err != nil {
+		log.Fatalf("Unable to load magics from %s: %s", csv_file_name, err.Error())
+	}
+	return entries
+}
+
+// tryLoadMagics reads and validates a magic CSV. IndexBits is recomputed
+// from the mask so it always agrees with the data.
+func tryLoadMagics(csv_file_name string) ([]MagicEntry, error) {
 	target := make([]MagicEntry, SHIFT_SIZE)
 	data, err := readCSV(csv_file_name)
 	if err != nil {
-		log.Fatalf("Unable to read file: %s", err.Error())
+		return nil, err
 	}
 
 	if len(data) != SHIFT_SIZE+1 {
-		log.Fatalf("Error, expected %d data rows, filename: %s", SHIFT_SIZE, csv_file_name)
+		return nil, fmt.Errorf("expected %d data rows, filename: %s", SHIFT_SIZE, csv_file_name)
 	}
 
+	seen := make(map[uint64]bool, SHIFT_SIZE)
 	for _, record := range data[1:] {
 		val, err := readRecord(record)
 		if err != nil {
-			log.Fatalf("Error in data: %s", err.Error())
+			return nil, fmt.Errorf("error in data: %w", err)
 		}
 		if len(val) != 3 {
-			log.Fatalf("Error, data didnt have enough rows, filename: %s", csv_file_name)
+			return nil, fmt.Errorf("expected 3 columns, filename: %s", csv_file_name)
 		}
+		if val[0] >= SHIFT_SIZE {
+			return nil, fmt.Errorf("square %d out of range, filename: %s", val[0], csv_file_name)
+		}
+		if seen[val[0]] {
+			return nil, fmt.Errorf("duplicate square %d, filename: %s", val[0], csv_file_name)
+		}
+		seen[val[0]] = true
 		target[val[0]] = NewMagicEntry(BitBoard(val[1]), val[2])
 	}
-	return target
+	return target, nil
 }
 
 // SaveMagics writes magic entries to a CSV (square, mask, magic), one row
