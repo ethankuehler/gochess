@@ -79,26 +79,26 @@ func slidingAttacksReference(start Square, blockers BitBoard, directions Directi
 	var attacks BitBoard = 0
 
 	for _, direction := range directions {
-		dRow, dCol := direction[0], direction[1]
-		if dRow == 0 && dCol == 0 {
+		dRank, dFile := direction[0], direction[1]
+		if dRank == 0 && dFile == 0 {
 			continue
 		}
-		row, col := startRow+dRow, startCol+dCol
-		for row >= 0 && row < boardSize && col >= 0 && col < boardSize {
-			loc := BitBoard(1) << Square(col+row*boardSize)
+		rank, file := startRow+dRank, startCol+dFile
+		for rank >= 0 && rank < boardSize && file >= 0 && file < boardSize {
+			loc := BitBoard(1) << Square(file+rank*boardSize)
 			attacks |= loc
 			if blockers&loc > 0 {
 				break
 			}
-			row += dRow
-			col += dCol
+			rank += dRank
+			file += dFile
 		}
 	}
 
 	return attacks
 }
 
-type rayCastExample struct {
+type slidingAttacksExample struct {
 	Name       string   `json:"name"`
 	Start      string   `json:"start"`
 	Blockers   []string `json:"blockers"`
@@ -106,13 +106,13 @@ type rayCastExample struct {
 	Directions string   `json:"directions"`
 }
 
-func loadRayCastExamples(path string) ([]rayCastExample, error) {
+func loadSlidingAttacksExamples(path string) ([]slidingAttacksExample, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 
-	tests := make([]rayCastExample, 0)
+	tests := make([]slidingAttacksExample, 0)
 	if err := json.Unmarshal(data, &tests); err != nil {
 		return nil, err
 	}
@@ -131,7 +131,7 @@ func parseDirections(directions string) (Directions, error) {
 }
 
 func TestSlidingAttacksExamples(t *testing.T) {
-	tests, err := loadRayCastExamples("data/sliding_attacks_examples.json")
+	tests, err := loadSlidingAttacksExamples("data/sliding_attacks_examples.json")
 	if err != nil {
 		t.Fatalf("could not load raycast examples: %v", err)
 	}
@@ -207,57 +207,6 @@ func TestSlidingAttacksWithEmptyDirections(t *testing.T) {
 	}
 }
 
-type bishopMaskExample struct {
-	Name     string   `json:"name"`
-	Start    string   `json:"start"`
-	Expected []string `json:"expected"`
-}
-
-func loadBishopMaskExamples(path string) ([]bishopMaskExample, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	tests := make([]bishopMaskExample, 0)
-	if err := json.Unmarshal(data, &tests); err != nil {
-		return nil, err
-	}
-	return tests, nil
-}
-
-func TestGetBishopMask(t *testing.T) {
-	tests, err := loadBishopMaskExamples("data/bishop_mask_examples.json")
-	if err != nil {
-		t.Fatalf("could not load bishop mask examples: %v", err)
-	}
-
-	for _, test := range tests {
-		t.Run(test.Name, func(t *testing.T) {
-			shift, err := ParseSquare(test.Start)
-			if err != nil {
-				t.Fatalf("bad start square %q: %v", test.Start, err)
-			}
-
-			mask := GetBishopMask(FileRankFromSquare(shift))
-
-			expected, err := SquaresToBitBoard(test.Expected)
-			if err != nil {
-				t.Fatalf("bad expected squares %v: %v", test.Expected, err)
-			}
-
-			if mask != expected {
-				t.Errorf("bishop mask mismatch for %s\nexpected:\n%s\ngot:\n%s", test.Start, expected.String(), mask.String())
-			}
-
-			source := BitBoard(1) << shift
-			if mask&source != 0 {
-				t.Errorf("source square %s should not be in bishop mask", test.Start)
-			}
-		})
-	}
-}
-
 func TestRelevantBlockers(t *testing.T) {
 	cases := []struct {
 		square     string
@@ -274,35 +223,35 @@ func TestRelevantBlockers(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		shift, err := ParseSquare(c.square)
+		square, err := ParseSquare(c.square)
 		if err != nil {
 			t.Fatalf("bad square %q: %v", c.square, err)
 		}
-		mask := RelevantBlockers(FileRankFromSquare(shift), c.directions)
+		mask := RelevantBlockers(FileRankFromSquare(square), c.directions)
 		if got := bits.OnesCount64(uint64(mask)); got != c.bits {
 			t.Errorf("%s: expected %d relevant bits, got %d", c.square, c.bits, got)
 		}
-		if mask&(BitBoard(1)<<shift) != 0 {
+		if mask&(BitBoard(1)<<square) != 0 {
 			t.Errorf("%s: mask includes origin square", c.square)
 		}
 	}
 }
 
-func TestMagicAttacksAgainstRayCast(t *testing.T) {
+func TestMagicAttacksAgainstSlidingAttacks(t *testing.T) {
 	BuildRookAttacks()
 	BuildBishopAttacks()
 
 	rng := rand.New(rand.NewPCG(1, 2))
-	for shift := Square(0); shift < squareCount; shift++ {
+	for square := Square(0); square < squareCount; square++ {
 		for range 200 {
 			occupancy := BitBoard(rng.Uint64())
-			rookWant := SlidingAttacks(shift, occupancy, rookDirections)
-			if got := RookAttack(shift, occupancy); got != rookWant {
-				t.Fatalf("rook mismatch at shift=%d\nexpected:\n%s\ngot:\n%s", shift, rookWant.String(), got.String())
+			rookWant := SlidingAttacks(square, occupancy, rookDirections)
+			if got := RookAttack(square, occupancy); got != rookWant {
+				t.Fatalf("rook mismatch at square=%d\nexpected:\n%s\ngot:\n%s", square, rookWant.String(), got.String())
 			}
-			bishopWant := SlidingAttacks(shift, occupancy, bishopDirections)
-			if got := BishopAttack(shift, occupancy); got != bishopWant {
-				t.Fatalf("bishop mismatch at shift=%d\nexpected:\n%s\ngot:\n%s", shift, bishopWant.String(), got.String())
+			bishopWant := SlidingAttacks(square, occupancy, bishopDirections)
+			if got := BishopAttack(square, occupancy); got != bishopWant {
+				t.Fatalf("bishop mismatch at square=%d\nexpected:\n%s\ngot:\n%s", square, bishopWant.String(), got.String())
 			}
 		}
 	}
@@ -312,8 +261,13 @@ func TestMagicsSaveLoadRoundTrip(t *testing.T) {
 	BuildRookAttacks()
 
 	path := filepath.Join(t.TempDir(), "rook_magics.csv")
-	SaveMagicEntries(path, rookMagicEntries)
-	loaded := LoadMagicEntries(path)
+	if err := SaveMagicEntries(path, rookMagicEntries); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	loaded, err := LoadMagicEntries(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
 
 	if len(loaded) != len(rookMagicEntries) {
 		t.Fatalf("loaded %d entries, expected %d", len(loaded), len(rookMagicEntries))
@@ -334,14 +288,14 @@ func TestBuildMagicsFromDisk(t *testing.T) {
 	BuildBishopAttacks()
 
 	rng := rand.New(rand.NewPCG(3, 4))
-	for shift := Square(0); shift < squareCount; shift++ {
+	for square := Square(0); square < squareCount; square++ {
 		for range 10 {
 			occupancy := BitBoard(rng.Uint64())
-			if got, want := RookAttack(shift, occupancy), SlidingAttacks(shift, occupancy, rookDirections); got != want {
-				t.Fatalf("disk-loaded rook mismatch at shift=%d\nexpected:\n%s\ngot:\n%s", shift, want.String(), got.String())
+			if got, want := RookAttack(square, occupancy), SlidingAttacks(square, occupancy, rookDirections); got != want {
+				t.Fatalf("disk-loaded rook mismatch at square=%d\nexpected:\n%s\ngot:\n%s", square, want.String(), got.String())
 			}
-			if got, want := BishopAttack(shift, occupancy), SlidingAttacks(shift, occupancy, bishopDirections); got != want {
-				t.Fatalf("disk-loaded bishop mismatch at shift=%d\nexpected:\n%s\ngot:\n%s", shift, want.String(), got.String())
+			if got, want := BishopAttack(square, occupancy), SlidingAttacks(square, occupancy, bishopDirections); got != want {
+				t.Fatalf("disk-loaded bishop mismatch at square=%d\nexpected:\n%s\ngot:\n%s", square, want.String(), got.String())
 			}
 		}
 	}
@@ -359,7 +313,10 @@ func TestSaveMagicsToDiskFlag(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bishop_magics.csv")
 	magics, _ := buildSliderAttacks(bishopDirections, path)
 
-	loaded := LoadMagicEntries(path)
+	loaded, err := LoadMagicEntries(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
 	for i := range magics {
 		if loaded[i] != magics[i] {
 			t.Errorf("square %d: saved %+v != generated %+v", i, loaded[i], magics[i])
@@ -387,7 +344,10 @@ func TestMagicsLoadFromDiskByDefault(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.build()
-			disk := LoadMagicEntries(tc.file)
+			disk, err := LoadMagicEntries(tc.file)
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
 			built := tc.get()
 			if len(built) != len(disk) {
 				t.Fatalf("built %d entries, disk has %d", len(built), len(disk))
@@ -417,21 +377,21 @@ func TestBuildSliderAttacksFallsBackWhenMissing(t *testing.T) {
 	}
 
 	occupancy := BitBoard(0x00FF000000FF0000)
-	for shift := Square(0); shift < squareCount; shift++ {
-		want := SlidingAttacks(shift, occupancy, bishopDirections)
-		got := tables[shift][magicIndex(magics[shift], occupancy)]
+	for square := Square(0); square < squareCount; square++ {
+		want := SlidingAttacks(square, occupancy, bishopDirections)
+		got := tables[square][magicIndex(magics[square], occupancy)]
 		if got != want {
-			t.Fatalf("shift %d: fallback attack mismatch\nexpected:\n%s\ngot:\n%s", shift, want.String(), got.String())
+			t.Fatalf("square %d: fallback attack mismatch\nexpected:\n%s\ngot:\n%s", square, want.String(), got.String())
 		}
 	}
 }
 
-func TestTryLoadMagicsRejectsBadCSV(t *testing.T) {
+func TestLoadMagicEntriesRejectsBadCSV(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bad.csv")
 	if err := os.WriteFile(path, []byte("square,mask,magic\n0,1,2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tryLoadMagics(path); err == nil {
+	if _, err := LoadMagicEntries(path); err == nil {
 		t.Fatal("expected error for a truncated magic CSV")
 	}
 
@@ -447,22 +407,22 @@ func TestTryLoadMagicsRejectsBadCSV(t *testing.T) {
 	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tryLoadMagics(path); err == nil {
+	if _, err := LoadMagicEntries(path); err == nil {
 		t.Fatal("expected error for a non-numeric magic")
 	}
 }
 
-func TestGetQueenAttack(t *testing.T) {
+func TestQueenAttack(t *testing.T) {
 	BuildRookAttacks()
 	BuildBishopAttacks()
 
 	rng := rand.New(rand.NewPCG(5, 6))
-	for shift := Square(0); shift < squareCount; shift++ {
+	for square := Square(0); square < squareCount; square++ {
 		for range 25 {
 			occupancy := BitBoard(rng.Uint64())
-			want := SlidingAttacks(shift, occupancy, rookDirections) | SlidingAttacks(shift, occupancy, bishopDirections)
-			if got := QueenAttack(shift, occupancy); got != want {
-				t.Fatalf("queen mismatch at shift=%d\nexpected:\n%s\ngot:\n%s", shift, want.String(), got.String())
+			want := SlidingAttacks(square, occupancy, rookDirections) | SlidingAttacks(square, occupancy, bishopDirections)
+			if got := QueenAttack(square, occupancy); got != want {
+				t.Fatalf("queen mismatch at square=%d\nexpected:\n%s\ngot:\n%s", square, want.String(), got.String())
 			}
 		}
 	}

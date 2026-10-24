@@ -8,7 +8,7 @@ import (
 	"math/rand/v2"
 )
 
-// Magic limit
+// magicAttemptLimit bounds the random search for one square's magic.
 const magicAttemptLimit = 1_000_000
 
 // LoadMagicsFromDisk controls whether the sliding-piece builders restore
@@ -22,13 +22,11 @@ var LoadMagicsFromDisk = true
 // LoadMagicsFromDisk is set.
 var SaveMagicsToDisk = false
 
-// there are only 64 knight moves on a chess board
-// each index is the shift of the knight, the value is the attack
+// knightAttacks and kingAttacks are indexed by square.
 var knightAttacks []BitBoard
 var kingAttacks []BitBoard
 
-// pawns are split up into attacks and move's
-// Black and white pecies are split up due to the fact that they are different for pawns.
+// Pawn attack and move tables are split by colour.
 var (
 	whitePawnAttacks []BitBoard
 	whitePawnMoves   []BitBoard
@@ -36,9 +34,9 @@ var (
 	blackPawnMoves   []BitBoard
 )
 
-// sliding piececs
+// Sliding-piece magic entries and attack tables.
 var (
-	rookMagicEntries   []MagicEntry //magic numbers
+	rookMagicEntries   []MagicEntry
 	bishopMagicEntries []MagicEntry
 	rookAttackTables   [][]BitBoard
 	bishopAttackTables [][]BitBoard
@@ -55,10 +53,14 @@ type MagicEntry struct {
 
 // newMagicEntry computes IndexBits from Mask so the two can never disagree.
 func newMagicEntry(mask BitBoard, magic uint64) MagicEntry {
-	return MagicEntry{mask, magic, uint(bits.OnesCount64(uint64(mask)))}
+	return MagicEntry{
+		Mask:      mask,
+		Magic:     magic,
+		IndexBits: uint(bits.OnesCount64(uint64(mask))),
+	}
 }
 
-// array of vector that tell in which directions for the Directions caster to cast
+// Directions is a set of movement vectors as {rank delta, file delta}.
 type Directions [4][2]int
 
 var (
@@ -66,94 +68,90 @@ var (
 	bishopDirections = Directions{{1, 1}, {-1, -1}, {1, -1}, {-1, 1}}
 )
 
-func magicIndex(entry MagicEntry, board BitBoard) uint64 {
-	blockers := board & entry.Mask
+// magicIndex hashes the relevant blockers into an attack-table index.
+func magicIndex(entry MagicEntry, occupancy BitBoard) uint64 {
+	blockers := occupancy & entry.Mask
 	hash := uint64(blockers) * entry.Magic
-	index := hash >> (64 - entry.IndexBits)
-	return index
+	return hash >> (64 - entry.IndexBits)
 }
 
-func RookAttack(loc Square, board BitBoard) BitBoard {
-	magic := rookMagicEntries[loc]
-	idx := magicIndex(magic, board)
-	return rookAttackTables[loc][idx]
+// RookAttack returns the rook attacks from square given the occupancy.
+func RookAttack(square Square, occupancy BitBoard) BitBoard {
+	index := magicIndex(rookMagicEntries[square], occupancy)
+	return rookAttackTables[square][index]
 }
 
-func BishopAttack(loc Square, board BitBoard) BitBoard {
-	magic := bishopMagicEntries[loc]
-	idx := magicIndex(magic, board)
-	return bishopAttackTables[loc][idx]
+// BishopAttack returns the bishop attacks from square given the occupancy.
+func BishopAttack(square Square, occupancy BitBoard) BitBoard {
+	index := magicIndex(bishopMagicEntries[square], occupancy)
+	return bishopAttackTables[square][index]
 }
 
 // QueenAttack combines the rook and bishop lookups; queens need no
 // tables of their own.
-func QueenAttack(loc Square, board BitBoard) BitBoard {
-	return RookAttack(loc, board) | BishopAttack(loc, board)
+func QueenAttack(square Square, occupancy BitBoard) BitBoard {
+	return RookAttack(square, occupancy) | BishopAttack(square, occupancy)
 }
 
-// RelevantBlockers returns the occupancy mask for a sliding piece on coord:
+// RelevantBlockers returns the occupancy mask for a sliding piece on fr:
 // the squares along its rays whose occupancy can change the attack set.
-// The terminal edge square of each directions is excluded (a directions attacks its
+// The terminal edge square of each ray is excluded (a ray attacks its
 // terminal square whether it is occupied or not, so that bit carries no
 // information), as is the origin square.
-func RelevantBlockers(coord FileRank, directions Directions) BitBoard {
-	var mask BitBoard = 0
-	row, col := int(coord.row), int(coord.col)
+func RelevantBlockers(fr FileRank, directions Directions) BitBoard {
+	var mask BitBoard
+	rank, file := int(fr.rank), int(fr.file)
 
 	for _, direction := range directions {
-		dRow, dCol := direction[0], direction[1]
-		if dRow == 0 && dCol == 0 {
+		dRank, dFile := direction[0], direction[1]
+		if dRank == 0 && dFile == 0 {
 			continue
 		}
-		rayRow, rayCol := row, col
+		rayRank, rayFile := rank, file
 		for {
-			nextRow, nextCol := rayRow+dRow, rayCol+dCol
-			if nextRow < 0 || nextRow >= boardSize || nextCol < 0 || nextCol >= boardSize {
+			nextRank, nextFile := rayRank+dRank, rayFile+dFile
+			if nextRank < 0 || nextRank >= boardSize || nextFile < 0 || nextFile >= boardSize {
 				break
 			}
-			mask |= BitBoard(1) << SquareFromFileRank(FileRank{row: uint64(rayRow), col: uint64(rayCol)})
-			rayRow, rayCol = nextRow, nextCol
+			mask |= BitBoard(1) << SquareFromFileRank(FileRank{rank: uint64(rayRank), file: uint64(rayFile)})
+			rayRank, rayFile = nextRank, nextFile
 		}
 	}
 
-	return mask &^ (BitBoard(1) << SquareFromFileRank(coord))
+	return mask &^ (BitBoard(1) << SquareFromFileRank(fr))
 }
 
-func GetBishopMask(coord FileRank) BitBoard {
-	return SlidingAttacks(SquareFromFileRank(coord), 0, bishopDirections)
-}
-
-func findMagic(coord FileRank, directions Directions) (MagicEntry, []BitBoard, error) {
-	mask := RelevantBlockers(coord, directions)
-	shift := SquareFromFileRank(coord)
-	for _ = range magicAttemptLimit {
+// findMagic searches for a collision-free magic entry and attack table.
+func findMagic(fr FileRank, directions Directions) (MagicEntry, []BitBoard, error) {
+	mask := RelevantBlockers(fr, directions)
+	square := SquareFromFileRank(fr)
+	for range magicAttemptLimit {
 		candidate := rand.Uint64() & rand.Uint64() & rand.Uint64()
 		entry := newMagicEntry(mask, candidate)
-		table, err := tryMagic(shift, entry, directions)
+		table, err := tryMagic(square, entry, directions)
 		if err != nil {
 			continue
 		}
 		return entry, table, nil
 	}
 	return MagicEntry{}, nil, errors.New("hit magic limit, magic not found")
-
 }
 
 // tryMagic attempts to fill an attack table for one square using the
 // candidate magic, failing on any non-constructive collision (two blocker
 // configurations with different attack sets hashing to the same slot).
 // Attack sets are never empty, so a zero slot means "not yet written".
-func tryMagic(loc Square, magic MagicEntry, directions Directions) ([]BitBoard, error) {
-	table := make([]BitBoard, 1<<magic.IndexBits)
-	var blockers BitBoard = 0
-	mask := magic.Mask
+func tryMagic(square Square, entry MagicEntry, directions Directions) ([]BitBoard, error) {
+	table := make([]BitBoard, 1<<entry.IndexBits)
+	var blockers BitBoard
+	mask := entry.Mask
 
-	for true {
-		moves := SlidingAttacks(loc, blockers, directions)
-		table_entry := &table[magicIndex(magic, blockers)]
-		if *table_entry == 0 {
-			*table_entry = moves
-		} else if *table_entry != moves {
+	for {
+		attacks := SlidingAttacks(square, blockers, directions)
+		tableEntry := &table[magicIndex(entry, blockers)]
+		if *tableEntry == 0 {
+			*tableEntry = attacks
+		} else if *tableEntry != attacks {
 			return nil, errors.New("invalid magic")
 		}
 
@@ -166,25 +164,27 @@ func tryMagic(loc Square, magic MagicEntry, directions Directions) ([]BitBoard, 
 	return table, nil
 }
 
-func SlidingAttacks(square Square, blockers BitBoard, r Directions) BitBoard {
-	coord := FileRankFromSquare(square)
-	row, col := int(coord.row), int(coord.col)
-	var attacks BitBoard = 0
+// SlidingAttacks returns the attacks from square for the given occupancy
+// along directions.
+func SlidingAttacks(square Square, occupancy BitBoard, directions Directions) BitBoard {
+	fr := FileRankFromSquare(square)
+	rank, file := int(fr.rank), int(fr.file)
+	var attacks BitBoard
 
-	for _, direction := range r {
-		dRow, dCol := direction[0], direction[1]
-		if dRow == 0 && dCol == 0 {
+	for _, direction := range directions {
+		dRank, dFile := direction[0], direction[1]
+		if dRank == 0 && dFile == 0 {
 			continue
 		}
-		rayRow, rayCol := row+dRow, col+dCol
-		for rayRow >= 0 && rayRow < boardSize && rayCol >= 0 && rayCol < boardSize {
-			loc := BitBoard(1) << SquareFromFileRank(FileRank{row: uint64(rayRow), col: uint64(rayCol)})
-			attacks |= loc
-			if blockers&loc > 0 {
+		rayRank, rayFile := rank+dRank, file+dFile
+		for rayRank >= 0 && rayRank < boardSize && rayFile >= 0 && rayFile < boardSize {
+			squareBit := BitBoard(1) << SquareFromFileRank(FileRank{rank: uint64(rayRank), file: uint64(rayFile)})
+			attacks |= squareBit
+			if occupancy&squareBit > 0 {
 				break
 			}
-			rayRow += dRow
-			rayCol += dCol
+			rayRank += dRank
+			rayFile += dFile
 		}
 	}
 
@@ -215,7 +215,7 @@ func BuildBishopAttacks() {
 // file is missing or invalid the builder falls back to a random search.
 func buildSliderAttacks(directions Directions, fileName string) ([]MagicEntry, [][]BitBoard) {
 	if LoadMagicsFromDisk {
-		magics, err := tryLoadMagics(fileName)
+		magics, err := LoadMagicEntries(fileName)
 		if err == nil {
 			tables, buildErr := buildMagicTables(magics, directions)
 			if buildErr == nil {
@@ -229,17 +229,19 @@ func buildSliderAttacks(directions Directions, fileName string) ([]MagicEntry, [
 	magics := make([]MagicEntry, squareCount)
 	tables := make([][]BitBoard, squareCount)
 
-	for shift := Square(0); shift < squareCount; shift++ {
-		entry, table, err := findMagic(FileRankFromSquare(shift), directions)
+	for square := Square(0); square < squareCount; square++ {
+		entry, table, err := findMagic(FileRankFromSquare(square), directions)
 		if err != nil {
-			log.Fatalf("could not find magic for square %d: %v", shift, err)
+			log.Fatalf("could not find magic for square %d: %v", square, err)
 		}
-		magics[shift] = entry
-		tables[shift] = table
+		magics[square] = entry
+		tables[square] = table
 	}
 
 	if SaveMagicsToDisk {
-		SaveMagicEntries(fileName, magics)
+		if err := SaveMagicEntries(fileName, magics); err != nil {
+			log.Fatalf("could not save magics to %s: %v", fileName, err)
+		}
 	}
 	return magics, tables
 }
@@ -248,12 +250,12 @@ func buildSliderAttacks(directions Directions, fileName string) ([]MagicEntry, [
 // any stored magic does not produce a collision-free table.
 func buildMagicTables(magics []MagicEntry, directions Directions) ([][]BitBoard, error) {
 	tables := make([][]BitBoard, squareCount)
-	for shift := Square(0); shift < squareCount; shift++ {
-		table, err := tryMagic(shift, magics[shift], directions)
+	for square := Square(0); square < squareCount; square++ {
+		table, err := tryMagic(square, magics[square], directions)
 		if err != nil {
-			return nil, fmt.Errorf("square %d: %w", shift, err)
+			return nil, fmt.Errorf("square %d: %w", square, err)
 		}
-		tables[shift] = table
+		tables[square] = table
 	}
 	return tables, nil
 }

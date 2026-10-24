@@ -21,15 +21,15 @@ func loadAttackTable(fileName string) []BitBoard {
 			log.Fatalf("Error in data: %s", err.Error())
 		}
 		if len(val) != 3 {
-			log.Fatalf("Error, data didnt have enough rows, filename: %s", fileName)
+			log.Fatalf("Error, data did not have enough rows, fileName: %s", fileName)
 		}
 		target[val[0]] = BitBoard(val[2])
 	}
 	return target
 }
 
-func readCSV(filename string) ([][]string, error) {
-	file, err := os.Open(filename)
+func readCSV(fileName string) ([][]string, error) {
+	file, err := os.Open(fileName)
 	if err != nil {
 		return nil, err
 	}
@@ -48,30 +48,20 @@ func readCSV(filename string) ([][]string, error) {
 
 func readRecord(record []string) ([]uint64, error) {
 	output := make([]uint64, len(record))
-	for i, str := range record {
-		conversion, err := strconv.ParseUint(str, 10, 64)
+	for i, field := range record {
+		value, err := strconv.ParseUint(field, 10, 64)
 		if err != nil {
 			return nil, err
 		}
-		output[i] = uint64(conversion)
+		output[i] = uint64(value)
 	}
 	return output, nil
 }
 
-// LoadMagicEntries reads a CSV of magic entries (square, mask, magic), one row
-// per square, and exits the process on failure. Callers that can recover
-// should use tryLoadMagics.
-func LoadMagicEntries(fileName string) []MagicEntry {
-	entries, err := tryLoadMagics(fileName)
-	if err != nil {
-		log.Fatalf("Unable to load magics from %s: %s", fileName, err.Error())
-	}
-	return entries
-}
-
-// tryLoadMagics reads and validates a magic CSV. IndexBits is recomputed
-// from the mask so it always agrees with the data.
-func tryLoadMagics(fileName string) ([]MagicEntry, error) {
+// LoadMagicEntries reads and validates a CSV of magic entries
+// (square, mask, magic), one row per square. IndexBits is recomputed from
+// the mask so it always agrees with the data.
+func LoadMagicEntries(fileName string) ([]MagicEntry, error) {
 	target := make([]MagicEntry, squareCount)
 	data, err := readCSV(fileName)
 	if err != nil {
@@ -79,7 +69,7 @@ func tryLoadMagics(fileName string) ([]MagicEntry, error) {
 	}
 
 	if len(data) != squareCount+1 {
-		return nil, fmt.Errorf("expected %d data rows, filename: %s", squareCount, fileName)
+		return nil, fmt.Errorf("expected %d data rows, fileName: %s", squareCount, fileName)
 	}
 
 	seen := make(map[uint64]bool, squareCount)
@@ -89,13 +79,13 @@ func tryLoadMagics(fileName string) ([]MagicEntry, error) {
 			return nil, fmt.Errorf("error in data: %w", err)
 		}
 		if len(val) != 3 {
-			return nil, fmt.Errorf("expected 3 columns, filename: %s", fileName)
+			return nil, fmt.Errorf("expected 3 columns, fileName: %s", fileName)
 		}
 		if val[0] >= squareCount {
-			return nil, fmt.Errorf("square %d out of range, filename: %s", val[0], fileName)
+			return nil, fmt.Errorf("square %d out of range, fileName: %s", val[0], fileName)
 		}
 		if seen[val[0]] {
-			return nil, fmt.Errorf("duplicate square %d, filename: %s", val[0], fileName)
+			return nil, fmt.Errorf("duplicate square %d, fileName: %s", val[0], fileName)
 		}
 		seen[val[0]] = true
 		target[val[0]] = newMagicEntry(BitBoard(val[1]), val[2])
@@ -103,16 +93,16 @@ func tryLoadMagics(fileName string) ([]MagicEntry, error) {
 	return target, nil
 }
 
-// SaveMagicEntries writes magic entries to a CSV (square, mask, magic), one row
-// per square, in the same format LoadMagicEntries reads.
-func SaveMagicEntries(fileName string, entries []MagicEntry) {
+// SaveMagicEntries writes magic entries to a CSV (square, mask, magic), one
+// row per square, in the same format LoadMagicEntries reads.
+func SaveMagicEntries(fileName string, entries []MagicEntry) error {
 	if len(entries) != squareCount {
-		log.Fatalf("Error, expected %d magic entries, got %d", squareCount, len(entries))
+		return fmt.Errorf("expected %d magic entries, got %d", squareCount, len(entries))
 	}
 
 	file, err := os.Create(fileName)
 	if err != nil {
-		log.Fatalf("Unable to create file: %s", err.Error())
+		return err
 	}
 	defer file.Close()
 
@@ -126,7 +116,5 @@ func SaveMagicEntries(fileName string, entries []MagicEntry) {
 		})
 	}
 	writer.Flush()
-	if err := writer.Error(); err != nil {
-		log.Fatalf("Unable to write file: %s", err.Error())
-	}
+	return writer.Error()
 }

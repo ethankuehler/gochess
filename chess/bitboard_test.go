@@ -13,7 +13,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestNewBoardFEN(t *testing.T) {
+func TestParseFEN(t *testing.T) {
 	// Open the CSV file
 	file, err := os.Open("data/FEN.csv")
 	if err != nil {
@@ -46,7 +46,7 @@ func TestNewBoardFEN(t *testing.T) {
 
 }
 
-func TestOccupied(t *testing.T) {
+func TestOccupancy(t *testing.T) {
 	// Open the CSV file
 	file, err := os.Open("data/FEN.csv")
 	if err != nil {
@@ -106,9 +106,9 @@ func TestSquaresToBitBoard(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		a1, _ := BitBoardFromAlg("a1")
-		d4, _ := BitBoardFromAlg("d4")
-		h8, _ := BitBoardFromAlg("h8")
+		a1, _ := BitBoardFromAlgebraic("a1")
+		d4, _ := BitBoardFromAlgebraic("d4")
+		h8, _ := BitBoardFromAlgebraic("h8")
 		want := a1 | d4 | h8
 		if got != want {
 			t.Fatalf("expected %d, got %d", want, got)
@@ -121,7 +121,7 @@ func TestSquaresToBitBoard(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		want, _ := BitBoardFromAlg("a1")
+		want, _ := BitBoardFromAlgebraic("a1")
 		if got != want {
 			t.Fatalf("expected %d, got %d", want, got)
 		}
@@ -145,14 +145,14 @@ func TestSquaresToBitBoard(t *testing.T) {
 	})
 }
 
-func TestNewBoardDefault(t *testing.T) {
+func TestNewStartingPosition(t *testing.T) {
 	const want = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 	if got := NewStartingPosition().FEN(); got != want {
 		t.Fatalf("default board FEN = %q, want %q", got, want)
 	}
 }
 
-func TestNewBoardFENValid(t *testing.T) {
+func TestParseFENValid(t *testing.T) {
 	cases := []string{
 		"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
 		"4k3/8/8/8/8/8/8/4K3 w - - 99 100",
@@ -172,18 +172,18 @@ func TestNewBoardFENValid(t *testing.T) {
 	}
 }
 
-func TestNewBoardFENEnPassantSquare(t *testing.T) {
+func TestParseFENEnPassantSquare(t *testing.T) {
 	b, err := ParseFEN("4k3/8/8/8/8/8/8/4K3 b - e3 0 1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want, _ := BitBoardFromAlg("e3")
+	want, _ := BitBoardFromAlgebraic("e3")
 	if b.enPassantSquare != want {
 		t.Errorf("en passant square = %d, want %d", b.enPassantSquare, want)
 	}
 }
 
-func TestNewBoardFENRejectsInvalid(t *testing.T) {
+func TestParseFENRejectsInvalid(t *testing.T) {
 	cases := []struct {
 		name string
 		fen  string

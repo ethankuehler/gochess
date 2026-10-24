@@ -18,6 +18,7 @@ func main() {
 	//b, err := chess.ParseFEN("rnbqkbnr/ppp2ppp/8/3Pp3/8/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 3")
 	if err != nil {
 		fmt.Println(err)
+		return
 	}
 	fmt.Println(b.UnicodeString())
 	var bb chess.BitBoard = 0
@@ -28,6 +29,7 @@ func main() {
 	m, err := chess.ParseUCIMove("e2e4")
 	if err != nil {
 		fmt.Println(err)
+		return
 	}
 	fmt.Println(m)
 }
