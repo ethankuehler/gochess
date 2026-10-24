@@ -13,7 +13,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestNewBaordFEN(t *testing.T) {
+func TestParseFEN(t *testing.T) {
 	// Open the CSV file
 	file, err := os.Open("data/FEN.csv")
 	if err != nil {
@@ -33,20 +33,20 @@ func TestNewBaordFEN(t *testing.T) {
 
 	// Loop through and print each record
 	for _, record := range records {
-		var b, err = NewBoardFEN(record[0])
+		var b, err = ParseFEN(record[0])
 		if err != nil {
 			t.Errorf("ERROR: could not decode FEN %s", record[0])
 			continue
 		}
 		out := b.FEN()
 		if out != record[0] {
-			t.Errorf("FEN dose not match, input = %s, output = %s", record[0], out)
+			t.Errorf("FEN does not match, input = %s, output = %s", record[0], out)
 		}
 	}
 
 }
 
-func TestOccupied(t *testing.T) {
+func TestOccupancy(t *testing.T) {
 	// Open the CSV file
 	file, err := os.Open("data/FEN.csv")
 	if err != nil {
@@ -66,33 +66,33 @@ func TestOccupied(t *testing.T) {
 
 	// Loop through and print each record
 	for _, record := range records {
-		var b, err = NewBoardFEN(record[0])
+		var b, err = ParseFEN(record[0])
 		if err != nil {
 			t.Errorf("ERROR: could not decode FEN %s", record[0])
 			continue
 		}
-		occupied_white := b.Occupied(WHITE)
+		occupied_white := b.Occupancy(White)
 		var comp_white BitBoard = 0
-		for i := PAWN; i <= KING; i++ {
-			comp_white |= b.GetPieces(WHITE, Piece(i))
+		for i := Pawn; i <= King; i++ {
+			comp_white |= b.PieceBitboard(White, Piece(i))
 		}
 		if occupied_white != comp_white {
-			t.Errorf("ERROR: WHITE Occupied %b, comp %b", occupied_white, comp_white)
+			t.Errorf("ERROR: White Occupancy %b, comp %b", occupied_white, comp_white)
 		}
 
-		occupied_black := b.Occupied(BLACK)
+		occupied_black := b.Occupancy(Black)
 		var comp_black BitBoard
 		comp_black = 0
-		for i := PAWN; i <= KING; i++ {
-			comp_black |= b.GetPieces(BLACK, Piece(i))
+		for i := Pawn; i <= King; i++ {
+			comp_black |= b.PieceBitboard(Black, Piece(i))
 		}
 		if occupied_black != comp_black {
-			t.Errorf("ERROR: BLACK Occupied %b, comp %b", occupied_black, comp_black)
+			t.Errorf("ERROR: Black Occupancy %b, comp %b", occupied_black, comp_black)
 		}
 
-		occupied_both := b.Occupied(BOTH)
+		occupied_both := b.Occupancy(Both)
 		if occupied_both != (comp_white | comp_black) {
-			t.Errorf("ERROR: BOTH Occupied %b, comp %b", occupied_black, comp_black)
+			t.Errorf("ERROR: Both Occupancy %b, comp %b", occupied_black, comp_black)
 		}
 
 	}
@@ -106,9 +106,9 @@ func TestSquaresToBitBoard(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		a1, _ := LocFromAlg("a1")
-		d4, _ := LocFromAlg("d4")
-		h8, _ := LocFromAlg("h8")
+		a1, _ := BitBoardFromAlgebraic("a1")
+		d4, _ := BitBoardFromAlgebraic("d4")
+		h8, _ := BitBoardFromAlgebraic("h8")
 		want := a1 | d4 | h8
 		if got != want {
 			t.Fatalf("expected %d, got %d", want, got)
@@ -121,7 +121,7 @@ func TestSquaresToBitBoard(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		want, _ := LocFromAlg("a1")
+		want, _ := BitBoardFromAlgebraic("a1")
 		if got != want {
 			t.Fatalf("expected %d, got %d", want, got)
 		}
@@ -145,14 +145,14 @@ func TestSquaresToBitBoard(t *testing.T) {
 	})
 }
 
-func TestNewBoardDefault(t *testing.T) {
+func TestNewStartingPosition(t *testing.T) {
 	const want = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-	if got := NewBoardDefault().FEN(); got != want {
+	if got := NewStartingPosition().FEN(); got != want {
 		t.Fatalf("default board FEN = %q, want %q", got, want)
 	}
 }
 
-func TestNewBoardFENValid(t *testing.T) {
+func TestParseFENValid(t *testing.T) {
 	cases := []string{
 		"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
 		"4k3/8/8/8/8/8/8/4K3 w - - 99 100",
@@ -161,9 +161,9 @@ func TestNewBoardFENValid(t *testing.T) {
 	}
 
 	for _, fen := range cases {
-		b, err := NewBoardFEN(fen)
+		b, err := ParseFEN(fen)
 		if err != nil {
-			t.Errorf("NewBoardFEN(%q) returned error: %v", fen, err)
+			t.Errorf("ParseFEN(%q) returned error: %v", fen, err)
 			continue
 		}
 		if got := b.FEN(); got != fen {
@@ -172,18 +172,18 @@ func TestNewBoardFENValid(t *testing.T) {
 	}
 }
 
-func TestNewBoardFENEnPassantSquare(t *testing.T) {
-	b, err := NewBoardFEN("4k3/8/8/8/8/8/8/4K3 b - e3 0 1")
+func TestParseFENEnPassantSquare(t *testing.T) {
+	b, err := ParseFEN("4k3/8/8/8/8/8/8/4K3 b - e3 0 1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want, _ := LocFromAlg("e3")
-	if b.enpassant != want {
-		t.Errorf("en passant square = %d, want %d", b.enpassant, want)
+	want, _ := BitBoardFromAlgebraic("e3")
+	if b.enPassantSquare != want {
+		t.Errorf("en passant square = %d, want %d", b.enPassantSquare, want)
 	}
 }
 
-func TestNewBoardFENRejectsInvalid(t *testing.T) {
+func TestParseFENRejectsInvalid(t *testing.T) {
 	cases := []struct {
 		name string
 		fen  string
@@ -222,8 +222,8 @@ func TestNewBoardFENRejectsInvalid(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := NewBoardFEN(tc.fen); err == nil {
-				t.Errorf("NewBoardFEN(%q) succeeded, want an error", tc.fen)
+			if _, err := ParseFEN(tc.fen); err == nil {
+				t.Errorf("ParseFEN(%q) succeeded, want an error", tc.fen)
 			}
 		})
 	}

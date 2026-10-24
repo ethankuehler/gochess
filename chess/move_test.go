@@ -7,20 +7,20 @@ import (
 	"testing"
 )
 
-func TestNewMove(t *testing.T) {
+func TestParseUCIMove(t *testing.T) {
 	for i := range 8 {
 		for j := range 8 {
 			for k := range 8 {
 				for l := range 8 {
-					scol := COLUMNS[i]
+					scol := fileNames[i]
 					srow := j + 1
-					ecol := COLUMNS[k]
+					ecol := fileNames[k]
 					erow := l + 1
 					uci := fmt.Sprintf("%c%d%c%d", scol, srow, ecol, erow)
 					if uci[:2] == uci[2:] {
 						continue // same-square moves are invalid
 					}
-					m, err := NewMoveUCI(uci)
+					m, err := ParseUCIMove(uci)
 					if err != nil {
 						t.Errorf("Not able to create new move, UCI=%s, error = %s", uci, err.Error())
 						continue
@@ -29,8 +29,8 @@ func TestNewMove(t *testing.T) {
 					if new_uci != uci {
 						t.Errorf("UCI's did not match, input = %s, output = %s", uci, new_uci)
 					}
-					from, _ := ShiftFromAlg(uci[:2])
-					to, _ := ShiftFromAlg(uci[2:])
+					from, _ := ParseSquare(uci[:2])
+					to, _ := ParseSquare(uci[2:])
 					if m.From() != from || m.To() != to {
 						t.Errorf("%s: From/To = %d/%d, want %d/%d", uci, m.From(), m.To(), from, to)
 					}
@@ -43,22 +43,22 @@ func TestNewMove(t *testing.T) {
 	}
 }
 
-func TestNewMovePromotions(t *testing.T) {
+func TestParseUCIMovePromotions(t *testing.T) {
 	cases := []struct {
 		uci  string
 		want Piece
 	}{
-		{"e7e8q", QUEEN},
-		{"e7e8r", ROOK},
-		{"e7e8b", BISHOP},
-		{"e7e8n", KNIGHT},
-		{"a7a8q", QUEEN},
-		{"e7e8Q", QUEEN},
+		{"e7e8q", Queen},
+		{"e7e8r", Rook},
+		{"e7e8b", Bishop},
+		{"e7e8n", Knight},
+		{"a7a8q", Queen},
+		{"e7e8Q", Queen},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.uci, func(t *testing.T) {
-			m, err := NewMoveUCI(tc.uci)
+			m, err := ParseUCIMove(tc.uci)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -76,23 +76,23 @@ func TestNewMovePromotions(t *testing.T) {
 	}
 }
 
-func TestNewMoveRejectsInvalid(t *testing.T) {
+func TestParseUCIMoveRejectsInvalid(t *testing.T) {
 	for _, uci := range []string{
 		"", "e2", "e2e", "e2e44", "e2e2", "e2e9", "i2e4",
 		"e7e8k", "e7e8p", "e7e8x", "e7e8qq",
 	} {
 		t.Run(strconv.Quote(uci), func(t *testing.T) {
-			if _, err := NewMoveUCI(uci); err == nil {
-				t.Errorf("NewMoveUCI(%q) succeeded, want an error", uci)
+			if _, err := ParseUCIMove(uci); err == nil {
+				t.Errorf("ParseUCIMove(%q) succeeded, want an error", uci)
 			}
 		})
 	}
 }
 
-func TestRowColFromAlg(t *testing.T) {
+func TestParseFileRank(t *testing.T) {
 	cases := []struct {
-		alg      string
-		row, col uint64
+		alg        string
+		rank, file uint64
 	}{
 		{"a1", 0, 0},
 		{"h8", 7, 7},
@@ -100,20 +100,20 @@ func TestRowColFromAlg(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		row, col, err := RowColFromAlg(tc.alg)
+		fr, err := ParseFileRank(tc.alg)
 		if err != nil {
-			t.Errorf("RowColFromAlg(%q) returned error: %v", tc.alg, err)
+			t.Errorf("ParseFileRank(%q) returned error: %v", tc.alg, err)
 			continue
 		}
-		if row != tc.row || col != tc.col {
-			t.Errorf("RowColFromAlg(%q) = (%d, %d), want (%d, %d)", tc.alg, row, col, tc.row, tc.col)
+		if fr.rank != tc.rank || fr.file != tc.file {
+			t.Errorf("ParseFileRank(%q) = (%d, %d), want (%d, %d)", tc.alg, fr.rank, fr.file, tc.rank, tc.file)
 		}
 	}
 
 	for _, alg := range []string{"", "e", "e44", "i1", "e0", "e9", " 1"} {
 		t.Run(strconv.Quote(alg), func(t *testing.T) {
-			if _, _, err := RowColFromAlg(alg); err == nil {
-				t.Errorf("RowColFromAlg(%q) succeeded, want an error", alg)
+			if _, err := ParseFileRank(alg); err == nil {
+				t.Errorf("ParseFileRank(%q) succeeded, want an error", alg)
 			}
 		})
 	}
