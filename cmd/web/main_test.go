@@ -546,3 +546,98 @@ func TestEngineInfoReportsMate(t *testing.T) {
 		t.Errorf("legal moves after mate = %v, want none", moves)
 	}
 }
+
+func TestSnapshotReportsThreefoldRepetition(t *testing.T) {
+	start, err := chess.ParseFEN("4k3/8/8/8/8/8/8/R3K3 w - - 0 1")
+	if err != nil {
+		t.Fatalf("ParseFEN: %v", err)
+	}
+
+	g := newGame()
+	t.Cleanup(g.Close)
+	g.positions = []*chess.Position{start}
+	g.history = nil
+
+	for _, move := range []string{
+		"e1d1", "e8d8", "d1e1", "d8e8",
+		"e1d1", "e8d8", "d1e1", "d8e8",
+	} {
+		if err := g.applyUCILocked(move); err != nil {
+			t.Fatalf("applyUCILocked(%q): %v", move, err)
+		}
+	}
+
+	state := g.snapshotLocked()
+	if state.Status != "threefold" {
+		t.Fatalf("status = %q, want threefold", state.Status)
+	}
+	if len(state.LegalMoves) == 0 {
+		t.Error("drawn position reported no legal moves")
+	}
+}
+
+func TestSnapshotReportsFiftyMoveDraw(t *testing.T) {
+	position, err := chess.ParseFEN("4k3/8/8/8/8/8/8/R3K3 w - - 100 1")
+	if err != nil {
+		t.Fatalf("ParseFEN: %v", err)
+	}
+
+	g := newGame()
+	t.Cleanup(g.Close)
+	g.positions = []*chess.Position{position}
+	g.history = nil
+
+	state := g.snapshotLocked()
+	if state.Status != "fifty-move" {
+		t.Fatalf("status = %q, want fifty-move", state.Status)
+	}
+}
+
+func TestEngineMoveUsesRepetitionHistory(t *testing.T) {
+	start, err := chess.ParseFEN("4k3/8/8/8/8/8/8/R3K3 w - - 0 1")
+	if err != nil {
+		t.Fatalf("ParseFEN: %v", err)
+	}
+
+	g := newGame()
+	t.Cleanup(g.Close)
+	g.positions = []*chess.Position{start}
+	g.history = nil
+	for _, move := range []string{
+		"e1d1", "e8d8", "d1e1", "d8e8",
+		"e1d1", "e8d8", "d1e1", "d8e8",
+	} {
+		if err := g.applyUCILocked(move); err != nil {
+			t.Fatalf("applyUCILocked(%q): %v", move, err)
+		}
+	}
+	g.engineEnabled = true
+	g.engineDepth = 1
+
+	if err := g.engineMove(); err != nil {
+		t.Fatalf("engineMove: %v", err)
+	}
+	if g.engineInfo == nil {
+		t.Fatal("engine info is nil")
+	}
+	if g.engineInfo.Score != 0 {
+		t.Errorf("threefold engine score = %d, want 0", g.engineInfo.Score)
+	}
+}
+
+func TestSnapshotReportsInsufficientMaterial(t *testing.T) {
+	position, err := chess.ParseFEN("4k3/8/8/8/8/8/8/4K3 w - - 0 1")
+	if err != nil {
+		t.Fatalf("ParseFEN: %v", err)
+	}
+
+	g := newGame()
+	t.Cleanup(g.Close)
+	g.positions = []*chess.Position{position}
+	g.history = nil
+
+	state := g.snapshotLocked()
+	if state.Status != "insufficient-material" {
+		t.Fatalf("status = %q, want insufficient-material", state.Status)
+	}
+}

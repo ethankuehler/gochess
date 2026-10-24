@@ -77,16 +77,16 @@ CGO_ENABLED=0 go build -trimpath \
 | Command | What it does |
 | --- | --- |
 | `go run ./cmd/web [-addr 127.0.0.1:8080]` | Local board. You play White; toggle **Engine** to play Black at a depth you choose, or **Auto play** to watch the engine play both sides. Click-to-move, undo, and reset; reset cancels a running search. |
-| `go run ./cmd/search -depth 5` | Fixed-depth search; prints best move, score, nodes, time, and nps. Add `-fen "<FEN>"` or `-eval` for a static score. |
+| `go run ./cmd/search -depth 5` | Fixed-depth search; prints best move, score, nodes, time, and nps. Add `-fen "<FEN>"`, `-moves "e2e4 e7e5 ..."`, or `-eval` for a static score. |
 | `go run ./cmd/perft -depth 5` | Move-generation node count with time and nps. Flags: `-fen`, `-moves`, `-divide`, `-suite data/perft.csv`, `-deep`, `-compare [-stockfish path]`. |
+| `go run ./cmd/match -stockfish stockfish -games 4 -depth 4` | Play gochess against Stockfish. Every position is compared with Stockfish's perft, every move is checked for legality, and checkmate, stalemate, fifty-move, threefold, and insufficient-material results are adjudicated. Fails on any rule mismatch. Flags: `-fen`, `-moves`, `-random-plies`, `-seed`, `-validate-depth`, `-max-moves`, `-verbose`. |
 | `go run ./cmd/genmagics` | Regenerate `data/rook_magics.csv` and `data/bishop_magics.csv`. |
 | `python3 generate_attack_tables.py` | Regenerate the knight/king/pawn CSVs; requires `pandas`. |
 | `go run .` | Scratch demo that prints a board. |
 
-Run everything except `cmd/uci` and `cmd/web` from the repo root: `cmd/search`,
-`cmd/perft`, `cmd/genmagics`, and the tests open `data/...` via relative paths.
-`cmd/uci` and `cmd/web` use the embedded files and do not care about the working
-directory.
+Run `cmd/search`, `cmd/perft`, and `cmd/genmagics` from the repo root: they open
+`data/...` via relative paths. `cmd/uci`, `cmd/web`, and `cmd/match` use the
+embedded files and do not care about the working directory.
 
 ## Benchmarking
 
@@ -122,6 +122,7 @@ go test -race ./...           # what CI runs
 go vet ./...                  # static checks
 PERFT_DEEP=1 go test ./chess -run '^TestPerft$' -v
 STOCKFISH_BIN=stockfish go test ./chess -run TestPerftAgainstStockfish
+STOCKFISH_BIN=stockfish go test ./cmd/match -run TestMatchAgainstStockfish
 ```
 
 Tests are data-driven where practical: FEN fixtures live in `data/FEN.csv`,
@@ -129,13 +130,27 @@ sliding attacks in `data/sliding_attacks_examples.json`, and perft positions in
 `data/perft.csv` (rows with `deep=1` only run with `PERFT_DEEP=1`). The fast
 suite covers FEN parsing, magic tables, move generation, evaluation, search
 limits, the UCI protocol, and the web endpoints; `cmd/uci` tests build and run
-the binary from an empty temporary directory. The Stockfish differential test
-runs in CI and locally when `STOCKFISH_BIN` is set; `cmd/perft -compare` remains
-an opt-in debugging tool.
+the binary from an empty temporary directory. The Stockfish tests run in CI and
+locally when `STOCKFISH_BIN` is set; `cmd/perft -compare` remains an opt-in
+debugging tool.
 
-CI checks `gofmt`, `go build`, `go vet`, `go test -race ./...`, a Stockfish
-perft comparison, a `bench` smoke test, and a Windows/macOS cross-compile. Run
-`gofmt -l .` before pushing.
+`cmd/match` is the end-to-end rules check. It plays real games against
+Stockfish, compares our perft divide with Stockfish's at every position (depth
+1 checks the complete legal move list), verifies every move before applying it,
+and adjudicates checkmate, stalemate, fifty-move, threefold repetition, and
+insufficient material. At a drawn or terminal position it also requires
+gochess's own search to return the correct draw or mate score. Any mismatch is
+a hard failure with the offending FEN and move list.
+
+```sh
+go run ./cmd/match -stockfish stockfish -games 4 -depth 4
+go run ./cmd/match -stockfish stockfish -fen "4k3/8/8/8/8/8/8/R3K3 w - - 0 1" \
+  -moves "e1d1 e8d8 d1e1 d8e8 e1d1 e8d8 d1e1 d8e8"
+```
+
+CI checks `gofmt`, `go build`, `go vet`, `go test -race ./...`, Stockfish perft
+and match comparisons, a `bench` smoke test, and a Windows/macOS cross-compile.
+Run `gofmt -l .` before pushing.
 
 ## Layout
 
@@ -145,6 +160,7 @@ uci/         protocol layer: command loop, time management, client, bench
 cmd/uci/     standalone UCI binary
 cmd/web/     local board UI and in-process engine client
 cmd/search/  fixed-depth search CLI
+cmd/match/   gochess-vs-Stockfish match and rules verifier
 cmd/perft/   perft runner, suite, and Stockfish comparison
 cmd/genmagics/  magic-number CSV generator
 data/        embedded attack tables, magics, and test fixtures
@@ -153,6 +169,7 @@ data/        embedded attack tables, magics, and test fixtures
 ## Known limitations
 
 No transposition table, pondering, MultiPV, Chess960, tablebases, or opening
-book. Threefold repetition and insufficient material are not detected because
-`Position` carries no history; the fifty-move rule is checked during search.
-The engine can find short mates and win free material, but it is not strong yet.
+book. Threefold repetition and the fifty-move rule are detected during search
+when the caller supplies game history (the UCI move list and the web demo both
+do); insufficient material is detected as well. The engine can find short mates
+and win free material, but it is not strong yet.

@@ -20,6 +20,7 @@ type Position struct {
 	flags           uint8        // packed turn and castling rights
 	halfmoveClock   uint16       // half moves since the last pawn advance or capture
 	fullmoveNumber  uint16       // full moves
+	key             uint64       // Zobrist key for repetition detection
 }
 
 func (b BitBoard) String() string {
@@ -79,6 +80,8 @@ func NewStartingPosition() *Position {
 	// The halfmove clock starts at zero and the fullmove number at one.
 	b.halfmoveClock = 0
 	b.fullmoveNumber = 1
+
+	b.key = b.computeKey()
 
 	return &b
 }
@@ -223,6 +226,8 @@ func ParseFEN(fen string) (*Position, error) {
 		return nil, fmt.Errorf("invalid FEN %q: fullmove number %d is out of range", fen, v)
 	}
 	b.fullmoveNumber = uint16(v)
+
+	b.key = b.computeKey()
 
 	return &b, nil
 }

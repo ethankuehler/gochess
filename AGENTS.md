@@ -25,6 +25,9 @@ deepening alpha-beta search, and a UCI front end.
     CSVs in `data/`.
   - `cmd/perft` (`cmd/perft/`) — perft runner, divide printer, fixture suite,
     and optional Stockfish comparison.
+  - `cmd/match` (`cmd/match/`) — plays gochess against Stockfish, validates
+    every position with Stockfish perft, adjudicates all draw rules, and checks
+    that gochess's search recognizes drawn and terminal positions.
   - `cmd/search` (`cmd/search/`) — fixed-depth search CLI; prints the best
     move, score, nodes, time, and nps, or just the static evaluation.
   - `cmd/web` (`cmd/web/`) — local browser board; human White, engine Black,
@@ -40,9 +43,15 @@ deepening alpha-beta search, and a UCI front end.
 - `cmd/perft/main.go` — runs perft, lists legal moves, prints a divide, runs
   `data/perft.csv`, and can diff a divide against Stockfish; run from the repo
   root.
-- `cmd/search/main.go` — parses a FEN, builds the attack tables, and runs
-  `Position.Search`; `-eval` prints the static score instead. Run from the repo
+- `cmd/search/main.go` — parses a FEN, optionally applies `-moves` (which also
+  supplies repetition history), builds the attack tables, and runs a
+  fixed-depth search; `-eval` prints the static score instead. Run from the repo
   root so the `data/` paths resolve.
+- `cmd/match/main.go` — match orchestration, game loop, draw/terminal
+  adjudication, and gochess draw-awareness checks. `cmd/match/stockfish.go` is
+  a persistent external UCI client used as both opponent and perft oracle. It
+  uses the embedded attack tables, so it does not depend on the working
+  directory.
 - `cmd/uci/main.go` — the UCI executable. `go build -o gochess ./cmd/uci`
   produces a self-contained binary; `gochess bench [depth]` runs the benchmark
   and exits, and `gochess -version` prints the version. Normal startup runs the
@@ -52,10 +61,10 @@ deepening alpha-beta search, and a UCI front end.
   `/api/move`, `/api/engine`, `/api/engine/move`, `/api/reset`,
   and `/api/undo`. Engine mode plays Black against a human White; auto play
   asks the engine to move for both sides. Each engine move sends
-  `position fen` and `go depth N` to an in-process `uci.Client` and applies the
-  returned `bestmove`. The panel has an engine toggle and a numeric depth input
-  with no upper limit. `newGame` starts the client; `game.Close` shuts it
-  down, and tests must close the game.
+  `position fen ... moves ...` and `go depth N` to an in-process `uci.Client`
+  and applies the returned `bestmove`. The panel has an engine toggle and a
+  numeric depth input with no upper limit. `newGame` starts the client;
+  `game.Close` shuts it down, and tests must close the game.
 - `uci/` — the UCI protocol layer (`package uci`):
   - `engine.go` — `Engine`, `Run`, command loop, handshake, `isready`,
     `setoption`, `ucinewgame`, `stop`, `quit`, EOF handling, and the
@@ -104,7 +113,9 @@ deepening alpha-beta search, and a UCI front end.
     generation, castling checks, king-safety filtering, `LegalMoves`, and
     `InCheck`.
   - `makemove.go` — copy-make `makeMove`, castling-rights updates, en passant,
-    promotions, and clocks.
+    promotions, clocks, and the incremental Zobrist key.
+  - `repetition.go` — `PositionKey`, Zobrist keys, `Position.Key`, and the
+    fifty-move, threefold-repetition, and insufficient-material helpers.
   - `perft.go` — `Perft`, `PerftDivide`, and `PerftResult`.
   - `eval.go` — material values and the precomputed piece-square table
     (centrality, king safety, pawn advancement), plus `Position.Evaluate`.
@@ -130,8 +141,8 @@ deepening alpha-beta search, and a UCI front end.
     nodes, deep). Rows with `deep=1` run only with `PERFT_DEEP=1`.
   - `cmd/search`, `cmd/perft`, `cmd/genmagics`, and the package tests still
     read these files from disk via relative `data/...` paths and must run from
-    the repo root. `cmd/uci` and `cmd/web` initialize from the embedded FS, so
-    they do not depend on the working directory.
+    the repo root. `cmd/uci`, `cmd/web`, and `cmd/match` initialize from the
+    embedded FS, so they do not depend on the working directory.
 - `generate_attack_tables.py` — Python 3 script that regenerates the CSV
   attack tables in `data/`. Requires `pandas`. Run from the repo root
   (`python3 generate_attack_tables.py`); it writes to `data/*.csv`.
@@ -153,8 +164,10 @@ go run ./cmd/perft -moves -fen "<FEN>"
 go run ./cmd/perft -depth 4 -divide
 go run ./cmd/perft -depth 4 -compare -fen "<FEN>"
 go run ./cmd/perft -suite data/perft.csv
+go run ./cmd/match -stockfish stockfish -games 4 -depth 4
 go run ./cmd/search -depth 4
 go run ./cmd/search -fen "<FEN>" -depth 5
+go run ./cmd/search -fen "<FEN>" -moves "e2e4 e7e5" -depth 5
 go run ./cmd/search -fen "<FEN>" -eval
 ./gochess bench           # deterministic bench; prints "<nodes> nodes <nps> nps"
 ./gochess bench 6         # optional depth
@@ -163,6 +176,7 @@ go test ./...             # run all tests
 go test -race ./...       # run tests under the race detector
 PERFT_DEEP=1 go test ./chess -run '^TestPerft$' -v
 STOCKFISH_BIN=stockfish go test ./chess -run TestPerftAgainstStockfish
+STOCKFISH_BIN=stockfish go test ./cmd/match -run TestMatchAgainstStockfish
 go test -bench . ./chess  # run benchmarks
 go vet ./...              # static checks
 ```
@@ -173,16 +187,16 @@ relative paths. Run those binaries and tests from the repo root. The test suite
 handles this with a `TestMain` in `chess/bitboard_test.go` that `os.Chdir("..")`s
 to the repo root — preserve that pattern if you add tests that touch `data/`.
 
-`cmd/uci` and `cmd/web` are different: they initialize from
+`cmd/uci`, `cmd/web`, and `cmd/match` are different: they initialize from
 `BuildAllAttacksFromFS(data.FS)`, so they do not read `data/` at runtime.
 `cmd/uci` is tested from an empty temporary directory. If you add a runtime CSV,
 add it to the `//go:embed` list in `data/assets.go` and to the FS loader.
 
 CI runs on pushes to `main` and on pull requests: `gofmt` check, `go build`,
-`go vet`, `go test -race ./...`, and the Stockfish perft differential test. The
-compiled `gochess` binary, `gochess-uci`, `.vscode/`, the local Go caches
-(`.gocache/`, `.gomodcache/`, `.gopath/`), and local planning notes in
-`plans/` are gitignored.
+`go vet`, `go test -race ./...`, the Stockfish perft differential test, and a
+short Stockfish match test. The compiled `gochess` binary, `gochess-uci`,
+`.vscode/`, the local Go caches (`.gocache/`, `.gomodcache/`, `.gopath/`), and
+local planning notes in `plans/` are gitignored.
 
 ## Core conventions and architecture
 
@@ -219,7 +233,9 @@ Bitboard representation:
 - `makeMove` is copy-make and returns a new `Position`. It clears castling
   rights for any move from or to e1/a1/h1/e8/a8/h8, clears the en passant
   square unless the move is a double push, updates the halfmove/fullmove
-  clocks, and moves the rook when castling.
+  clocks, moves the rook when castling, and updates the incremental Zobrist
+  key. `Position.key` is the repetition key: piece placement, side to move,
+  castling rights, and a capturable en passant target, but not the clocks.
 - `LegalMoves` generates pseudo-legal moves, applies each one to a copy, and
   rejects moves that leave the mover's king attacked. Castling additionally
   checks that the king is not in check and that its transit squares are safe
@@ -251,24 +267,32 @@ Evaluation and search:
 - `Position.SearchWithLimits(ctx, limits, info)` performs iterative-deepening
   negamax alpha-beta. `SearchLimits` has `MaxDepth` (0 means no explicit cap, up
   to `maxPly`), `MaxNodes`, `Deadline` (hard wall clock), `SoftDeadline` (stop
-  between iterations), and `RootMoves` (nil means all legal moves; a non-nil
-  empty list means no root moves). It checks cancellation and the hard deadline
-  every 256 nodes and at every root move, so `stop` stays responsive.
+  between iterations), `RootMoves` (nil means all legal moves; a non-nil empty
+  list means no root moves), and `GameHistory` (position keys before the root,
+  oldest first). It checks cancellation and the hard deadline every 256 nodes
+  and at every root move, so `stop` stays responsive.
 - `SearchWithLimits` returns the last completed iteration's `BestMove`, `Score`,
   `PV`, and `Depth`. If it stops before any iteration completes it returns the
   first legal move with `Depth == 0`; a terminal position returns
-  `HasMove == false`. `Nodes` is cumulative across iterations, `SelDepth` is the
-  deepest ply reached, and `PonderMove` is the second PV move when present. The
-  `info` callback runs once per completed iteration.
+  `HasMove == false`. `Draw` is true when the root itself is a fifty-move,
+  threefold, or insufficient-material draw; a legal move is still returned.
+  `Nodes` is cumulative across iterations, `SelDepth` is the deepest ply
+  reached, and `PonderMove` is the second PV move when present. The `info`
+  callback runs once per completed iteration.
 - UCI `searchmoves` is resolved to generated moves and passed as `RootMoves`.
   UCI clocks become `Deadline`/`SoftDeadline` through `uci.allocateBudget`;
   `Move Overhead` is reserved before the deadline is computed.
 - Checkmate is `-MateScore + ply`; the ply offset makes the search prefer
   shorter mates. Stalemate is 0. `ScoreToMate` converts a mate score into a
   distance in moves. Mate scores are always far above ordinary evaluations.
-- The fifty-move rule is checked at node entry (`halfmoveClock >= 100`).
-  Threefold repetition and insufficient material are not implemented because
-  `Position` carries no history.
+- The fifty-move rule is checked at node entry and at the root (`halfmoveClock
+  >= 100`). Threefold repetition is checked against the last `halfmoveClock`
+  positions of the game history plus the current search path; a third
+  occurrence scores 0. `Position.IsInsufficientMaterial` covers K vs K, a lone
+  minor, and bishops confined to one colour complex. Callers pass prior keys
+  through `SearchLimits.GameHistory`; the draw helpers live in `repetition.go`.
+  A drawn root returns a legal move with `Draw == true` and score 0, because
+  UCI still requires a `bestmove`. Checkmate takes precedence over a draw.
 - At depth 0 the search still tests for checkmate when the side to move is in
   check, so a depth-1 search finds mate in one. Stalemate exactly at the horizon
   is not detected.
@@ -283,15 +307,19 @@ Evaluation and search:
   reset replaces the client so an in-flight search is cancelled and its result
   discarded. Undo removes the engine's reply as well. `GET /api/state` includes
   the engine fields so the page can drive the reply loop. Each engine move
-  sends the current FEN and applies the returned move with `ApplyUCIMove`.
-  Close the game in tests and on HTTP shutdown to stop the engine goroutines.
+  sends the initial FEN plus the full move list when it matches the stored
+  positions, so the engine can see repetition history, and applies the returned
+  move with `ApplyUCIMove`. `GET /api/state` reports `threefold`,
+  `fifty-move`, and `insufficient-material` statuses. Close the game in tests
+  and on HTTP shutdown to stop the engine goroutines.
 
 UCI protocol:
 
 - `uci.Run` is the engine side; `uci.Client` is the GUI side for the web demo and
   tests. `StartInProcess` runs the engine over `io.Pipe`, completes the
-  handshake, and starts a reader goroutine. `Client.SetPosition` waits for
-  `readyok` and surfaces `info string position error`; `Client.GoDepth` reads
+  handshake, and starts a reader goroutine. `Client.SetPosition` takes a FEN
+  plus optional moves, waits for `readyok`, and surfaces
+  `info string position error`; `Client.GoDepth` reads
   info lines until `bestmove`; `Client.NewGame` sends `ucinewgame`; `Close`
   sends `quit`, closes the pipes, and waits for the engine goroutine. Commands
   are not safe to issue concurrently, but `Close` may run during `GoDepth` to
@@ -307,9 +335,12 @@ UCI protocol:
   the search context; `quit` cancels and waits for the search to finish. EOF is
   treated like quit, so the process exits cleanly when its stdin closes.
 - `position` is accepted only while idle. It supports `startpos` and `fen`, pads
-  4/5-field FENs, and applies moves with `ApplyUCIMove`. A parse or move failure
-  invalidates the position; a later `go` replies `info string no valid position`
-  and `bestmove 0000` rather than searching a stale board.
+  4/5-field FENs, and applies moves with `ApplyUCIMove`. It records the key of
+  every position before the final one as game history, which `go` passes to
+  `SearchLimits.GameHistory`; a bare `position fen` has no history. A parse or
+  move failure invalidates the position; a later `go` replies
+  `info string no valid position` and `bestmove 0000` rather than searching a
+  stale board.
 - `go` supports `depth`, `nodes`, `movetime`, `wtime`/`btime`/`winc`/`binc`/
   `movestogo`, `infinite`, `ponder` (treated as infinite; `ponderhit` acts as stop because
   pondering is not implemented), and `searchmoves`.
@@ -426,16 +457,24 @@ Things to be careful with:
   a score comparison against a full-width reference minimax at depths 1-3.
 - `chess/ucimove_test.go` covers double pushes, captures, en passant, castling,
   all four promotions, promotion captures, illegal/malformed moves, and
-  `FindLegalMove` with flagless notation. `chess/data_fs_test.go` covers
-  `BuildAllAttacksFromFS(data.FS)`, missing embedded files, and
-  `LoadMagicEntriesFS`. `chess/search_limits_test.go` covers iterative
-  deepening, info callbacks, PV legality, soft deadlines, node limits,
-  cancellation/fallback, `RootMoves`, terminal positions, and non-mutation.
+  `FindLegalMove` with flagless notation. `chess/repetition_test.go` covers key
+  equality and incremental maintenance, fifty-move, threefold, and
+  insufficient-material draws at the root, repetition/fifty-move detection
+  along the search path, and checkmate precedence.
+  `chess/data_fs_test.go` covers `BuildAllAttacksFromFS(data.FS)`, missing
+  embedded files, and `LoadMagicEntriesFS`. `chess/search_limits_test.go`
+  covers iterative deepening, info callbacks, PV legality, soft deadlines, node
+  limits, cancellation/fallback, `RootMoves`, terminal positions, and
+  non-mutation.
 - `uci` tests use in-process `io.Pipe` sessions: handshake, `isready` during a
   search, `position` with FEN/moves, clocks, `stop`, `quit`, EOF, `searchmoves`,
   node limits, terminal `bestmove 0000`, invalid FEN/move handling, options,
   debug echo, and stdout purity. Unit tests cover `setoption`, `go`, FEN
   padding, time allocation, and bench determinism.
+- `cmd/match` tests cover draw-reason adjudication, perft diff reporting, and
+  (when `STOCKFISH_BIN` is set) a short two-game match that exercises the
+  external UCI client, per-position perft validation, legal-move checks, and
+  draw awareness. CI runs the Stockfish match test after installing Stockfish.
 - `uci/client_test.go` covers `StartInProcess`, `SetPosition` (including an
   invalid FEN and recovery), `GoDepth`, PV legality, terminal positions,
   `NewGame`, idempotent `Close`, and `parseInfo` for cp/mate/nodes/time/pv.
@@ -443,18 +482,20 @@ Things to be careful with:
   which verifies embedded data and working-directory independence. They also
   exercise `bench` and `-version` as separate processes.
 - `cmd/search` tests call `run` with buffers and cover `-eval`, mate/checkmate
-  output, and invalid depth, arguments, and FENs. Its `TestMain` changes to the
-  repo root because `BuildAllAttacks` reads `data/`.
+  output, `-moves` draw detection, and invalid depth, moves, arguments, and
+  FENs. Its `TestMain` changes to the repo root because `BuildAllAttacks` reads
+  `data/`.
 - `TestPerftAgainstStockfish` compares a deterministic random game with
   Stockfish at every position. It skips unless `STOCKFISH_BIN` is set; CI
   installs Stockfish and runs it in a dedicated step.
 - `cmd/web` tests exercise the state, move, reset, and undo endpoints with
   `httptest`, plus engine settings/depth validation, UCI engine replies for
   either colour, the human-move guard, engine-aware undo, reset preserving the
-  engine settings and cancelling a running search, and the numeric depth input.
-  Each test server starts a `uci.Client` and closes it in cleanup. Its
-  `TestMain` builds the attack tables from `data.FS`, so the web tests do not
-  depend on the working directory.
+  engine settings and cancelling a running search, the numeric depth input, and
+  threefold/fifty-move/insufficient-material draw statuses. Each test server
+  starts a `uci.Client` and closes it in cleanup. Its `TestMain` builds the
+  attack tables from `data.FS`, so the web tests do not depend on the working
+  directory.
 - Benchmarks cover `RookAttack`, `BishopAttack`, `ParseUCIMove`, `ParseFEN`,
   `Perft`, `Evaluate`, and `Search` depth 4.
 
@@ -462,8 +503,8 @@ Things to be careful with:
 
 - No network code, no external services, no secrets, no third-party Go
   modules — the attack surface is essentially nil.
-- `cmd/perft -compare` executes a local Stockfish binary when explicitly
-  requested; it is not used by CI and does not access the network.
+- `cmd/perft -compare` and `cmd/match` execute a local Stockfish binary; they
+  do not access the network.
 - `cmd/web` binds to `127.0.0.1:8080` by default, keeps a single in-memory
   game, and has no authentication. It is a local demo, not a public server.
   Engine depth has no upper limit; a long search is cancelled by resetting the

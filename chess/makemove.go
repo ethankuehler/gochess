@@ -90,6 +90,11 @@ func (b *Position) makeMove(m Move) Position {
 	fromMask := BitBoard(1) << m.from
 	toMask := BitBoard(1) << m.to
 
+	// Start from the old key and remove the state that is about to change.
+	key := b.key
+	key ^= zobristCastling[(b.flags&^whiteToMove)>>1]
+	key ^= b.enPassantKey()
+
 	// Find and lift the moving piece.
 	moving := NoPiece
 	for piece := Pawn; piece <= King; piece++ {
@@ -97,6 +102,7 @@ func (b *Position) makeMove(m Move) Position {
 		if *bb&fromMask != 0 {
 			*bb &^= fromMask
 			moving = piece
+			key ^= zobristPieces[int(piece)+int(offset)][m.from]
 			break
 		}
 	}
@@ -110,9 +116,16 @@ func (b *Position) makeMove(m Move) Position {
 		if us == Black {
 			captured = Square(int(m.to) + 8)
 		}
-		next.pieceBitboards[Pawn+themOffset] &^= BitBoard(1) << captured
+		capturedMask := BitBoard(1) << captured
+		if next.pieceBitboards[Pawn+themOffset]&capturedMask != 0 {
+			key ^= zobristPieces[int(Pawn)+int(themOffset)][captured]
+		}
+		next.pieceBitboards[Pawn+themOffset] &^= capturedMask
 	} else if m.IsCapture() {
 		for piece := Pawn; piece <= King; piece++ {
+			if next.pieceBitboards[piece+themOffset]&toMask != 0 {
+				key ^= zobristPieces[int(piece)+int(themOffset)][m.to]
+			}
 			next.pieceBitboards[piece+themOffset] &^= toMask
 		}
 	}
@@ -124,8 +137,10 @@ func (b *Position) makeMove(m Move) Position {
 			panic("makeMove: invalid promotion piece")
 		}
 		next.pieceBitboards[promotion+offset] |= toMask
+		key ^= zobristPieces[int(promotion)+int(offset)][m.to]
 	} else {
 		next.pieceBitboards[moving+offset] |= toMask
+		key ^= zobristPieces[int(moving)+int(offset)][m.to]
 	}
 
 	// Move the rook when castling.
@@ -146,6 +161,8 @@ func (b *Position) makeMove(m Move) Position {
 		rooks := &next.pieceBitboards[Rook+offset]
 		*rooks &^= BitBoard(1) << rookFrom
 		*rooks |= BitBoard(1) << rookTo
+		key ^= zobristPieces[int(Rook)+int(offset)][rookFrom]
+		key ^= zobristPieces[int(Rook)+int(offset)][rookTo]
 	}
 
 	next.flags &^= castlingRightsToClear(m.from) | castlingRightsToClear(m.to)
@@ -165,5 +182,12 @@ func (b *Position) makeMove(m Move) Position {
 	}
 
 	next.flags ^= whiteToMove
+
+	// Add the new castling rights, en passant target, and side to move.
+	key ^= zobristCastling[(next.flags&^whiteToMove)>>1]
+	key ^= next.enPassantKey()
+	key ^= zobristSide
+	next.key = key
+
 	return next
 }

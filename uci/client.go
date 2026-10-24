@@ -122,10 +122,17 @@ func (c *Client) NewGame() error {
 	return c.ready()
 }
 
-// SetPosition sets the current FEN. It waits for isready and reports an engine
-// position error rather than silently searching a stale board.
-func (c *Client) SetPosition(fen string) error {
-	if err := c.send("position fen " + fen); err != nil {
+// SetPosition sets the current FEN, optionally followed by the moves that led
+// to it. Passing the move list lets the engine see the game history it needs
+// for threefold-repetition detection; a bare FEN has no history. It waits for
+// isready and reports an engine position error rather than silently searching a
+// stale board.
+func (c *Client) SetPosition(fen string, moves ...string) error {
+	command := "position fen " + fen
+	if len(moves) > 0 {
+		command += " moves " + strings.Join(moves, " ")
+	}
+	if err := c.send(command); err != nil {
 		return fmt.Errorf("send position: %w", err)
 	}
 	return c.ready()

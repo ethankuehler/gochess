@@ -189,11 +189,19 @@ func (g *game) engineMove() error {
 	}
 	b := g.currentLocked()
 	depth := g.engineDepth
+	rootFEN := b.FEN()
+	var moves []string
+	if len(g.positions)-1 == len(g.history) {
+		// Replaying the whole move list gives the engine the repetition
+		// history that a bare FEN cannot express.
+		rootFEN = g.positions[0].FEN()
+		moves = append([]string(nil), g.history...)
+	}
 	g.engineBusy = true
 	g.mu.Unlock()
 
 	start := time.Now()
-	if err := client.SetPosition(b.FEN()); err != nil {
+	if err := client.SetPosition(rootFEN, moves...); err != nil {
 		g.mu.Lock()
 		defer g.mu.Unlock()
 		if client != g.engine {
@@ -275,6 +283,18 @@ func (g *game) snapshotLocked() stateResponse {
 			status = "checkmate"
 		} else {
 			status = "stalemate"
+		}
+	} else if b.IsFiftyMoveDraw() {
+		status = "fifty-move"
+	} else if b.IsInsufficientMaterial() {
+		status = "insufficient-material"
+	} else {
+		previousKeys := make([]chess.PositionKey, 0, len(g.positions)-1)
+		for _, previous := range g.positions[:len(g.positions)-1] {
+			previousKeys = append(previousKeys, previous.Key())
+		}
+		if b.IsThreefoldRepetition(previousKeys) {
+			status = "threefold"
 		}
 	}
 

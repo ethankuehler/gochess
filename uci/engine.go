@@ -28,6 +28,7 @@ type Engine struct {
 
 	mu          sync.Mutex
 	position    *chess.Position
+	history     []chess.PositionKey
 	posValid    bool
 	hasPosition bool
 	options     options
@@ -202,6 +203,7 @@ func (e *Engine) handleNewGame() {
 	}
 	e.mu.Lock()
 	e.position = chess.NewStartingPosition()
+	e.history = nil
 	e.posValid = true
 	e.hasPosition = true
 	e.mu.Unlock()
@@ -267,16 +269,18 @@ func (e *Engine) isSearching() bool {
 // set it falls back to the starting position, which is friendlier than
 // replying with no move. A failed position command leaves position nil and
 // posValid false, in which case go must not reuse a stale board.
-func (e *Engine) positionForGo() (*chess.Position, bool) {
+func (e *Engine) positionForGo() (*chess.Position, []chess.PositionKey, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.position == nil && !e.hasPosition {
 		e.position = chess.NewStartingPosition()
+		e.history = nil
 		e.posValid = true
 		e.hasPosition = true
 	}
 	if e.position == nil || !e.posValid {
-		return nil, false
+		return nil, nil, false
 	}
-	return e.position, true
+	history := append([]chess.PositionKey(nil), e.history...)
+	return e.position, history, true
 }
