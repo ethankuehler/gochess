@@ -181,8 +181,8 @@ add it to the `//go:embed` list in `data/assets.go` and to the FS loader.
 CI runs on pushes to `main` and on pull requests: `gofmt` check, `go build`,
 `go vet`, and `go test -race ./...`. The compiled `gochess` binary,
 `gochess-uci`, `.vscode/`, the local Go caches
-(`.gocache/`, `.gomodcache/`, `.gopath/`), and some planning notes
-(`MAGIC_BITBOARD_PLAN.md`, `CODE_REVIEW.md`) are gitignored.
+(`.gocache/`, `.gomodcache/`, `.gopath/`), and local planning notes in
+`plans/` are gitignored.
 
 ## Core conventions and architecture
 

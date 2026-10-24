@@ -3,6 +3,7 @@ gochess-uci
 gochess-uci.exe
 chessprograming
 .vscode
+plans/
 MAGIC_BITBOARD_PLAN.md
 CODE_REVIEW.md
 .gocache/
