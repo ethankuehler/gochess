@@ -144,3 +144,87 @@ func TestSquaresToBitBoard(t *testing.T) {
 		}
 	})
 }
+
+func TestNewBoardDefault(t *testing.T) {
+	const want = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+	if got := NewBoardDefault().FEN(); got != want {
+		t.Fatalf("default board FEN = %q, want %q", got, want)
+	}
+}
+
+func TestNewBoardFENValid(t *testing.T) {
+	cases := []string{
+		"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+		"4k3/8/8/8/8/8/8/4K3 w - - 99 100",
+		"4k3/8/8/8/8/8/8/4K3 b - e3 0 1",
+		"4k3/8/8/8/8/8/8/4K3 w - e6 12 34",
+	}
+
+	for _, fen := range cases {
+		b, err := NewBoardFEN(fen)
+		if err != nil {
+			t.Errorf("NewBoardFEN(%q) returned error: %v", fen, err)
+			continue
+		}
+		if got := b.FEN(); got != fen {
+			t.Errorf("FEN round-trip: input %q, output %q", fen, got)
+		}
+	}
+}
+
+func TestNewBoardFENEnPassantSquare(t *testing.T) {
+	b, err := NewBoardFEN("4k3/8/8/8/8/8/8/4K3 b - e3 0 1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want, _ := LocFromAlg("e3")
+	if b.enpassant != want {
+		t.Errorf("en passant square = %d, want %d", b.enpassant, want)
+	}
+}
+
+func TestNewBoardFENRejectsInvalid(t *testing.T) {
+	cases := []struct {
+		name string
+		fen  string
+	}{
+		{"empty", ""},
+		{"missing fields", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0"},
+		{"extra fields", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 extra"},
+		{"seven ranks", "rnbqkbnr/pppppppp/8/8/8/8/RNBQKBNR w KQkq - 0 1"},
+		{"nine ranks", "rnbqkbnr/pppppppp/8/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"},
+		{"short rank", "rnbqkbnr/ppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"},
+		{"long rank", "rnbqkbnrr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"},
+		{"invalid piece", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNx w KQkq - 0 1"},
+		{"digit nine", "rnbqkbnr/pppppppp/9/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"},
+		{"digit zero", "rnbqkbnr/pppppppp/08/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"},
+		{"no white king", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQ1BNR w KQkq - 0 1"},
+		{"no black king", "rnbq1bnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"},
+		{"two white kings", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNK w KQkq - 0 1"},
+		{"nine white pawns", "rnbqkbnr/pppppppp/P7/8/8/8/PPPPPPPP/1NBQKBNR w KQkq - 0 1"},
+		{"too many white pieces", "4k3/8/Q7/8/8/8/PPPPPPPP/QQQQQQQK w - - 0 1"},
+		{"pawn on first rank", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPP1/RNBQKBNP w KQkq - 0 1"},
+		{"pawn on last rank", "rnbqkbnP/ppppppp1/8/8/8/8/PPPPPPP1/RNBQKBNR w KQkq - 0 1"},
+		{"invalid turn", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR x KQkq - 0 1"},
+		{"invalid castling", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkx - 0 1"},
+		{"duplicate castling", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KK - 0 1"},
+		{"short en passant", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq e 0 1"},
+		{"bad en passant", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq e9 0 1"},
+		{"en passant wrong rank", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq e4 0 1"},
+		{"negative halfmove", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - -1 1"},
+		{"bad halfmove", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - x 1"},
+		{"halfmove overflow", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 65536 1"},
+		{"zero fullmove", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 0"},
+		{"negative fullmove", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 -1"},
+		{"bad fullmove", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 x"},
+		{"fullmove overflow", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 65536"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := NewBoardFEN(tc.fen); err == nil {
+				t.Errorf("NewBoardFEN(%q) succeeded, want an error", tc.fen)
+			}
+		})
+	}
+}

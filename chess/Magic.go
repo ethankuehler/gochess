@@ -2,11 +2,25 @@ package chess
 
 import (
 	"errors"
+	"fmt"
+	"log"
+	"math/bits"
 	"math/rand/v2"
 )
 
 // Magic limit
 const MAGIC_LIMIT = 1_000_000
+
+// LoadMagicsFromDisk controls whether the sliding-piece builders restore
+// magics from the data/ CSVs (true) or search for new ones (false). It
+// defaults to true; when a CSV is missing or invalid the builder logs the
+// problem and falls back to a fresh search.
+var LoadMagicsFromDisk = true
+
+// SaveMagicsToDisk makes the sliding-piece builders write freshly generated
+// magics to the data/ CSVs after a random search. It has no effect when
+// LoadMagicsFromDisk is set.
+var SaveMagicsToDisk = false
 
 // there are only 64 knight moves on a chess board
 // each index is the shift of the knight, the value is the attack
@@ -30,10 +44,18 @@ var (
 	BISHOP_ATTACKS [][]BitBoard
 )
 
+// MagicEntry holds a magic-bitboard lookup for one square: Mask is the
+// relevant occupancy squares, Magic the multiplier, and IndexBits the number
+// of set bits in Mask. The attack table holds 1 << IndexBits entries.
 type MagicEntry struct {
-	Mask  BitBoard
-	Magic uint64
-	Index Shift
+	Mask      BitBoard
+	Magic     uint64
+	IndexBits uint
+}
+
+// NewMagicEntry computes IndexBits from Mask so the two can never disagree.
+func NewMagicEntry(mask BitBoard, magic uint64) MagicEntry {
+	return MagicEntry{mask, magic, uint(bits.OnesCount64(uint64(mask)))}
 }
 
 // array of vector that tell in which directions for the Ray caster to cast
@@ -47,7 +69,7 @@ var (
 func MagicIndex(entry MagicEntry, board BitBoard) uint64 {
 	blockers := board & entry.Mask
 	hash := uint64(blockers) * entry.Magic
-	index := hash >> (64 - entry.Index)
+	index := hash >> (64 - entry.IndexBits)
 	return index
 }
 
@@ -63,38 +85,71 @@ func GetBishopAttack(loc Shift, board BitBoard) BitBoard {
 	return BISHOP_ATTACKS[loc][idx]
 }
 
-func GetRookMask(coord Coordinates) BitBoard {
-	row, col := coord.col, coord.row
-	return (COLUMN_MASK << col) | (ROW_MASK << row * ROW_COL_SIZE)
+// GetQueenAttack combines the rook and bishop lookups; queens need no
+// tables of their own.
+func GetQueenAttack(loc Shift, board BitBoard) BitBoard {
+	return GetRookAttack(loc, board) | GetBishopAttack(loc, board)
+}
+
+// RelevantBlockers returns the occupancy mask for a sliding piece on coord:
+// the squares along its rays whose occupancy can change the attack set.
+// The terminal edge square of each ray is excluded (a ray attacks its
+// terminal square whether it is occupied or not, so that bit carries no
+// information), as is the origin square.
+func RelevantBlockers(coord Coordinates, ray Ray) BitBoard {
+	var mask BitBoard = 0
+	row, col := int(coord.row), int(coord.col)
+
+	for _, direction := range ray {
+		dRow, dCol := direction[0], direction[1]
+		if dRow == 0 && dCol == 0 {
+			continue
+		}
+		rayRow, rayCol := row, col
+		for {
+			nextRow, nextCol := rayRow+dRow, rayCol+dCol
+			if nextRow < 0 || nextRow >= ROW_COL_SIZE || nextCol < 0 || nextCol >= ROW_COL_SIZE {
+				break
+			}
+			mask |= BitBoard(1) << ShiftFromCoords(Coordinates{row: uint64(rayRow), col: uint64(rayCol)})
+			rayRow, rayCol = nextRow, nextCol
+		}
+	}
+
+	return mask &^ (BitBoard(1) << ShiftFromCoords(coord))
 }
 
 func GetBishopMask(coord Coordinates) BitBoard {
-	return RayCast(ShiftFromCoords(coord), 0, 0, BISHOP_RAY)
+	return RayCast(ShiftFromCoords(coord), 0, BISHOP_RAY)
 }
 
-func FindMagic(coord Coordinates) ([]BitBoard, error) {
-	mask := GetRookMask(coord)
+func FindMagic(coord Coordinates, ray Ray) (MagicEntry, []BitBoard, error) {
+	mask := RelevantBlockers(coord, ray)
 	shift := ShiftFromCoords(coord)
 	for _ = range MAGIC_LIMIT {
 		test_magic := rand.Uint64() & rand.Uint64() & rand.Uint64()
-		magicE := MagicEntry{mask, test_magic, shift}
-		table, err := TryRookMagic(shift, magicE)
+		magicE := NewMagicEntry(mask, test_magic)
+		table, err := TryMagic(shift, magicE, ray)
 		if err != nil {
 			continue
 		}
-		return table, nil
+		return magicE, table, nil
 	}
-	return nil, errors.New("hit magic limit, magic not found")
+	return MagicEntry{}, nil, errors.New("hit magic limit, magic not found")
 
 }
 
-func TryRookMagic(loc Shift, magic MagicEntry) ([]BitBoard, error) {
-	table := make([]BitBoard, 1<<(64-magic.Index)) //TODO: this need to be check to see if its correct
+// TryMagic attempts to fill an attack table for one square using the
+// candidate magic, failing on any non-constructive collision (two blocker
+// configurations with different attack sets hashing to the same slot).
+// Attack sets are never empty, so a zero slot means "not yet written".
+func TryMagic(loc Shift, magic MagicEntry, ray Ray) ([]BitBoard, error) {
+	table := make([]BitBoard, 1<<magic.IndexBits)
 	var blockers BitBoard = 0
 	mask := magic.Mask
 
 	for true {
-		moves := RayCast(loc, blockers, mask, ROOK_RAY)
+		moves := RayCast(loc, blockers, ray)
 		table_entry := &table[MagicIndex(magic, blockers)]
 		if *table_entry == 0 {
 			*table_entry = moves
@@ -111,7 +166,7 @@ func TryRookMagic(loc Shift, magic MagicEntry) ([]BitBoard, error) {
 	return table, nil
 }
 
-func RayCast(inital Shift, blockers BitBoard, _ BitBoard, r Ray) BitBoard {
+func RayCast(inital Shift, blockers BitBoard, r Ray) BitBoard {
 	coord := CoordsFromShift(inital)
 	row, col := int(coord.row), int(coord.col)
 	var attacks BitBoard = 0
@@ -123,7 +178,7 @@ func RayCast(inital Shift, blockers BitBoard, _ BitBoard, r Ray) BitBoard {
 		}
 		rayRow, rayCol := row+dRow, col+dCol
 		for rayRow >= 0 && rayRow < ROW_COL_SIZE && rayCol >= 0 && rayCol < ROW_COL_SIZE {
-			loc := BitBoard(1) << ShiftFromCoords(Coordinates{uint64(rayRow), uint64(rayCol)})
+			loc := BitBoard(1) << ShiftFromCoords(Coordinates{row: uint64(rayRow), col: uint64(rayCol)})
 			attacks |= loc
 			if blockers&loc > 0 {
 				break
@@ -141,9 +196,66 @@ func BuildAllAttacks() {
 	BuildKingAttacks()
 	BuildPawnMoves()
 	BuildPawnAttacks()
-	//BuildRookAttacks()
-	//BuildBishopAttacks()
-	//BuildQueenAttacks()
+	BuildRookAttacks()
+	BuildBishopAttacks()
+}
+
+// BuildRookAttacks fills ROOK_MAGIC and ROOK_ATTTACKS for every square.
+func BuildRookAttacks() {
+	ROOK_MAGIC, ROOK_ATTTACKS = buildSliderAttacks(ROOK_RAY, "data/rook_magics.csv")
+}
+
+// BuildBishopAttacks fills BISHOP_MAGIC and BISHOP_ATTACKS for every square.
+func BuildBishopAttacks() {
+	BISHOP_MAGIC, BISHOP_ATTACKS = buildSliderAttacks(BISHOP_RAY, "data/bishop_magics.csv")
+}
+
+// buildSliderAttacks generates magic numbers and attack tables for every
+// square. By default the magics are restored from the given CSV; when that
+// file is missing or invalid the builder falls back to a random search.
+func buildSliderAttacks(ray Ray, file_name string) ([]MagicEntry, [][]BitBoard) {
+	if LoadMagicsFromDisk {
+		magics, err := tryLoadMagics(file_name)
+		if err == nil {
+			tables, buildErr := buildMagicTables(magics, ray)
+			if buildErr == nil {
+				return magics, tables
+			}
+			err = buildErr
+		}
+		log.Printf("could not use magics from %s (%v); searching for new magics", file_name, err)
+	}
+
+	magics := make([]MagicEntry, SHIFT_SIZE)
+	tables := make([][]BitBoard, SHIFT_SIZE)
+
+	for shift := Shift(0); shift < SHIFT_SIZE; shift++ {
+		entry, table, err := FindMagic(CoordsFromShift(shift), ray)
+		if err != nil {
+			log.Fatalf("could not find magic for square %d: %v", shift, err)
+		}
+		magics[shift] = entry
+		tables[shift] = table
+	}
+
+	if SaveMagicsToDisk {
+		SaveMagics(file_name, magics)
+	}
+	return magics, tables
+}
+
+// buildMagicTables rebuilds the attack tables for a set of magics, failing if
+// any stored magic does not produce a collision-free table.
+func buildMagicTables(magics []MagicEntry, ray Ray) ([][]BitBoard, error) {
+	tables := make([][]BitBoard, SHIFT_SIZE)
+	for shift := Shift(0); shift < SHIFT_SIZE; shift++ {
+		table, err := TryMagic(shift, magics[shift], ray)
+		if err != nil {
+			return nil, fmt.Errorf("square %d: %w", shift, err)
+		}
+		tables[shift] = table
+	}
+	return tables, nil
 }
 
 func BuildKnightAttacks() {
