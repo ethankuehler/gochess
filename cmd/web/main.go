@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"math/rand/v2"
 	"net/http"
 	"sync"
 	"time"
@@ -24,7 +23,6 @@ var indexHTML []byte
 
 const (
 	defaultEngineDepth = 4
-	maxEngineDepth     = 5
 )
 
 // engineInfo describes the engine's most recent move for the UI.
@@ -52,6 +50,7 @@ type stateResponse struct {
 
 type game struct {
 	mu            sync.Mutex
+	engineMu      sync.Mutex // serializes engine replacement on reset/close
 	positions     []*chess.Position
 	history       []string
 	lastMove      string
@@ -60,6 +59,7 @@ type game struct {
 	engineInfo    *engineInfo
 	engine        *uci.Client
 	engineErr     error
+	engineBusy    bool
 }
 
 func newGame() *game {
@@ -79,8 +79,15 @@ func newGame() *game {
 
 // Close shuts down the UCI engine session.
 func (g *game) Close() {
-	if g.engine != nil {
-		_ = g.engine.Close()
+	g.engineMu.Lock()
+	defer g.engineMu.Unlock()
+	g.mu.Lock()
+	client := g.engine
+	g.engine = nil
+	g.engineBusy = false
+	g.mu.Unlock()
+	if client != nil {
+		_ = client.Close()
 	}
 }
 
@@ -94,19 +101,11 @@ func (g *game) pushLocked(next *chess.Position, m chess.Move) {
 	g.lastMove = m.String()
 }
 
-func (g *game) resetLocked() error {
+func (g *game) resetBoardLocked() {
 	g.positions = []*chess.Position{chess.NewStartingPosition()}
 	g.history = []string{}
 	g.lastMove = ""
 	g.engineInfo = nil
-	if g.engine != nil {
-		if err := g.engine.NewGame(); err != nil {
-			g.engineErr = err
-			return err
-		}
-		g.engineErr = nil
-	}
-	return nil
 }
 
 func (g *game) undoOneLocked() {
@@ -137,22 +136,8 @@ func (g *game) undoLocked() {
 	}
 }
 
-func (g *game) randomLocked() error {
-	b := g.currentLocked()
-	moves := b.LegalMoves()
-	if len(moves) == 0 {
-		return nil
-	}
-	m := moves[rand.IntN(len(moves))]
-	next, err := b.ApplyMove(m)
-	if err != nil {
-		return err
-	}
-	g.pushLocked(next, m)
-	return nil
-}
-
-// engineTurnLocked reports whether the engine, which plays Black, is to move.
+// engineTurnLocked reports whether the engine, which normally plays Black, is
+// to move. Auto play bypasses this by asking the engine to move for both sides.
 func (g *game) engineTurnLocked() bool {
 	return g.engineEnabled && g.currentLocked().SideToMove() == chess.Black
 }
@@ -163,8 +148,8 @@ func (g *game) setEngineLocked(enabled bool, depth int) error {
 	if depth == 0 {
 		depth = g.engineDepth
 	}
-	if depth < 1 || depth > maxEngineDepth {
-		return fmt.Errorf("engine depth must be between 1 and %d", maxEngineDepth)
+	if depth < 1 {
+		return errors.New("engine depth must be at least 1")
 	}
 	g.engineEnabled = enabled
 	g.engineDepth = depth
@@ -174,28 +159,58 @@ func (g *game) setEngineLocked(enabled bool, depth int) error {
 	return nil
 }
 
-// engineMoveLocked asks the UCI engine for Black's move in the current
-// position and applies it. It is a no-op when the game is already over.
-func (g *game) engineMoveLocked() error {
+var (
+	errEngineDisabled    = errors.New("engine is disabled")
+	errEngineBusy        = errors.New("engine is already searching")
+	errEngineUnavailable = errors.New("UCI engine is unavailable")
+)
+
+// engineMove asks the UCI engine for the side to move's move and applies it.
+// The search runs without the game lock so a reset can cancel it, and a reset
+// swaps the client so a stale result is discarded rather than applied.
+func (g *game) engineMove() error {
+	g.mu.Lock()
 	if !g.engineEnabled {
-		return errors.New("engine is disabled")
+		g.mu.Unlock()
+		return errEngineDisabled
 	}
-	if g.engine == nil {
-		if g.engineErr != nil {
-			return g.engineErr
+	if g.engineBusy {
+		g.mu.Unlock()
+		return errEngineBusy
+	}
+	client := g.engine
+	if client == nil {
+		err := g.engineErr
+		g.mu.Unlock()
+		if err != nil {
+			return err
 		}
-		return errors.New("UCI engine is unavailable")
+		return errEngineUnavailable
 	}
 	b := g.currentLocked()
-	if b.SideToMove() != chess.Black {
-		return errors.New("it is not the engine's turn")
-	}
+	depth := g.engineDepth
+	g.engineBusy = true
+	g.mu.Unlock()
 
 	start := time.Now()
-	if err := g.engine.SetPosition(b.FEN()); err != nil {
+	if err := client.SetPosition(b.FEN()); err != nil {
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		if client != g.engine {
+			return nil
+		}
+		g.engineBusy = false
 		return err
 	}
-	result, err := g.engine.GoDepth(g.engineDepth)
+	result, err := client.GoDepth(depth)
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if client != g.engine {
+		// Reset or shutdown replaced the client while this search was running.
+		return nil
+	}
+	g.engineBusy = false
 	if err != nil {
 		return err
 	}
@@ -217,9 +232,13 @@ func (g *game) engineMoveLocked() error {
 			timeMS = 1
 		}
 	}
+	score := result.Score
+	if b.SideToMove() == chess.Black {
+		score = -score // UCI scores are side-to-move relative
+	}
 	info := &engineInfo{
 		Depth:  result.Depth,
-		Score:  -result.Score, // UCI score is Black-relative here
+		Score:  score, // White-relative for display
 		Nodes:  result.Nodes,
 		TimeMS: timeMS,
 	}
@@ -325,7 +344,6 @@ func newMux(g *game) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", serveIndex)
 	mux.HandleFunc("/api/state", g.handleState)
-	mux.HandleFunc("/api/random", g.handleRandom)
 	mux.HandleFunc("/api/move", g.handleMove)
 	mux.HandleFunc("/api/engine", g.handleEngine)
 	mux.HandleFunc("/api/engine/move", g.handleEngineMove)
@@ -374,23 +392,6 @@ func (g *game) handleState(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, g.snapshotLocked())
 }
 
-func (g *game) handleRandom(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodPost) {
-		return
-	}
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.engineEnabled {
-		http.Error(w, "engine is enabled", http.StatusConflict)
-		return
-	}
-	if err := g.randomLocked(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, http.StatusOK, g.snapshotLocked())
-}
-
 func (g *game) handleEngine(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -420,20 +421,16 @@ func (g *game) handleEngineMove(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+	if err := g.engineMove(); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, errEngineDisabled) || errors.Is(err, errEngineBusy) {
+			status = http.StatusConflict
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if !g.engineEnabled {
-		http.Error(w, "engine is disabled", http.StatusConflict)
-		return
-	}
-	if g.currentLocked().SideToMove() != chess.Black {
-		http.Error(w, "it is not the engine's turn", http.StatusConflict)
-		return
-	}
-	if err := g.engineMoveLocked(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 	writeJSON(w, http.StatusOK, g.snapshotLocked())
 }
 
@@ -458,6 +455,10 @@ func (g *game) handleMove(w http.ResponseWriter, r *http.Request) {
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if g.engineBusy {
+		http.Error(w, "engine is searching", http.StatusConflict)
+		return
+	}
 	if g.engineTurnLocked() {
 		http.Error(w, "it is the engine's turn", http.StatusConflict)
 		return
@@ -473,13 +474,35 @@ func (g *game) handleReset(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
+
+	// Replace the engine rather than sending ucinewgame: closing the old
+	// client cancels any in-flight search, so reset stays responsive even at
+	// very high depths.
+	g.engineMu.Lock()
+	defer g.engineMu.Unlock()
+
 	g.mu.Lock()
-	defer g.mu.Unlock()
-	if err := g.resetLocked(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	old := g.engine
+	g.engine = nil
+	g.engineBusy = false
+	g.resetBoardLocked()
+	g.mu.Unlock()
+
+	if old != nil {
+		_ = old.Close()
 	}
-	writeJSON(w, http.StatusOK, g.snapshotLocked())
+	client, err := uci.StartInProcess(log.Writer())
+
+	g.mu.Lock()
+	if err != nil {
+		g.engineErr = fmt.Errorf("start UCI engine: %w", err)
+	} else {
+		g.engine = client
+		g.engineErr = nil
+	}
+	state := g.snapshotLocked()
+	g.mu.Unlock()
+	writeJSON(w, http.StatusOK, state)
 }
 
 func (g *game) handleUndo(w http.ResponseWriter, r *http.Request) {
@@ -488,6 +511,10 @@ func (g *game) handleUndo(w http.ResponseWriter, r *http.Request) {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if g.engineBusy {
+		http.Error(w, "engine is searching", http.StatusConflict)
+		return
+	}
 	g.undoLocked()
 	writeJSON(w, http.StatusOK, g.snapshotLocked())
 }

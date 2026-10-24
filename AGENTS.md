@@ -27,9 +27,10 @@ deepening alpha-beta search, and a UCI front end.
     and optional Stockfish comparison.
   - `cmd/search` (`cmd/search/`) — fixed-depth search CLI; prints the best
     move, score, nodes, time, and nps, or just the static evaluation.
-  - `cmd/web` (`cmd/web/`) — local browser board; human White, engine Black.
-    Engine replies are requested through an in-process `uci.Client` using
-    `position`/`go depth`, plus random moves, click-to-move, undo, and reset.
+  - `cmd/web` (`cmd/web/`) — local browser board; human White, engine Black,
+    plus auto play where the engine plays both sides. Engine moves are
+    requested through an in-process `uci.Client` using `position`/`go depth`;
+    also click-to-move, undo, and reset.
 
 ## Repository layout
 
@@ -48,12 +49,13 @@ deepening alpha-beta search, and a UCI front end.
   UCI command loop on stdin/stdout.
 - `cmd/web/main.go` and `cmd/web/index.html` — HTTP server and embedded board
   UI. The server owns one in-memory game and exposes `/api/state`,
-  `/api/random`, `/api/move`, `/api/engine`, `/api/engine/move`, `/api/reset`,
-  and `/api/undo`. Engine mode plays Black against a human White; each engine
-  move sends `position fen` and `go depth N` to an in-process `uci.Client` and
-  applies the returned `bestmove`. The panel has an engine toggle and a 1-5 ply
-  depth selector. `newGame` starts the client; `game.Close` shuts it down, and
-  tests must close the game.
+  `/api/move`, `/api/engine`, `/api/engine/move`, `/api/reset`,
+  and `/api/undo`. Engine mode plays Black against a human White; auto play
+  asks the engine to move for both sides. Each engine move sends
+  `position fen` and `go depth N` to an in-process `uci.Client` and applies the
+  returned `bestmove`. The panel has an engine toggle and a numeric depth input
+  with no upper limit. `newGame` starts the client; `game.Close` shuts it
+  down, and tests must close the game.
 - `uci/` — the UCI protocol layer (`package uci`):
   - `engine.go` — `Engine`, `Run`, command loop, handshake, `isready`,
     `setoption`, `ucinewgame`, `stop`, `quit`, EOF handling, and the
@@ -272,16 +274,17 @@ Evaluation and search:
   is not detected.
 - `cmd/search` builds the attack tables itself. Run it from the repo root so
   the `data/` paths resolve.
-- `cmd/web` owns engine mode: `engineEnabled`, `engineDepth` (default 4, capped
-  at 5), the `uci.Client`, and the last `engineInfo`. The engine plays Black.
-  `POST /api/engine` updates settings, `POST /api/engine/move` asks the client
-  for one move, and `/api/move` rejects a human move when it is the engine's
-  turn. Undo removes the engine's reply as well, and random moves are disabled
-  while the engine is on. `GET /api/state` includes the engine fields so the
-  page can drive the reply loop. `resetLocked` sends `ucinewgame`; each engine
-  move sends the current FEN and applies the returned move with
-  `ApplyUCIMove`. Close the game in tests and on HTTP shutdown to stop the
-  engine goroutines.
+- `cmd/web` owns engine mode: `engineEnabled`, `engineDepth` (default 4, no
+  upper cap), `engineBusy`, the `uci.Client`, and the last `engineInfo`. The
+  engine normally plays Black; `POST /api/engine` updates settings,
+  `POST /api/engine/move` asks the client for one move for the side to move
+  (auto play uses it for both colours), and `/api/move` rejects a human move
+  when it is the engine's turn. The search runs without the game mutex, and
+  reset replaces the client so an in-flight search is cancelled and its result
+  discarded. Undo removes the engine's reply as well. `GET /api/state` includes
+  the engine fields so the page can drive the reply loop. Each engine move
+  sends the current FEN and applies the returned move with `ApplyUCIMove`.
+  Close the game in tests and on HTTP shutdown to stop the engine goroutines.
 
 UCI protocol:
 
@@ -290,8 +293,9 @@ UCI protocol:
   handshake, and starts a reader goroutine. `Client.SetPosition` waits for
   `readyok` and surfaces `info string position error`; `Client.GoDepth` reads
   info lines until `bestmove`; `Client.NewGame` sends `ucinewgame`; `Close`
-  sends `quit`, closes the pipes, and waits for the engine goroutine. The client
-  is not safe for concurrent use, so the web game's mutex serializes calls.
+  sends `quit`, closes the pipes, and waits for the engine goroutine. Commands
+  are not safe to issue concurrently, but `Close` may run during `GoDepth` to
+  cancel a search; the web demo replaces the client on reset to do exactly that.
 - `uci.Run` owns stdin/stdout and never writes protocol text anywhere else.
   `lineWriter` serializes and flushes stdout because search info and `readyok`
   can come from different goroutines; diagnostics go to a locked stderr writer.
@@ -443,12 +447,13 @@ Things to be careful with:
   repo root because `BuildAllAttacks` reads `data/`.
 - `TestPerftAgainstStockfish` is opt-in via `STOCKFISH_BIN` and compares a
   deterministic random game with Stockfish, which is not required in CI.
-- `cmd/web` tests exercise the state, move, random, reset, and undo endpoints
-  with `httptest`, plus engine settings/depth validation, UCI engine replies,
-  the engine-turn and random guards, engine-aware undo, and reset preserving
-  the engine settings. Each test server starts a `uci.Client` and closes it in
-  cleanup. Its `TestMain` builds the attack tables from `data.FS`, so the web
-  tests do not depend on the working directory.
+- `cmd/web` tests exercise the state, move, reset, and undo endpoints with
+  `httptest`, plus engine settings/depth validation, UCI engine replies for
+  either colour, the human-move guard, engine-aware undo, reset preserving the
+  engine settings and cancelling a running search, and the numeric depth input.
+  Each test server starts a `uci.Client` and closes it in cleanup. Its
+  `TestMain` builds the attack tables from `data.FS`, so the web tests do not
+  depend on the working directory.
 - Benchmarks cover `RookAttack`, `BishopAttack`, `ParseUCIMove`, `ParseFEN`,
   `Perft`, `Evaluate`, and `Search` depth 4.
 
@@ -460,8 +465,8 @@ Things to be careful with:
   requested; it is not used by CI and does not access the network.
 - `cmd/web` binds to `127.0.0.1:8080` by default, keeps a single in-memory
   game, and has no authentication. It is a local demo, not a public server.
-  Engine depth is capped at 5 so a request cannot ask for an unbounded search.
-  Engine moves go through an in-process `uci.Client`; no engine binary is
+  Engine depth has no upper limit; a long search is cancelled by resetting the
+  game. Engine moves go through an in-process `uci.Client`; no engine binary is
   spawned and no network access is performed.
 - `cmd/search` is a local, single-position CLI. It reads only its flags and the
   local `data/` attack tables and performs no network access.

@@ -203,6 +203,8 @@
       gap: 0.6rem;
     }
 
+    .controls .wide { grid-column: span 2; }
+
     .engine-row {
       display: flex;
       align-items: center;
@@ -221,20 +223,21 @@
       white-space: nowrap;
     }
 
-    select {
-      appearance: none;
+    .depth-input {
+      width: 4.4rem;
       border: 1px solid rgba(255, 235, 205, 0.16);
       border-radius: 9px;
-      padding: 0.55rem 0.6rem;
+      padding: 0.5rem 0.35rem;
       background: var(--panel-2);
       color: var(--text);
       font: inherit;
       font-size: 0.82rem;
-      cursor: pointer;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
     }
 
-    select:disabled { opacity: 0.38; cursor: not-allowed; }
-    select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .depth-input:disabled { opacity: 0.38; cursor: not-allowed; }
+    .depth-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
     button {
       appearance: none;
@@ -401,26 +404,19 @@
 
     <aside class="panel">
       <div class="controls">
-        <button id="random" class="primary" type="button" disabled>Random move</button>
-        <button id="auto" class="secondary" type="button" disabled>Auto play</button>
+        <button id="auto" class="primary wide" type="button" disabled>Auto play</button>
         <button id="undo" class="ghost" type="button" disabled>Undo</button>
         <button id="reset" class="ghost" type="button">Reset</button>
       </div>
 
       <div class="engine-row">
         <button id="engine" class="secondary" type="button">Engine: off</button>
-        <label for="depth">Depth
-          <select id="depth">
-            <option value="1">1 ply</option>
-            <option value="2">2 ply</option>
-            <option value="3">3 ply</option>
-            <option value="4" selected>4 ply</option>
-            <option value="5">5 ply</option>
-          </select>
+        <label for="depth">Depth (ply)
+          <input id="depth" class="depth-input" type="number" min="1" step="1" value="4" inputmode="numeric">
         </label>
       </div>
 
-      <p class="hint">Click one of your pieces, then a highlighted square. Promotions default to a queen. You play White; turn the engine on to play against the search.</p>
+      <p class="hint">Click one of your pieces, then a highlighted square. Promotions default to a queen. You play White; turn the engine on to play against the search, or use Auto play to watch the engine play both sides. Higher depths take longer — reset stops the search.</p>
       <p id="engineInfo" class="engine-info"></p>
       <p id="error" class="error" role="alert"></p>
 
@@ -451,7 +447,6 @@
     const fenEl = document.getElementById("fen");
     const historyEl = document.getElementById("history");
     const errorEl = document.getElementById("error");
-    const randomBtn = document.getElementById("random");
     const autoBtn = document.getElementById("auto");
     const undoBtn = document.getElementById("undo");
     const resetBtn = document.getElementById("reset");
@@ -463,7 +458,9 @@
     let selected = null;
     let auto = false;
     let autoTimer = null;
+    let depthTimer = null;
     let busy = false;
+    let resetting = false;
     let thinking = false;
 
     function squareName(rankIndex, fileIndex) {
@@ -512,16 +509,31 @@
 
     function engineInfoText() {
       if (!state || !state.engine) return "";
-      if (!state.engineInfo) return `Engine on · ${state.engineDepth} ply`;
+      const prefix = auto ? "Auto play" : "Engine on";
+      if (!state.engineInfo) return `${prefix} · ${state.engineDepth} ply`;
       const info = state.engineInfo;
       let evaluation;
       if (info.mateIn) {
-        evaluation = `mate in ${Math.abs(info.mateIn)} (${info.mateIn > 0 ? "engine" : "you"})`;
+        evaluation = info.mateIn > 0
+          ? `mate in ${info.mateIn} (engine)`
+          : `engine mated in ${-info.mateIn}`;
       } else {
         const score = `${info.score >= 0 ? "+" : ""}${(info.score / 100).toFixed(2)}`;
         evaluation = `eval ${score} (White)`;
       }
-      return `Engine ${info.depth} ply · ${evaluation} · ${info.nodes.toLocaleString()} nodes · ${info.timeMs} ms`;
+      return `${prefix} · ${info.depth} ply · ${evaluation} · ${info.nodes.toLocaleString()} nodes · ${info.timeMs} ms`;
+    }
+
+    // currentDepth returns the typed depth, or null when it is not a valid
+    // integer of at least 1.
+    function currentDepth() {
+      if (depthEl.value.trim() === "") return null;
+      const depth = Number(depthEl.value);
+      return Number.isSafeInteger(depth) && depth >= 1 ? depth : null;
+    }
+
+    function restoreDepth() {
+      if (state) depthEl.value = String(state.engineDepth);
     }
 
     function showError(message) {
@@ -587,8 +599,9 @@
       }
 
       statusEl.textContent = statusText();
+      const engineTurn = state.engine && (auto || state.turn === "black");
       turnEl.textContent = state.status === "playing"
-        ? `${state.turn === "white" ? "White" : "Black"} to move${state.engine && state.turn === "black" ? " · engine" : ""}`
+        ? `${state.turn === "white" ? "White" : "Black"} to move${engineTurn ? (auto ? " · auto" : " · engine") : ""}`
         : "";
       fenEl.textContent = state.fen;
 
@@ -601,16 +614,16 @@
       });
       historyEl.scrollTop = historyEl.scrollHeight;
 
+      const locked = busy || resetting;
       engineBtn.textContent = state.engine ? "Engine: on" : "Engine: off";
       engineBtn.classList.toggle("active", state.engine);
-      engineBtn.disabled = busy;
-      depthEl.disabled = busy;
-      randomBtn.disabled = busy || auto || state.engine || state.status !== "playing";
-      autoBtn.disabled = busy || (!auto && (state.engine || state.status !== "playing"));
+      engineBtn.disabled = locked || auto;
+      depthEl.disabled = locked;
+      autoBtn.disabled = locked || (!auto && state.status !== "playing");
       autoBtn.textContent = auto ? "Stop auto" : "Auto play";
       autoBtn.classList.toggle("active", auto);
-      undoBtn.disabled = busy || state.history.length === 0;
-      resetBtn.disabled = busy;
+      undoBtn.disabled = locked || state.history.length === 0;
+      resetBtn.disabled = resetting;
       engineInfoEl.textContent = engineInfoText();
     }
 
@@ -636,22 +649,6 @@
       await maybeEngineMove();
     }
 
-    async function randomMove() {
-      if (busy || !state || state.engine || state.status !== "playing") return;
-      busy = true;
-      selected = null;
-      showError("");
-      render();
-      try {
-        state = await request("/api/random", { method: "POST" });
-      } catch (error) {
-        showError(error.message);
-      } finally {
-        busy = false;
-        render();
-      }
-    }
-
     async function submitMove(uci) {
       if (busy) return;
       busy = true;
@@ -674,6 +671,8 @@
     }
 
     async function resetGame() {
+      if (resetting) return;
+      resetting = true;
       stopAuto();
       busy = true;
       selected = null;
@@ -685,6 +684,7 @@
         showError(error.message);
       } finally {
         busy = false;
+        resetting = false;
         render();
       }
       await maybeEngineMove();
@@ -709,28 +709,37 @@
     }
 
     async function maybeEngineMove() {
-      if (busy || thinking) return;
-      if (!state || !state.engine || state.status !== "playing" || state.turn !== "black") return;
+      if (busy || thinking) return false;
+      if (!state || !state.engine || state.status !== "playing") return false;
+      if (!auto && state.turn !== "black") return false;
       thinking = true;
       busy = true;
       selected = null;
       showError("");
       render();
+      let moved = true;
       try {
         state = await request("/api/engine/move", { method: "POST" });
       } catch (error) {
         showError(error.message);
+        moved = false;
       } finally {
         thinking = false;
         busy = false;
         render();
       }
+      return moved;
     }
 
     async function toggleEngine() {
-      if (busy || !state) return;
-      if (auto) stopAuto();
-      const depth = Number(depthEl.value);
+      if (busy || auto || !state) return;
+      const depth = currentDepth();
+      if (depth === null) {
+        restoreDepth();
+        showError("Depth must be a whole number of at least 1.");
+        return;
+      }
+      cancelDepthChange();
       busy = true;
       selected = null;
       showError("");
@@ -745,15 +754,38 @@
         showError(error.message);
       } finally {
         busy = false;
-        depthEl.value = String(state.engineDepth);
+        restoreDepth();
         render();
       }
       await maybeEngineMove();
     }
 
+    function queueDepthChange() {
+      if (depthTimer) clearTimeout(depthTimer);
+      depthTimer = setTimeout(() => {
+        depthTimer = null;
+        if (currentDepth() !== null) changeDepth();
+      }, 400);
+    }
+
+    function cancelDepthChange() {
+      if (!depthTimer) return;
+      clearTimeout(depthTimer);
+      depthTimer = null;
+    }
+
     async function changeDepth() {
-      if (busy || !state) return;
-      const depth = Number(depthEl.value);
+      if (!state) return;
+      const depth = currentDepth();
+      if (depth === null) {
+        restoreDepth();
+        showError("Depth must be a whole number of at least 1.");
+        return;
+      }
+      if (busy) {
+        queueDepthChange();
+        return;
+      }
       busy = true;
       showError("");
       render();
@@ -767,37 +799,75 @@
         showError(error.message);
       } finally {
         busy = false;
-        depthEl.value = String(state.engineDepth);
+        restoreDepth();
         render();
       }
-      await maybeEngineMove();
+      if (!auto) await maybeEngineMove();
     }
 
-    function scheduleAuto() {
+    async function runAutoStep() {
+      autoTimer = null;
       if (!auto) return;
-      autoTimer = setTimeout(async () => {
-        if (!auto) return;
-        await randomMove();
-        if (!auto) return;
-        if (!state || state.status !== "playing") {
-          stopAuto();
-          return;
-        }
+      if (busy || thinking) {
         scheduleAuto();
-      }, 650);
-    }
-
-    function toggleAuto() {
-      if (auto) {
+        return;
+      }
+      if (!state || state.status !== "playing") {
         stopAuto();
         return;
       }
-      if (!state || state.engine || state.status !== "playing") return;
-      auto = true;
+      if (!(await maybeEngineMove())) {
+        stopAuto();
+        return;
+      }
+      if (!auto) return;
+      if (!state || state.status !== "playing") {
+        stopAuto();
+        return;
+      }
+      scheduleAuto();
+    }
+
+    function scheduleAuto() {
+      if (!auto || autoTimer) return;
+      autoTimer = setTimeout(runAutoStep, 250);
+    }
+
+    async function toggleAuto() {
+      if (auto) {
+        stopAuto();
+        // The engine may have just moved White, leaving Black to move; keep
+        // normal engine-vs-human play going when auto stops.
+        await maybeEngineMove();
+        return;
+      }
+      if (busy || !state || state.status !== "playing") return;
+      const depth = currentDepth();
+      if (depth === null) {
+        restoreDepth();
+        showError("Depth must be a whole number of at least 1.");
+        return;
+      }
+      cancelDepthChange();
+      busy = true;
       selected = null;
       showError("");
       render();
-      scheduleAuto();
+      try {
+        state = await request("/api/engine", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: true, depth }),
+        });
+        auto = true;
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        busy = false;
+        restoreDepth();
+        render();
+      }
+      if (auto) scheduleAuto();
     }
 
     function stopAuto() {
@@ -810,9 +880,8 @@
     }
 
     boardEl.addEventListener("click", (event) => {
-      if (!state || state.status !== "playing" || busy) return;
+      if (!state || state.status !== "playing" || busy || auto) return;
       if (state.engine && state.turn === "black") return;
-      if (auto) stopAuto();
       const square = event.target.closest(".square")?.dataset.square;
       if (!square) return;
 
@@ -830,12 +899,17 @@
       render();
     });
 
-    randomBtn.addEventListener("click", randomMove);
     autoBtn.addEventListener("click", toggleAuto);
     undoBtn.addEventListener("click", undoMove);
     resetBtn.addEventListener("click", resetGame);
     engineBtn.addEventListener("click", toggleEngine);
-    depthEl.addEventListener("change", changeDepth);
+    depthEl.addEventListener("input", queueDepthChange);
+    depthEl.addEventListener("blur", () => {
+      if (currentDepth() !== null) return;
+      cancelDepthChange();
+      restoreDepth();
+      showError("Depth must be a whole number of at least 1.");
+    });
 
     loadState();
   </script>

@@ -76,7 +76,7 @@ CGO_ENABLED=0 go build -trimpath \
 
 | Command | What it does |
 | --- | --- |
-| `go run ./cmd/web [-addr 127.0.0.1:8080]` | Local board. Human plays White; random replies, or toggle **Engine** to play Black at depth 1–5. Supports click-to-move, undo, and reset. |
+| `go run ./cmd/web [-addr 127.0.0.1:8080]` | Local board. You play White; toggle **Engine** to play Black at a depth you choose, or **Auto play** to watch the engine play both sides. Click-to-move, undo, and reset; reset cancels a running search. |
 | `go run ./cmd/search -depth 5` | Fixed-depth search; prints best move, score, nodes, time, and nps. Add `-fen "<FEN>"` or `-eval` for a static score. |
 | `go run ./cmd/perft -depth 5` | Move-generation node count with time and nps. Flags: `-fen`, `-moves`, `-divide`, `-suite data/perft.csv`, `-deep`, `-compare [-stockfish path]`. |
 | `go run ./cmd/genmagics` | Regenerate `data/rook_magics.csv` and `data/bishop_magics.csv`. |

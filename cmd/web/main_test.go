@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ethankuehler/gochess/chess"
 	"github.com/ethankuehler/gochess/data"
@@ -148,19 +149,19 @@ func TestMoveEndpoint(t *testing.T) {
 	}
 }
 
-func TestRandomResetUndo(t *testing.T) {
+func TestResetUndo(t *testing.T) {
 	server := newTestServer(t)
 	start := getState(t, server)
 
-	state, code := postState(t, server, "/api/random", "")
+	state, code := postState(t, server, "/api/move", `{"uci":"e2e4"}`)
 	if code != http.StatusOK {
-		t.Fatalf("POST /api/random = %d, want 200", code)
+		t.Fatalf("POST /api/move = %d, want 200", code)
 	}
 	if len(state.History) != 1 {
-		t.Errorf("history after random = %v, want one move", state.History)
+		t.Errorf("history after move = %v, want one move", state.History)
 	}
 	if state.FEN == start.FEN {
-		t.Error("random move did not change the position")
+		t.Error("move did not change the position")
 	}
 	if state.LastMove != state.History[0] {
 		t.Errorf("last move = %q, history = %v", state.LastMove, state.History)
@@ -177,8 +178,8 @@ func TestRandomResetUndo(t *testing.T) {
 		t.Errorf("history after undo = %v, last = %q", state.History, state.LastMove)
 	}
 
-	if _, code := postState(t, server, "/api/random", ""); code != http.StatusOK {
-		t.Fatalf("second random = %d, want 200", code)
+	if _, code := postState(t, server, "/api/move", `{"uci":"d2d4"}`); code != http.StatusOK {
+		t.Fatalf("second move = %d, want 200", code)
 	}
 	state, code = postState(t, server, "/api/reset", "")
 	if code != http.StatusOK {
@@ -208,18 +209,22 @@ func TestPageAndMethods(t *testing.T) {
 	if !strings.Contains(string(body), `id="engine"`) {
 		t.Error("page does not contain the engine toggle")
 	}
+	if !strings.Contains(string(body), `id="depth"`) ||
+		!strings.Contains(string(body), `type="number"`) {
+		t.Error("page does not contain the numeric depth input")
+	}
+	if strings.Contains(string(body), `id="random"`) {
+		t.Error("page still contains the random move button")
+	}
 
 	response, _ = doRequest(t, server, http.MethodGet, "/missing", "")
 	if response.StatusCode != http.StatusNotFound {
 		t.Errorf("GET /missing = %d, want 404", response.StatusCode)
 	}
 
-	response, _ = doRequest(t, server, http.MethodGet, "/api/random", "")
-	if response.StatusCode != http.StatusMethodNotAllowed {
-		t.Errorf("GET /api/random = %d, want 405", response.StatusCode)
-	}
-	if allow := response.Header.Get("Allow"); allow != http.MethodPost {
-		t.Errorf("Allow = %q, want POST", allow)
+	response, _ = doRequest(t, server, http.MethodPost, "/api/random", "")
+	if response.StatusCode != http.StatusNotFound {
+		t.Errorf("POST /api/random = %d, want 404", response.StatusCode)
 	}
 
 	for _, path := range []string{"/api/engine", "/api/engine/move"} {
@@ -273,11 +278,11 @@ func TestEngineSettings(t *testing.T) {
 		t.Errorf("engine info = %+v after disabling, want nil", state.EngineInfo)
 	}
 
-	if _, code := postState(t, server, "/api/engine", `{"enabled":true,"depth":6}`); code != http.StatusBadRequest {
-		t.Errorf("depth 6 status = %d, want 400", code)
-	}
 	if _, code := postState(t, server, "/api/engine", `{"enabled":true,"depth":-1}`); code != http.StatusBadRequest {
 		t.Errorf("negative depth status = %d, want 400", code)
+	}
+	if state, code := postState(t, server, "/api/engine", `{"enabled":false,"depth":6}`); code != http.StatusOK || state.EngineDepth != 6 {
+		t.Errorf("depth 6 = status %d depth %d, want status 200 depth 6", code, state.EngineDepth)
 	}
 }
 
@@ -335,7 +340,7 @@ func TestEngineRejectsHumanMoveForEngine(t *testing.T) {
 	}
 }
 
-func TestEngineMoveRequiresEngineTurn(t *testing.T) {
+func TestEngineMovePlaysSideToMove(t *testing.T) {
 	server := newTestServer(t)
 
 	if _, code := postState(t, server, "/api/engine/move", ""); code != http.StatusConflict {
@@ -343,8 +348,21 @@ func TestEngineMoveRequiresEngineTurn(t *testing.T) {
 	}
 
 	enableEngine(t, server, 2)
-	if _, code := postState(t, server, "/api/engine/move", ""); code != http.StatusConflict {
-		t.Errorf("engine move on White's turn = %d, want 409", code)
+	state, code := postState(t, server, "/api/engine/move", "")
+	if code != http.StatusOK {
+		t.Fatalf("engine move on White's turn = %d, want 200", code)
+	}
+	if state.Turn != "black" {
+		t.Errorf("turn after engine White move = %q, want black", state.Turn)
+	}
+	if len(state.History) != 1 {
+		t.Fatalf("history = %v, want one move", state.History)
+	}
+	if state.EngineInfo == nil {
+		t.Fatal("engine info is nil after a move")
+	}
+	if state.EngineInfo.Score < 0 {
+		t.Errorf("score = %d, want a White-relative score", state.EngineInfo.Score)
 	}
 }
 
@@ -395,15 +413,6 @@ func TestEngineUndoBeforeReply(t *testing.T) {
 	}
 }
 
-func TestEngineDisablesRandom(t *testing.T) {
-	server := newTestServer(t)
-	enableEngine(t, server, 2)
-
-	if _, code := postState(t, server, "/api/random", ""); code != http.StatusConflict {
-		t.Errorf("random while engine is on = %d, want 409", code)
-	}
-}
-
 func TestEngineResetKeepsSettings(t *testing.T) {
 	server := newTestServer(t)
 	enableEngine(t, server, 5)
@@ -430,6 +439,82 @@ func TestEngineResetKeepsSettings(t *testing.T) {
 	}
 }
 
+func TestResetCancelsSearch(t *testing.T) {
+	game := newGame()
+	t.Cleanup(game.Close)
+	server := httptest.NewServer(newMux(game))
+	t.Cleanup(server.Close)
+
+	enableEngine(t, server, 20)
+
+	searchDone := make(chan error, 1)
+	go func() { searchDone <- game.engineMove() }()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		game.mu.Lock()
+		busy := game.engineBusy
+		game.mu.Unlock()
+		if busy {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("engine search did not start")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	// Let the search reach GoDepth so reset has to cancel a running engine.
+	time.Sleep(100 * time.Millisecond)
+
+	type resetResult struct {
+		state stateResponse
+		code  int
+		err   error
+	}
+	resetDone := make(chan resetResult, 1)
+	go func() {
+		response, err := server.Client().Post(server.URL+"/api/reset", "", nil)
+		if err != nil {
+			resetDone <- resetResult{err: err}
+			return
+		}
+		defer response.Body.Close()
+		var state stateResponse
+		if response.StatusCode == http.StatusOK {
+			err = json.NewDecoder(response.Body).Decode(&state)
+		}
+		resetDone <- resetResult{state: state, code: response.StatusCode, err: err}
+	}()
+
+	select {
+	case result := <-resetDone:
+		if result.err != nil {
+			t.Fatalf("reset: %v", result.err)
+		}
+		if result.code != http.StatusOK {
+			t.Fatalf("reset = %d, want 200", result.code)
+		}
+		const start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+		if result.state.FEN != start || len(result.state.History) != 0 {
+			t.Errorf("state after reset = FEN %q history %v", result.state.FEN, result.state.History)
+		}
+		if result.state.EngineDepth != 20 || !result.state.Engine {
+			t.Errorf("engine settings after reset = enabled %v depth %d, want true 20", result.state.Engine, result.state.EngineDepth)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("reset blocked on the running search")
+	}
+
+	select {
+	case err := <-searchDone:
+		if err != nil {
+			t.Errorf("stale search error = %v, want it discarded", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("engine search did not stop")
+	}
+}
+
 func TestEngineInfoReportsMate(t *testing.T) {
 	position, err := chess.ParseFEN("8/8/8/8/8/5k2/5q2/7K b - - 0 1")
 	if err != nil {
@@ -442,8 +527,8 @@ func TestEngineInfoReportsMate(t *testing.T) {
 	g.engineEnabled = true
 	g.engineDepth = 1
 
-	if err := g.engineMoveLocked(); err != nil {
-		t.Fatalf("engineMoveLocked: %v", err)
+	if err := g.engineMove(); err != nil {
+		t.Fatalf("engineMove: %v", err)
 	}
 	if g.engineInfo == nil {
 		t.Fatal("engine info is nil")
