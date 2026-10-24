@@ -338,12 +338,6 @@ func (b *Position) FEN() string {
 	return buffer.String()
 }
 
-// LegalMoves returns all legal moves from the current position. Move
-// generation is not implemented yet, so it returns nil.
-func (b *Position) LegalMoves() []Move {
-	return nil // TODO: implement move generation
-}
-
 // Occupancy returns a mask of every occupied square for the given colour.
 // Colour should be White, Black, or Both.
 func (b *Position) Occupancy(colour Colour) BitBoard {

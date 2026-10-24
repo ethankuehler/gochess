@@ -10,6 +10,7 @@ import (
 func TestMain(m *testing.M) {
 	// Change working directory to project root
 	os.Chdir("..")
+	BuildAllAttacks()
 	os.Exit(m.Run())
 }
 

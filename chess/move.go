@@ -6,9 +6,17 @@ import (
 	"strings"
 )
 
-// promotionFlag marks a move that promotes a pawn. The low three bits of
-// flags then hold the promotion Piece (Queen, Rook, Bishop, or Knight).
-const promotionFlag uint16 = 1 << 3
+// Move flags. The low three bits of flags hold the promotion Piece when
+// promotionFlag is set; the remaining bits describe the move.
+const (
+	promotionFlag  uint16 = 1 << 3
+	captureFlag    uint16 = 1 << 4
+	doublePushFlag uint16 = 1 << 5
+	enPassantFlag  uint16 = 1 << 6
+	castlingFlag   uint16 = 1 << 7
+
+	promotionPieceMask uint16 = 0b111
+)
 
 // Move is a from/to square pair plus move flags.
 type Move struct {
@@ -18,6 +26,9 @@ type Move struct {
 }
 
 // ParseUCIMove creates a move from a UCI string such as "e2e4" or "e7e8q".
+// It parses notation only: it cannot know whether a move is a capture,
+// castling, en passant, or a double pawn push. Match a parsed move against
+// Position.LegalMoves before applying it.
 func ParseUCIMove(uci string) (*Move, error) {
 	if len(uci) != 4 && len(uci) != 5 {
 		return nil, fmt.Errorf("invalid UCI move %q: expected 4 or 5 characters", uci)
@@ -79,8 +90,20 @@ func (m Move) Promotion() (promotion Piece, ok bool) {
 	if m.flags&promotionFlag == 0 {
 		return NoPiece, false
 	}
-	return Piece(m.flags & 0b111), true
+	return Piece(m.flags & promotionPieceMask), true
 }
+
+// IsCapture reports whether the move captures a piece, including en passant.
+func (m Move) IsCapture() bool { return m.flags&captureFlag != 0 }
+
+// IsEnPassant reports whether the move is an en passant capture.
+func (m Move) IsEnPassant() bool { return m.flags&enPassantFlag != 0 }
+
+// IsCastling reports whether the move castles.
+func (m Move) IsCastling() bool { return m.flags&castlingFlag != 0 }
+
+// IsDoublePush reports whether the move is a two-square pawn push.
+func (m Move) IsDoublePush() bool { return m.flags&doublePushFlag != 0 }
 
 // SquareName formats a square in algebraic notation (e.g. "e4").
 func SquareName(square Square) string {

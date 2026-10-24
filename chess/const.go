@@ -90,8 +90,47 @@ const (
 	Black Colour = 1
 )
 
+// Opposite returns the other colour.
+func (c Colour) Opposite() Colour {
+	switch c {
+	case White:
+		return Black
+	case Black:
+		return White
+	default:
+		return Both
+	}
+}
+
 // rank1Mask selects the first rank.
 const rank1Mask BitBoard = 255
+
+// File masks are used when shifting pawns to find attacks.
+const (
+	fileAMask BitBoard = 0x0101010101010101
+	fileHMask BitBoard = 0x8080808080808080
+)
+
+// Named squares used by castling and move generation.
+const (
+	a1 Square = 0
+	b1 Square = 1
+	c1 Square = 2
+	d1 Square = 3
+	e1 Square = 4
+	f1 Square = 5
+	g1 Square = 6
+	h1 Square = 7
+
+	a8 Square = 56
+	b8 Square = 57
+	c8 Square = 58
+	d8 Square = 59
+	e8 Square = 60
+	f8 Square = 61
+	g8 Square = 62
+	h8 Square = 63
+)
 
 // Piece and board notation tables. The piece symbols follow the Piece
 // constants: white pieces first, then black pieces offset by blackPieceOffset.
