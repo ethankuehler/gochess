@@ -18,6 +18,8 @@ verification.
     CSVs in `data/`.
   - `cmd/perft` (`cmd/perft/`) — perft runner, divide printer, fixture suite,
     and optional Stockfish comparison.
+  - `cmd/web` (`cmd/web/`) — local browser board backed by the engine; random
+    moves, click-to-move, auto-play, undo, and reset.
 
 ## Repository layout
 
@@ -27,6 +29,9 @@ verification.
 - `cmd/perft/main.go` — runs perft, lists legal moves, prints a divide, runs
   `data/perft.csv`, and can diff a divide against Stockfish; run from the repo
   root.
+- `cmd/web/main.go` and `cmd/web/index.html` — HTTP server and embedded board
+  UI. The server owns one in-memory game and exposes `/api/state`,
+  `/api/random`, `/api/move`, `/api/reset`, and `/api/undo`.
 - `chess/` — the engine library (`package chess`):
   - `bitboard.go` — `BitBoard` (`uint64`) and `Position` types, validated FEN
     parse/serialize (`ParseFEN`, `FEN()`), board printing (`String`,
@@ -77,6 +82,7 @@ verification.
 ```sh
 go build ./...            # build everything
 go run .                  # run the demo binary (must run from repo root)
+go run ./cmd/web          # local board UI at http://127.0.0.1:8080
 go run ./cmd/genmagics    # regenerate data/*_magics.csv (from repo root)
 go run ./cmd/perft -depth 5
 go run ./cmd/perft -moves -fen "<FEN>"
@@ -143,6 +149,9 @@ Bitboard representation:
   with the king removed from its origin.
 - `Perft` and `PerftDivide` require `BuildAllAttacks`; `TestMain` builds the
   tables once, and `cmd/perft` builds them at startup. `Perft(0)` is 1.
+- `Position.ApplyMove` validates a generated `Move` and returns a new
+  `Position`; `Position.PieceAt` and `Position.SideToMove` expose read-only
+  state for UIs such as `cmd/web`.
 - Pawn attack detection in `isSquareAttacked` uses bit shifts with file masks,
   not the reverse attack tables. The tables are zero on ranks where a pawn of
   that colour cannot exist (for example black pawns on rank 8), but those
@@ -213,6 +222,9 @@ Things to be careful with:
   rows run with `PERFT_DEEP=1`.
 - `TestPerftAgainstStockfish` is opt-in via `STOCKFISH_BIN` and compares a
   deterministic random game with Stockfish, which is not required in CI.
+- `cmd/web` tests exercise the state, move, random, reset, and undo endpoints
+  with `httptest`. Its `TestMain` changes to the repo root before building
+  attack tables, like the `chess` package tests.
 - Benchmarks cover `RookAttack`, `BishopAttack`, `ParseUCIMove`, `ParseFEN`,
   and `Perft`.
 
@@ -222,6 +234,8 @@ Things to be careful with:
   modules — the attack surface is essentially nil.
 - `cmd/perft -compare` executes a local Stockfish binary when explicitly
   requested; it is not used by CI and does not access the network.
+- `cmd/web` binds to `127.0.0.1:8080` by default, keeps a single in-memory
+  game, and has no authentication. It is a local demo, not a public server.
 - Runtime input is limited to FEN/UCI strings and the local `data/` files;
   the parsers return errors on malformed input and are unit-tested against
   invalid cases, but they are not fuzzed.

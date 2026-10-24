@@ -2,3 +2,12 @@ This is my own personal project for a chess engine written in Go. I wanted to us
 
 Anyway, meow.
 Ethan.
+
+## Run the board demo
+
+```sh
+go run ./cmd/web
+```
+
+Then open <http://127.0.0.1:8080>. The page uses the engine for legal move
+generation and plays random replies; you can also click your own moves.
