@@ -1,31 +1,27 @@
-This is my own personal project for a chess engine written in Go. I wanted to use this as an opportunity to learn Go and see what it has to offer over something better for this use case, like C++ or Rust. I understand that Go isn’t the right tool for the job, but if people are writing chess engines in Python and Java, why not Go? It can’t be that bad, can it? btw this is not close to done.
+# gochess
 
-Anyway, meow.
-Ethan.
+A personal, work-in-progress chess engine written in Go — an excuse to learn Go
+and see how far a garbage-collected language can get with bitboards. It is not
+close to done. (Meow. — Ethan)
 
-## Use as a UCI engine
+Go 1.23+ and the standard library only; there is nothing to `go get`.
 
-Build the self-contained engine:
+## Quick start
 
 ```sh
-go build -o gochess ./cmd/uci
-
-# release-style build with a version stamp
-CGO_ENABLED=0 go build -trimpath \
-  -ldflags "-s -w -X github.com/ethankuehler/gochess/uci.Version=0.1.0" \
-  -o gochess ./cmd/uci
+go build -o gochess ./cmd/uci   # self-contained UCI engine
+go run ./cmd/web                # board demo at http://127.0.0.1:8080
 ```
 
-The attack tables are embedded in the binary, so it can be copied to another
-directory and launched from any working directory. Add it to a UCI GUI such as
-Cute Chess, Arena, Banksia, or Scid vs PC, or drive it directly. The web demo
-below also drives this engine through an in-process UCI session.
+The attack tables are embedded in the binary, so `./gochess` runs from any
+directory. Drive it directly:
 
 ```sh
 { printf 'uci\nisready\nposition startpos\ngo depth 4\n'; sleep 0.2; printf 'quit\n'; } | ./gochess
 ```
 
-With python-chess:
+Or point a UCI GUI (Cute Chess, Arena, Banksia, Scid vs PC) at the binary. With
+python-chess:
 
 ```python
 import chess.engine
@@ -36,54 +32,125 @@ with chess.engine.SimpleEngine.popen_uci("./gochess") as engine:
     board.push(result.move)
 ```
 
-The engine supports the standard handshake (`uci`, `isready`, `id`, options,
-`uciok`, `readyok`), `debug`, `ucinewgame`, `position startpos|fen ... moves ...`,
-`go depth|movetime|wtime/btime/winc/binc/movestogo|nodes|infinite|searchmoves`,
-`stop`, and `quit`. It emits `info depth/seldepth/score/nodes/nps/time/pv` and
-`bestmove`. Checkmate and stalemate are reported as `bestmove 0000`.
+Supported commands: `uci`, `isready`, `debug`, `ucinewgame`, `position`
+(`startpos` or `fen`, plus moves), `go` (`depth`, `nodes`, `movetime`,
+`infinite`, `searchmoves`, or clock fields `wtime`, `btime`, `winc`, `binc`,
+`movestogo`), `stop`, `quit`, and `bench`. It emits `info` lines (`depth`,
+`seldepth`, `score`, `nodes`, `nps`, `time`, `pv`) and `bestmove`; checkmate
+and stalemate are `bestmove 0000`. Options are `Threads` (fixed at 1) and
+`Move Overhead` (default 50 ms, range 0–5000). `Hash`, `Ponder`, `MultiPV`, and
+Chess960 are accepted but ignored, since none are implemented yet.
 
-Options:
-
-- `Threads` — fixed at 1; the engine is single-threaded.
-- `Move Overhead` — milliseconds reserved from the clock for GUI/network
-  latency (default 50, range 0-5000).
-
-`Hash`, `Clear Hash`, `Ponder`, `MultiPV`, Chess960, tablebases, and opening
-books are accepted or ignored where appropriate but are not advertised or
-implemented yet. The engine does not track repetition or insufficient material;
-the GUI adjudicates those draws.
-
-Run the deterministic benchmark (used by engine-testing frameworks):
+For a release build with a version stamp:
 
 ```sh
-./gochess bench
-./gochess bench 6
-./gochess -version
+CGO_ENABLED=0 go build -trimpath \
+  -ldflags "-s -w -X github.com/ethankuehler/gochess/uci.Version=0.1.0" \
+  -o gochess ./cmd/uci
 ```
 
-## Run the board demo
+## How it works
+
+- **Board** — `chess.Position` stores 12 piece bitboards plus castling rights,
+  the en passant square, and clocks. Squares are little-endian rank-file
+  (a1 = bit 0, h8 = bit 63). FEN parsing is strict and round-trips.
+- **Attack tables** — knight, king, and pawn tables plus magic bitboards for
+  rooks and bishops live in `data/*.csv`, embedded with `//go:embed`. Tables are
+  built at startup, so lookups are just array indexing.
+- **Move generation** — pseudo-legal moves are generated with the tables, then
+  copy-make (`makeMove` returns a new position) filters out moves that leave the
+  king attacked. Castling, en passant, and promotions are handled with explicit
+  move flags.
+- **Evaluation** — material plus a hand-tuned piece-square table (centrality,
+  pawn advancement, king safety). Scores are centipawns from White's view;
+  search flips to the side-to-move convention.
+- **Search** — iterative-deepening negamax alpha-beta with capture-first move
+  ordering, PV tracking, mate-distance scoring, and cancellation by deadline,
+  node count, or stop. There is no transposition table, pondering, or opening
+  book.
+- **UCI layer** — `uci.Run` is the engine side, a separate goroutine owns each
+  search, and `uci.Client` drives an in-process engine. `cmd/uci` is the
+  standalone binary; `cmd/web` is the browser demo.
+
+## Tools
+
+| Command | What it does |
+| --- | --- |
+| `go run ./cmd/web [-addr 127.0.0.1:8080]` | Local board. Human plays White; random replies, or toggle **Engine** to play Black at depth 1–5. Supports click-to-move, undo, and reset. |
+| `go run ./cmd/search -depth 5` | Fixed-depth search; prints best move, score, nodes, time, and nps. Add `-fen "<FEN>"` or `-eval` for a static score. |
+| `go run ./cmd/perft -depth 5` | Move-generation node count with time and nps. Flags: `-fen`, `-moves`, `-divide`, `-suite data/perft.csv`, `-deep`, `-compare [-stockfish path]`. |
+| `go run ./cmd/genmagics` | Regenerate `data/rook_magics.csv` and `data/bishop_magics.csv`. |
+| `python3 generate_attack_tables.py` | Regenerate the knight/king/pawn CSVs; requires `pandas`. |
+| `go run .` | Scratch demo that prints a board. |
+
+Run everything except `cmd/uci` and `cmd/web` from the repo root: `cmd/search`,
+`cmd/perft`, `cmd/genmagics`, and the tests open `data/...` via relative paths.
+`cmd/uci` and `cmd/web` use the embedded files and do not care about the working
+directory.
+
+## Benchmarking
 
 ```sh
-go run ./cmd/web
+./gochess bench          # 8 fixed positions, default depth 5
+./gochess bench 6        # depth is capped at 8
 ```
 
-Then open <http://127.0.0.1:8080>. The page uses the engine for legal move
-generation and plays random replies; you can also click your own moves.
+The deterministic node counts are useful for comparing builds; the final stdout
+line is `<nodes> nodes <nps> nps`, with per-position counts on stderr. The same
+runner is available as the UCI `bench [depth]` command.
 
-Turn on **Engine** in the side panel to play as White against the engine. The
-server sends `position` and `go depth N` over UCI and applies the returned
-`bestmove`. The depth selector trades speed for strength (1-5 ply). With the
-engine off, the page goes back to random replies.
-
-## Run the search
+Go microbenchmarks:
 
 ```sh
-go run ./cmd/search -depth 4
-go run ./cmd/search -fen "<FEN>" -depth 5
-go run ./cmd/search -fen "<FEN>" -eval
+go test -bench . ./chess
+go test -bench 'Rook|Bishop|Search' -benchmem ./chess
 ```
 
-The UCI engine uses iterative deepening with clock and node limits. `cmd/search`
-is the small fixed-depth debugging tool. The evaluation is deliberately small:
-material, piece centrality, king corner safety, and pawn advancement. It is not
-strong yet, but it can find short mates and free material.
+For move generation, perft is the benchmark that matters:
+
+```sh
+go run ./cmd/perft -depth 6
+go run ./cmd/perft -depth 4 -divide
+go run ./cmd/perft -suite data/perft.csv          # -deep to include slow rows
+```
+
+## Testing
+
+```sh
+go test ./...                 # full suite
+go test -race ./...           # what CI runs
+go vet ./...                  # static checks
+PERFT_DEEP=1 go test ./chess -run '^TestPerft$' -v
+STOCKFISH_BIN=stockfish go test ./chess -run TestPerftAgainstStockfish
+```
+
+Tests are data-driven where practical: FEN fixtures live in `data/FEN.csv`,
+sliding attacks in `data/sliding_attacks_examples.json`, and perft positions in
+`data/perft.csv` (rows with `deep=1` only run with `PERFT_DEEP=1`). The fast
+suite covers FEN parsing, magic tables, move generation, evaluation, search
+limits, the UCI protocol, and the web endpoints; `cmd/uci` tests build and run
+the binary from an empty temporary directory. The Stockfish comparison and
+`cmd/perft -compare` are opt-in and not required for CI.
+
+CI checks `gofmt`, `go build`, `go vet`, `go test -race ./...`, a `bench` smoke
+test, and a Windows/macOS cross-compile. Run `gofmt -l .` before pushing.
+
+## Layout
+
+```
+chess/       engine library: bitboards, movegen, eval, search, perft
+uci/         protocol layer: command loop, time management, client, bench
+cmd/uci/     standalone UCI binary
+cmd/web/     local board UI and in-process engine client
+cmd/search/  fixed-depth search CLI
+cmd/perft/   perft runner, suite, and Stockfish comparison
+cmd/genmagics/  magic-number CSV generator
+data/        embedded attack tables, magics, and test fixtures
+```
+
+## Known limitations
+
+No transposition table, pondering, MultiPV, Chess960, tablebases, or opening
+book. Threefold repetition and insufficient material are not detected because
+`Position` carries no history; the fifty-move rule is checked during search.
+The engine can find short mates and win free material, but it is not strong yet.
