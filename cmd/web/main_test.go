@@ -11,19 +11,25 @@ import (
 	"testing"
 
 	"github.com/ethankuehler/gochess/chess"
+	"github.com/ethankuehler/gochess/data"
 )
 
 func TestMain(m *testing.M) {
-	// The chess package loads data/ via relative paths.
-	os.Chdir("../..")
-	chess.BuildAllAttacks()
+	if err := chess.BuildAllAttacksFromFS(data.FS); err != nil {
+		fmt.Fprintf(os.Stderr, "initialize attack tables: %v\n", err)
+		os.Exit(1)
+	}
 	os.Exit(m.Run())
 }
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	server := httptest.NewServer(newMux(newGame()))
-	t.Cleanup(server.Close)
+	game := newGame()
+	server := httptest.NewServer(newMux(game))
+	t.Cleanup(func() {
+		server.Close()
+		game.Close()
+	})
 	return server
 }
 
@@ -431,6 +437,7 @@ func TestEngineInfoReportsMate(t *testing.T) {
 	}
 
 	g := newGame()
+	t.Cleanup(g.Close)
 	g.positions = []*chess.Position{position}
 	g.engineEnabled = true
 	g.engineDepth = 1

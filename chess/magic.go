@@ -3,6 +3,7 @@ package chess
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"math/bits"
 	"math/rand/v2"
@@ -198,6 +199,69 @@ func BuildAllAttacks() {
 	BuildPawnAttacks()
 	BuildRookAttacks()
 	BuildBishopAttacks()
+}
+
+// BuildAllAttacksFromFS builds every attack table from an fs.FS. The files are
+// loaded into locals first so a failure leaves the package-level tables
+// untouched. This is the initializer used by the self-contained UCI binary.
+func BuildAllAttacksFromFS(fsys fs.FS) error {
+	knight, err := loadAttackTableFS(fsys, "knight_attacks.csv")
+	if err != nil {
+		return err
+	}
+	king, err := loadAttackTableFS(fsys, "king_attacks.csv")
+	if err != nil {
+		return err
+	}
+	whitePawnMovesTable, err := loadAttackTableFS(fsys, "white_pawn_move.csv")
+	if err != nil {
+		return err
+	}
+	blackPawnMovesTable, err := loadAttackTableFS(fsys, "black_pawn_move.csv")
+	if err != nil {
+		return err
+	}
+	whitePawnAttacksTable, err := loadAttackTableFS(fsys, "white_pawn_attacks.csv")
+	if err != nil {
+		return err
+	}
+	blackPawnAttacksTable, err := loadAttackTableFS(fsys, "black_pawn_attacks.csv")
+	if err != nil {
+		return err
+	}
+	rookMagics, rookTables, err := buildSliderAttacksFS(fsys, "rook_magics.csv", rookDirections)
+	if err != nil {
+		return err
+	}
+	bishopMagics, bishopTables, err := buildSliderAttacksFS(fsys, "bishop_magics.csv", bishopDirections)
+	if err != nil {
+		return err
+	}
+
+	knightAttacks = knight
+	kingAttacks = king
+	whitePawnMoves = whitePawnMovesTable
+	blackPawnMoves = blackPawnMovesTable
+	whitePawnAttacks = whitePawnAttacksTable
+	blackPawnAttacks = blackPawnAttacksTable
+	rookMagicEntries = rookMagics
+	rookAttackTables = rookTables
+	bishopMagicEntries = bishopMagics
+	bishopAttackTables = bishopTables
+	return nil
+}
+
+// buildSliderAttacksFS loads magics from fsys and rebuilds their attack tables.
+func buildSliderAttacksFS(fsys fs.FS, fileName string, directions Directions) ([]MagicEntry, [][]BitBoard, error) {
+	magics, err := LoadMagicEntriesFS(fsys, fileName)
+	if err != nil {
+		return nil, nil, err
+	}
+	tables, err := buildMagicTables(magics, directions)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", fileName, err)
+	}
+	return magics, tables, nil
 }
 
 // BuildRookAttacks fills rookMagicEntries and rookAttackTables for every square.
