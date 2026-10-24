@@ -3,10 +3,10 @@
 ## Project overview
 
 `gochess` is a personal, work-in-progress chess engine written in Go. The author
-is using it to learn Go; per the README it is "not close to done". There is no
-engine search or UCI protocol yet — the codebase covers board representation,
-FEN handling, attack-table generation/lookup, legal move generation, and perft
-verification.
+is using it to learn Go; per the README it is "not close to done". The codebase
+covers board representation, FEN handling, attack-table generation/lookup, legal
+move generation, perft verification, a hand-written evaluation, and a
+fixed-depth alpha-beta search. There is no UCI protocol yet.
 
 - Module: `github.com/ethankuehler/gochess` (see `go.mod`, `go 1.23.2`)
 - Dependencies: Go standard library only. There is no `go.sum`.
@@ -18,7 +18,10 @@ verification.
     CSVs in `data/`.
   - `cmd/perft` (`cmd/perft/`) — perft runner, divide printer, fixture suite,
     and optional Stockfish comparison.
-  - `cmd/web` (`cmd/web/`) — local browser board backed by the engine; random
+  - `cmd/search` (`cmd/search/`) — fixed-depth search CLI; prints the best
+    move, score, nodes, time, and nps, or just the static evaluation.
+  - `cmd/web` (`cmd/web/`) — local browser board backed by the engine; play
+    against the alpha-beta search (human White, engine Black), plus random
     moves, click-to-move, auto-play, undo, and reset.
 
 ## Repository layout
@@ -29,9 +32,14 @@ verification.
 - `cmd/perft/main.go` — runs perft, lists legal moves, prints a divide, runs
   `data/perft.csv`, and can diff a divide against Stockfish; run from the repo
   root.
+- `cmd/search/main.go` — parses a FEN, builds the attack tables, and runs
+  `Position.Search`; `-eval` prints the static score instead. Run from the repo
+  root so the `data/` paths resolve.
 - `cmd/web/main.go` and `cmd/web/index.html` — HTTP server and embedded board
   UI. The server owns one in-memory game and exposes `/api/state`,
-  `/api/random`, `/api/move`, `/api/reset`, and `/api/undo`.
+  `/api/random`, `/api/move`, `/api/engine`, `/api/engine/move`, `/api/reset`,
+  and `/api/undo`. Engine mode plays Black against a human White; the panel has
+  an engine toggle and a 1-5 ply depth selector.
 - `chess/` — the engine library (`package chess`):
   - `bitboard.go` — `BitBoard` (`uint64`) and `Position` types, validated FEN
     parse/serialize (`ParseFEN`, `FEN()`), board printing (`String`,
@@ -58,7 +66,12 @@ verification.
   - `makemove.go` — copy-make `makeMove`, castling-rights updates, en passant,
     promotions, and clocks.
   - `perft.go` — `Perft`, `PerftDivide`, and `PerftResult`.
-  - `bench_test.go` — benchmarks for attack lookups, parsers, and perft.
+  - `eval.go` — material values and the precomputed piece-square table
+    (centrality, king safety, pawn advancement), plus `Position.Evaluate`.
+  - `search.go` — `MateScore`, `SearchResult`, fixed-depth negamax alpha-beta
+    `Search`, capture-first move ordering, and `ScoreToMate`.
+  - `bench_test.go` — benchmarks for attack lookups, parsers, perft,
+    evaluation, and search.
 - `data/` — generated/test data, loaded at runtime via **relative** paths:
   - `knight_attacks.csv`, `king_attacks.csv`, `white/black_pawn_move.csv`,
     `white/black_pawn_attacks.csv` — attack tables (columns: index, start
@@ -82,13 +95,16 @@ verification.
 ```sh
 go build ./...            # build everything
 go run .                  # run the demo binary (must run from repo root)
-go run ./cmd/web          # local board UI at http://127.0.0.1:8080
+go run ./cmd/web          # local board UI; turn on Engine to play the search
 go run ./cmd/genmagics    # regenerate data/*_magics.csv (from repo root)
 go run ./cmd/perft -depth 5
 go run ./cmd/perft -moves -fen "<FEN>"
 go run ./cmd/perft -depth 4 -divide
 go run ./cmd/perft -depth 4 -compare -fen "<FEN>"
 go run ./cmd/perft -suite data/perft.csv
+go run ./cmd/search -depth 4
+go run ./cmd/search -fen "<FEN>" -depth 5
+go run ./cmd/search -fen "<FEN>" -eval
 go test ./...             # run all tests
 go test -race ./...       # run tests under the race detector
 PERFT_DEEP=1 go test ./chess -run '^TestPerft$' -v
@@ -157,6 +173,39 @@ Bitboard representation:
   that colour cannot exist (for example black pawns on rank 8), but those
   entries are needed to find attackers of back-rank squares.
 
+Evaluation and search:
+
+- `Position.Evaluate` returns centipawns from **White's** point of view and
+  needs no attack tables. It sums a precomputed `[12][64]int`
+  (`pieceSquareValues`) containing material, centrality, king safety, and pawn
+  advancement. Black entries are the negated value on the rank-mirrored square
+  (`square ^ 56`).
+- `SearchResult.Score` is from the **side to move's** point of view, the negamax
+  convention. `evaluateForSideToMove` does the sign flip for Black; forgetting
+  it is the classic evaluation bug.
+- `Position.Search(depth)` is fixed-depth negamax alpha-beta. Depth is in
+  plies and must be at least 1. It uses `legalMoves` with caller-owned
+  `[256]Move` buffers, makes moves with copy-make, and orders captures,
+  en passant, and promotions before quiet moves.
+- Checkmate is `-MateScore + ply`; the ply offset makes the search prefer
+  shorter mates. Stalemate is 0. `ScoreToMate` converts a mate score into a
+  distance in moves. Mate scores are always far above ordinary evaluations.
+- The fifty-move rule is checked at node entry (`halfmoveClock >= 100`).
+  Threefold repetition and insufficient material are not implemented because
+  `Position` carries no history.
+- At depth 0 the search still tests for checkmate when the side to move is in
+  check, so a depth-1 search finds mate in one. Stalemate exactly at the horizon
+  is not detected.
+- `cmd/search` builds the attack tables itself. Run it from the repo root so
+  the `data/` paths resolve.
+- `cmd/web` owns engine mode: `engineEnabled`, `engineDepth` (default 4, capped
+  at 5), and the last `engineInfo`. The engine plays Black. `POST /api/engine`
+  updates settings, `POST /api/engine/move` plays one search move, and
+  `/api/move` rejects a human move when it is the engine's turn. Undo removes
+  the engine's reply as well, and random moves are disabled while the engine is
+  on. `GET /api/state` includes the engine fields so the page can drive the
+  reply loop.
+
 ## Naming conventions
 
 - Go style is mixedCaps. Unexported fields and locals are camelCase
@@ -220,13 +269,25 @@ Things to be careful with:
   promotions, pins, double check, and legal-move invariants. Perft is
   data-driven from `data/perft.csv`; the fast rows run by default and the deep
   rows run with `PERFT_DEEP=1`.
+- Evaluation coverage includes the starting position (0), exact deltas for
+  centrality, king corner, pawn advancement, material removal, a table-mirror
+  check, and a colour-symmetry test that flips a FEN vertically and asserts the
+  score negates.
+- Search coverage includes mate in one, checkmate, stalemate, a free queen, a
+  poisoned-pawn horizon case, best-move legality, determinism, non-mutation, and
+  a score comparison against a full-width reference minimax at depths 1-3.
+- `cmd/search` tests call `run` with buffers and cover `-eval`, mate/checkmate
+  output, and invalid depth, arguments, and FENs. Its `TestMain` changes to the
+  repo root because `BuildAllAttacks` reads `data/`.
 - `TestPerftAgainstStockfish` is opt-in via `STOCKFISH_BIN` and compares a
   deterministic random game with Stockfish, which is not required in CI.
 - `cmd/web` tests exercise the state, move, random, reset, and undo endpoints
-  with `httptest`. Its `TestMain` changes to the repo root before building
+  with `httptest`, plus engine settings/depth validation, engine replies, the
+  engine-turn and random guards, engine-aware undo, and reset preserving the
+  engine settings. Its `TestMain` changes to the repo root before building
   attack tables, like the `chess` package tests.
 - Benchmarks cover `RookAttack`, `BishopAttack`, `ParseUCIMove`, `ParseFEN`,
-  and `Perft`.
+  `Perft`, `Evaluate`, and `Search` depth 4.
 
 ## Security considerations
 
@@ -236,6 +297,9 @@ Things to be careful with:
   requested; it is not used by CI and does not access the network.
 - `cmd/web` binds to `127.0.0.1:8080` by default, keeps a single in-memory
   game, and has no authentication. It is a local demo, not a public server.
+  Engine depth is capped at 5 so a request cannot ask for an unbounded search.
+- `cmd/search` is a local, single-position CLI. It reads only its flags and the
+  local `data/` attack tables and performs no network access.
 - Runtime input is limited to FEN/UCI strings and the local `data/` files;
   the parsers return errors on malformed input and are unit-tested against
   invalid cases, but they are not fuzzed.

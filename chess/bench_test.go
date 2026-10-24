@@ -60,3 +60,36 @@ func BenchmarkPerftStartPosition(b *testing.B) {
 		b.ReportMetric(float64(nodes)*float64(b.N)/elapsed, "nodes/s")
 	}
 }
+
+func BenchmarkEvaluate(b *testing.B) {
+	position, err := ParseFEN(benchmarkFEN)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = position.Evaluate()
+	}
+}
+
+func BenchmarkSearchDepth4(b *testing.B) {
+	BuildAllAttacks()
+	position, err := ParseFEN(benchmarkFEN)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	var nodes uint64
+	for i := 0; i < b.N; i++ {
+		result := position.Search(4)
+		nodes = result.Nodes
+	}
+	b.ReportMetric(float64(nodes), "nodes/op")
+	if elapsed := b.Elapsed().Seconds(); elapsed > 0 {
+		b.ReportMetric(float64(nodes)*float64(b.N)/elapsed, "nodes/s")
+	}
+}

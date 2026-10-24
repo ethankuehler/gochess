@@ -11,3 +11,19 @@ go run ./cmd/web
 
 Then open <http://127.0.0.1:8080>. The page uses the engine for legal move
 generation and plays random replies; you can also click your own moves.
+
+Turn on **Engine** in the side panel to play as White against the alpha-beta
+search. The depth selector trades speed for strength (1-5 ply). With the engine
+off, the page goes back to random replies.
+
+## Run the search
+
+```sh
+go run ./cmd/search -depth 4
+go run ./cmd/search -fen "<FEN>" -depth 5
+go run ./cmd/search -fen "<FEN>" -eval
+```
+
+The search is fixed-depth negamax alpha-beta. The evaluation is deliberately
+small: material, piece centrality, king corner safety, and pawn advancement.
+It is not strong yet, but it can find short mates and free material.

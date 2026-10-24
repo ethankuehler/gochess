@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>gochess · random mover</title>
+  <title>gochess · play the engine</title>
   <style>
     :root {
       --bg: #151210;
@@ -203,6 +203,39 @@
       gap: 0.6rem;
     }
 
+    .engine-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-top: 0.6rem;
+    }
+
+    .engine-row button { flex: 1; }
+
+    .engine-row label {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--muted);
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+
+    select {
+      appearance: none;
+      border: 1px solid rgba(255, 235, 205, 0.16);
+      border-radius: 9px;
+      padding: 0.55rem 0.6rem;
+      background: var(--panel-2);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+
+    select:disabled { opacity: 0.38; cursor: not-allowed; }
+    select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
     button {
       appearance: none;
       border: 1px solid transparent;
@@ -251,6 +284,15 @@
       color: var(--muted);
       font-size: 0.82rem;
       line-height: 1.45;
+    }
+
+    .engine-info {
+      min-height: 1.1rem;
+      margin: 0.55rem 0 0;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.74rem;
+      line-height: 1.4;
     }
 
     .error {
@@ -344,7 +386,7 @@
     <section class="board-column">
       <header class="brand">
         <h1>go<span>chess</span></h1>
-        <p>Legal move generation demo · random opponent</p>
+        <p>Legal move generation · alpha-beta engine</p>
       </header>
 
       <div class="board-frame">
@@ -365,7 +407,21 @@
         <button id="reset" class="ghost" type="button">Reset</button>
       </div>
 
-      <p class="hint">Click one of your pieces, then a highlighted square. Promotions default to a queen.</p>
+      <div class="engine-row">
+        <button id="engine" class="secondary" type="button">Engine: off</button>
+        <label for="depth">Depth
+          <select id="depth">
+            <option value="1">1 ply</option>
+            <option value="2">2 ply</option>
+            <option value="3">3 ply</option>
+            <option value="4" selected>4 ply</option>
+            <option value="5">5 ply</option>
+          </select>
+        </label>
+      </div>
+
+      <p class="hint">Click one of your pieces, then a highlighted square. Promotions default to a queen. You play White; turn the engine on to play against the search.</p>
+      <p id="engineInfo" class="engine-info"></p>
       <p id="error" class="error" role="alert"></p>
 
       <section class="info">
@@ -399,12 +455,16 @@
     const autoBtn = document.getElementById("auto");
     const undoBtn = document.getElementById("undo");
     const resetBtn = document.getElementById("reset");
+    const engineBtn = document.getElementById("engine");
+    const depthEl = document.getElementById("depth");
+    const engineInfoEl = document.getElementById("engineInfo");
 
     let state = null;
     let selected = null;
     let auto = false;
     let autoTimer = null;
     let busy = false;
+    let thinking = false;
 
     function squareName(rankIndex, fileIndex) {
       return FILES[fileIndex] + String(8 - rankIndex);
@@ -440,6 +500,7 @@
 
     function statusText() {
       if (!state) return "Loading…";
+      if (thinking) return "Engine thinking…";
       if (state.status === "checkmate") {
         return `Checkmate — ${state.turn === "white" ? "Black" : "White"} wins`;
       }
@@ -447,6 +508,20 @@
         return "Stalemate — no legal moves";
       }
       return state.inCheck ? "Check!" : "Game in progress";
+    }
+
+    function engineInfoText() {
+      if (!state || !state.engine) return "";
+      if (!state.engineInfo) return `Engine on · ${state.engineDepth} ply`;
+      const info = state.engineInfo;
+      let evaluation;
+      if (info.mateIn) {
+        evaluation = `mate in ${Math.abs(info.mateIn)} (${info.mateIn > 0 ? "engine" : "you"})`;
+      } else {
+        const score = `${info.score >= 0 ? "+" : ""}${(info.score / 100).toFixed(2)}`;
+        evaluation = `eval ${score} (White)`;
+      }
+      return `Engine ${info.depth} ply · ${evaluation} · ${info.nodes.toLocaleString()} nodes · ${info.timeMs} ms`;
     }
 
     function showError(message) {
@@ -513,7 +588,7 @@
 
       statusEl.textContent = statusText();
       turnEl.textContent = state.status === "playing"
-        ? `${state.turn === "white" ? "White" : "Black"} to move`
+        ? `${state.turn === "white" ? "White" : "Black"} to move${state.engine && state.turn === "black" ? " · engine" : ""}`
         : "";
       fenEl.textContent = state.fen;
 
@@ -526,12 +601,17 @@
       });
       historyEl.scrollTop = historyEl.scrollHeight;
 
-      randomBtn.disabled = busy || auto || state.status !== "playing";
-      autoBtn.disabled = state.status !== "playing" && !auto;
+      engineBtn.textContent = state.engine ? "Engine: on" : "Engine: off";
+      engineBtn.classList.toggle("active", state.engine);
+      engineBtn.disabled = busy;
+      depthEl.disabled = busy;
+      randomBtn.disabled = busy || auto || state.engine || state.status !== "playing";
+      autoBtn.disabled = busy || (!auto && (state.engine || state.status !== "playing"));
       autoBtn.textContent = auto ? "Stop auto" : "Auto play";
       autoBtn.classList.toggle("active", auto);
       undoBtn.disabled = busy || state.history.length === 0;
       resetBtn.disabled = busy;
+      engineInfoEl.textContent = engineInfoText();
     }
 
     async function request(path, options = {}) {
@@ -546,15 +626,18 @@
     async function loadState() {
       try {
         state = await request("/api/state");
+        depthEl.value = String(state.engineDepth);
         selected = null;
         render();
       } catch (error) {
         showError(error.message);
+        return;
       }
+      await maybeEngineMove();
     }
 
     async function randomMove() {
-      if (busy || !state || state.status !== "playing") return;
+      if (busy || !state || state.engine || state.status !== "playing") return;
       busy = true;
       selected = null;
       showError("");
@@ -587,6 +670,7 @@
         busy = false;
         render();
       }
+      await maybeEngineMove();
     }
 
     async function resetGame() {
@@ -603,6 +687,7 @@
         busy = false;
         render();
       }
+      await maybeEngineMove();
     }
 
     async function undoMove() {
@@ -620,6 +705,72 @@
         busy = false;
         render();
       }
+      await maybeEngineMove();
+    }
+
+    async function maybeEngineMove() {
+      if (busy || thinking) return;
+      if (!state || !state.engine || state.status !== "playing" || state.turn !== "black") return;
+      thinking = true;
+      busy = true;
+      selected = null;
+      showError("");
+      render();
+      try {
+        state = await request("/api/engine/move", { method: "POST" });
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        thinking = false;
+        busy = false;
+        render();
+      }
+    }
+
+    async function toggleEngine() {
+      if (busy || !state) return;
+      if (auto) stopAuto();
+      const depth = Number(depthEl.value);
+      busy = true;
+      selected = null;
+      showError("");
+      render();
+      try {
+        state = await request("/api/engine", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: !state.engine, depth }),
+        });
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        busy = false;
+        depthEl.value = String(state.engineDepth);
+        render();
+      }
+      await maybeEngineMove();
+    }
+
+    async function changeDepth() {
+      if (busy || !state) return;
+      const depth = Number(depthEl.value);
+      busy = true;
+      showError("");
+      render();
+      try {
+        state = await request("/api/engine", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: state.engine, depth }),
+        });
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        busy = false;
+        depthEl.value = String(state.engineDepth);
+        render();
+      }
+      await maybeEngineMove();
     }
 
     function scheduleAuto() {
@@ -641,7 +792,7 @@
         stopAuto();
         return;
       }
-      if (!state || state.status !== "playing") return;
+      if (!state || state.engine || state.status !== "playing") return;
       auto = true;
       selected = null;
       showError("");
@@ -660,6 +811,7 @@
 
     boardEl.addEventListener("click", (event) => {
       if (!state || state.status !== "playing" || busy) return;
+      if (state.engine && state.turn === "black") return;
       if (auto) stopAuto();
       const square = event.target.closest(".square")?.dataset.square;
       if (!square) return;
@@ -682,6 +834,8 @@
     autoBtn.addEventListener("click", toggleAuto);
     undoBtn.addEventListener("click", undoMove);
     resetBtn.addEventListener("click", resetGame);
+    engineBtn.addEventListener("click", toggleEngine);
+    depthEl.addEventListener("change", changeDepth);
 
     loadState();
   </script>
