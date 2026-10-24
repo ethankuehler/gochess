@@ -286,6 +286,8 @@ func (g *game) snapshotLocked() stateResponse {
 		}
 	} else if b.IsFiftyMoveDraw() {
 		status = "fifty-move"
+	} else if b.IsInsufficientMaterial() {
+		status = "insufficient-material"
 	} else {
 		previousKeys := make([]chess.PositionKey, 0, len(g.positions)-1)
 		for _, previous := range g.positions[:len(g.positions)-1] {

@@ -624,3 +624,20 @@ func TestEngineMoveUsesRepetitionHistory(t *testing.T) {
 		t.Errorf("threefold engine score = %d, want 0", g.engineInfo.Score)
 	}
 }
+
+func TestSnapshotReportsInsufficientMaterial(t *testing.T) {
+	position, err := chess.ParseFEN("4k3/8/8/8/8/8/8/4K3 w - - 0 1")
+	if err != nil {
+		t.Fatalf("ParseFEN: %v", err)
+	}
+
+	g := newGame()
+	t.Cleanup(g.Close)
+	g.positions = []*chess.Position{position}
+	g.history = nil
+
+	state := g.snapshotLocked()
+	if state.Status != "insufficient-material" {
+		t.Fatalf("status = %q, want insufficient-material", state.Status)
+	}
+}

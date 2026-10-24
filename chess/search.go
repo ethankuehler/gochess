@@ -53,7 +53,7 @@ type SearchResult struct {
 	PonderMove Move   // second PV move, when one exists
 	Score      int    // centipawns from the side to move's point of view
 	HasMove    bool   // false for checkmate and stalemate
-	Draw       bool   // root is already a claimable fifty-move or threefold draw
+	Draw       bool   // root is already a fifty-move, threefold, or insufficient-material draw
 	Depth      int    // deepest completed iteration, in plies
 	SelDepth   int    // deepest ply reached
 	Nodes      uint64 // negamax nodes visited, excluding the root
@@ -139,7 +139,7 @@ func (b *Position) SearchWithLimits(ctx context.Context, limits SearchLimits, in
 	}
 	s.pathBase = len(history)
 
-	if b.IsFiftyMoveDraw() || s.repetitionDraw(b.key, int(b.halfmoveClock), 0) {
+	if b.IsFiftyMoveDraw() || b.IsInsufficientMaterial() || s.repetitionDraw(b.key, int(b.halfmoveClock), 0) {
 		// The root is already a claimable draw, but the UCI protocol still
 		// requires a legal move when the GUI asks for one.
 		result.BestMove = moves[0]
@@ -356,7 +356,7 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 		if b.InCheck() && len(b.legalMoves(buf[:0])) == 0 {
 			return -mateScore + ply
 		}
-		if b.IsFiftyMoveDraw() || s.repetitionDraw(b.key, int(b.halfmoveClock), ply) {
+		if b.IsFiftyMoveDraw() || b.IsInsufficientMaterial() || s.repetitionDraw(b.key, int(b.halfmoveClock), ply) {
 			return 0
 		}
 		return b.evaluateForSideToMove()
@@ -371,7 +371,7 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 	}
 	// The fifty-move rule and a third repetition are claimable draws, but a
 	// checkmate on the same node still wins.
-	if b.IsFiftyMoveDraw() || s.repetitionDraw(b.key, int(b.halfmoveClock), ply) {
+	if b.IsFiftyMoveDraw() || b.IsInsufficientMaterial() || s.repetitionDraw(b.key, int(b.halfmoveClock), ply) {
 		return 0
 	}
 	s.keys[s.pathBase+ply] = b.key

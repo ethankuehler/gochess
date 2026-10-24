@@ -119,7 +119,7 @@ func TestRunUsesMoveHistoryForDraws(t *testing.T) {
 	}
 	for _, want := range []string{
 		"depth      0",
-		"draw       fifty-move or threefold repetition",
+		"draw       fifty-move, threefold repetition, or insufficient material",
 		"score      +0.00",
 	} {
 		if !strings.Contains(out, want) {

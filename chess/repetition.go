@@ -16,6 +16,43 @@ func (b *Position) Key() PositionKey { return PositionKey(b.key) }
 // which makes the fifty-move rule claimable by the side to move.
 func (b *Position) IsFiftyMoveDraw() bool { return b.halfmoveClock >= 100 }
 
+// IsInsufficientMaterial reports whether neither side can possibly deliver
+// checkmate with the material on the board. It implements the standard simple
+// dead-position test: no pawns, rooks, or queens, at most one minor piece, or
+// only bishops confined to one colour complex.
+func (b *Position) IsInsufficientMaterial() bool {
+	for _, piece := range []Piece{Pawn, Rook, Queen} {
+		if b.pieceBitboards[piece] != 0 || b.pieceBitboards[int(piece)+blackPieceOffset] != 0 {
+			return false
+		}
+	}
+
+	knights := b.pieceBitboards[Knight] | b.pieceBitboards[Knight+blackPieceOffset]
+	bishops := b.pieceBitboards[Bishop] | b.pieceBitboards[Bishop+blackPieceOffset]
+	minors := bits.OnesCount64(uint64(knights)) + bits.OnesCount64(uint64(bishops))
+	if minors <= 1 {
+		return true
+	}
+	// With knights present, checkmate may still be possible; with bishops on
+	// both colour complexes it definitely is.
+	if knights != 0 || bishops == 0 {
+		return false
+	}
+	color := -1
+	for bishops != 0 {
+		square := Square(bits.TrailingZeros64(uint64(bishops)))
+		bishops &= bishops - 1
+		fr := FileRankFromSquare(square)
+		squareColor := int(fr.file+fr.rank) & 1
+		if color == -1 {
+			color = squareColor
+		} else if color != squareColor {
+			return false
+		}
+	}
+	return true
+}
+
 // RepetitionCount returns how many times this position's key occurs in history.
 // history holds keys of earlier positions, oldest first.
 func (b *Position) RepetitionCount(history []PositionKey) int {

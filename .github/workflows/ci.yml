@@ -49,6 +49,11 @@ jobs:
           STOCKFISH_BIN: /usr/games/stockfish
         run: go test -count=1 -timeout 5m ./chess -run '^TestPerftAgainstStockfish$' -v
 
+      - name: Match against Stockfish
+        env:
+          STOCKFISH_BIN: /usr/games/stockfish
+        run: go test -count=1 -timeout 5m ./cmd/match -run '^TestMatchAgainstStockfish$' -v
+
       - name: UCI smoke test
         run: |
           go build -o gochess ./cmd/uci

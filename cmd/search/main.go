@@ -89,7 +89,7 @@ func run(args []string, out, errOut io.Writer) error {
 	fmt.Fprintf(out, "fen        %s\n", position.FEN())
 	fmt.Fprintf(out, "depth      %d\n", result.Depth)
 	if result.Draw {
-		fmt.Fprintln(out, "draw       fifty-move or threefold repetition")
+		fmt.Fprintln(out, "draw       fifty-move, threefold repetition, or insufficient material")
 	}
 	if !result.HasMove {
 		fmt.Fprintln(out, "bestmove   (none)")

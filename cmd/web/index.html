@@ -510,6 +510,9 @@
       if (state.status === "fifty-move") {
         return "Draw — fifty-move rule";
       }
+      if (state.status === "insufficient-material") {
+        return "Draw — insufficient material";
+      }
       return state.inCheck ? "Check!" : "Game in progress";
     }
 

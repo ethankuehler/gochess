@@ -258,3 +258,46 @@ func TestSearchAvoidsRepetitionWhenAhead(t *testing.T) {
 		t.Errorf("score = 0, want the winning rook evaluation")
 	}
 }
+
+func TestIsInsufficientMaterial(t *testing.T) {
+	cases := []struct {
+		name string
+		fen  string
+		want bool
+	}{
+		{"king versus king", "4k3/8/8/8/8/8/8/4K3 w - - 0 1", true},
+		{"king and bishop", "4k3/8/8/8/8/8/8/4KB2 w - - 0 1", true},
+		{"king and knight", "4k3/8/8/8/8/8/8/4KN2 w - - 0 1", true},
+		{"knight versus knight", "4k1n1/8/8/8/8/8/8/4K1N1 w - - 0 1", false},
+		{"same-colour bishops", "4kb2/8/8/8/8/8/8/2B1K3 w - - 0 1", true},
+		{"opposite-colour bishops", "2b1k3/8/8/8/8/8/8/2B1K3 w - - 0 1", false},
+		{"bishop versus knight", "4k1n1/8/8/8/8/8/8/2B1K3 w - - 0 1", false},
+		{"two knights", "4k3/8/8/8/8/8/8/4KNN1 w - - 0 1", false},
+		{"same-colour bishop pair", "4k3/8/8/8/8/4B3/8/2B1K3 w - - 0 1", true},
+		{"opposite-colour bishop pair", "4k3/8/8/8/8/8/B7/2B1K3 w - - 0 1", false},
+		{"rook", "4k3/8/8/8/8/8/8/4KR2 w - - 0 1", false},
+		{"pawn", "4k3/8/8/8/8/8/4P3/4K3 w - - 0 1", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := mustFEN(t, tc.fen).IsInsufficientMaterial(); got != tc.want {
+				t.Errorf("IsInsufficientMaterial(%q) = %v, want %v", tc.fen, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSearchDrawsByInsufficientMaterial(t *testing.T) {
+	result := mustFEN(t, "4k3/8/8/8/8/8/8/4K3 w - - 0 1").SearchWithLimits(
+		context.Background(), SearchLimits{MaxDepth: 1}, nil)
+	if !result.HasMove {
+		t.Fatal("insufficient-material root returned no legal move")
+	}
+	if !result.Draw {
+		t.Error("insufficient material was not reported as a draw")
+	}
+	if result.Score != 0 {
+		t.Errorf("score = %d, want 0", result.Score)
+	}
+}
