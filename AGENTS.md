@@ -4,8 +4,9 @@
 
 `gochess` is a personal, work-in-progress chess engine written in Go. The author
 is using it to learn Go; per the README it is "not close to done". There is no
-engine search or UCI protocol yet — the codebase currently consists of board
-representation, FEN handling, and attack-table generation/lookup.
+engine search or UCI protocol yet — the codebase covers board representation,
+FEN handling, attack-table generation/lookup, legal move generation, and perft
+verification.
 
 - Module: `github.com/ethankuehler/gochess` (see `go.mod`, `go 1.23.2`)
 - Dependencies: Go standard library only. There is no `go.sum`.
@@ -15,22 +16,28 @@ representation, FEN handling, and attack-table generation/lookup.
   - `chess` (`chess/`) — the actual library. All engine logic lives here.
   - `cmd/genmagics` (`cmd/genmagics/`) — CLI that regenerates the magic-number
     CSVs in `data/`.
+  - `cmd/perft` (`cmd/perft/`) — perft runner, divide printer, fixture suite,
+    and optional Stockfish comparison.
 
 ## Repository layout
 
 - `main.go` — demo entry point (`package main`).
 - `cmd/genmagics/main.go` — regenerates `data/rook_magics.csv` and
   `data/bishop_magics.csv`; run from the repo root.
+- `cmd/perft/main.go` — runs perft, lists legal moves, prints a divide, runs
+  `data/perft.csv`, and can diff a divide against Stockfish; run from the repo
+  root.
 - `chess/` — the engine library (`package chess`):
   - `bitboard.go` — `BitBoard` (`uint64`) and `Position` types, validated FEN
     parse/serialize (`ParseFEN`, `FEN()`), board printing (`String`,
-    `UnicodeString`), `Occupancy`, `PieceBitboard`. `LegalMoves()` is a TODO
-    stub that returns nil.
+    `UnicodeString`), `Occupancy`, `PieceBitboard`.
   - `const.go` — `Square`, `FileRank`, `Piece`, and `Colour` enums, position
-    flag bits, and piece/board notation tables.
+    flag bits, named squares, file masks, and piece/board notation tables.
   - `move.go` — `Move` (from/to `Square` plus flags), `ParseUCIMove`, the
-    `From`/`To`/`Promotion` accessors, and algebraic-notation helpers
-    (`SquareName`, `ParseFileRank`, `ParseSquare`, `BitBoardFromAlgebraic`).
+    `From`/`To`/`Promotion` accessors, move-flag accessors
+    (`IsCapture`, `IsEnPassant`, `IsCastling`, `IsDoublePush`), and
+    algebraic-notation helpers (`SquareName`, `ParseFileRank`, `ParseSquare`,
+    `BitBoardFromAlgebraic`).
   - `magic.go` — precomputed attack tables (knight, king, pawn) loaded from
     CSV, `SlidingAttacks` for sliding pieces, and magic-bitboard
     generation/lookup for rooks and bishops (`MagicEntry`, `findMagic`,
@@ -40,7 +47,13 @@ representation, FEN handling, and attack-table generation/lookup.
     (`loadAttackTable`).
   - `magic_io.go` — magic-number CSV load/save (`LoadMagicEntries`,
     `SaveMagicEntries`).
-  - `bench_test.go` — benchmarks for attack lookups and parsers.
+  - `movegen.go` — attack detection (`isSquareAttacked`), pseudo-legal
+    generation, castling checks, king-safety filtering, `LegalMoves`, and
+    `InCheck`.
+  - `makemove.go` — copy-make `makeMove`, castling-rights updates, en passant,
+    promotions, and clocks.
+  - `perft.go` — `Perft`, `PerftDivide`, and `PerftResult`.
+  - `bench_test.go` — benchmarks for attack lookups, parsers, and perft.
 - `data/` — generated/test data, loaded at runtime via **relative** paths:
   - `knight_attacks.csv`, `king_attacks.csv`, `white/black_pawn_move.csv`,
     `white/black_pawn_attacks.csv` — attack tables (columns: index, start
@@ -50,6 +63,8 @@ representation, FEN handling, and attack-table generation/lookup.
     (not by `generate_attack_tables.py`).
   - `FEN.csv` — FEN corpus used as test fixtures.
   - `sliding_attacks_examples.json` — JSON fixture for sliding attacks.
+  - `perft.csv` — Stockfish-verified perft fixtures (columns: fen, depth,
+    nodes, deep). Rows with `deep=1` run only with `PERFT_DEEP=1`.
 - `generate_attack_tables.py` — Python 3 script that regenerates the CSV
   attack tables in `data/`. Requires `pandas`. Run from the repo root
   (`python3 generate_attack_tables.py`); it writes to `data/*.csv`.
@@ -63,8 +78,15 @@ representation, FEN handling, and attack-table generation/lookup.
 go build ./...            # build everything
 go run .                  # run the demo binary (must run from repo root)
 go run ./cmd/genmagics    # regenerate data/*_magics.csv (from repo root)
+go run ./cmd/perft -depth 5
+go run ./cmd/perft -moves -fen "<FEN>"
+go run ./cmd/perft -depth 4 -divide
+go run ./cmd/perft -depth 4 -compare -fen "<FEN>"
+go run ./cmd/perft -suite data/perft.csv
 go test ./...             # run all tests
 go test -race ./...       # run tests under the race detector
+PERFT_DEEP=1 go test ./chess -run '^TestPerft$' -v
+STOCKFISH_BIN=stockfish go test ./chess -run TestPerftAgainstStockfish
 go test -bench . ./chess  # run benchmarks
 go vet ./...              # static checks
 ```
@@ -106,9 +128,25 @@ Bitboard representation:
   magic search; setting `SaveMagicsToDisk` rewrites the CSVs after a search
   (normally done via `go run ./cmd/genmagics`). Queens reuse the rook and
   bishop lookups via `QueenAttack`.
-- `Move` stores a `from`/`to` `Square` plus flags. A promotion sets
-  `promotionFlag` (bit 3); the low three bits then hold the promotion
-  `Piece`.
+- `Move` stores a `from`/`to` `Square` plus flags. The low three bits hold the
+  promotion `Piece`; bit 3 is `promotionFlag`, bit 4 `captureFlag`, bit 5
+  `doublePushFlag`, bit 6 `enPassantFlag`, and bit 7 `castlingFlag`. Generated
+  moves carry the flags; `ParseUCIMove` is notation-only and must be matched
+  against `LegalMoves` before being applied.
+- `makeMove` is copy-make and returns a new `Position`. It clears castling
+  rights for any move from or to e1/a1/h1/e8/a8/h8, clears the en passant
+  square unless the move is a double push, updates the halfmove/fullmove
+  clocks, and moves the rook when castling.
+- `LegalMoves` generates pseudo-legal moves, applies each one to a copy, and
+  rejects moves that leave the mover's king attacked. Castling additionally
+  checks that the king is not in check and that its transit squares are safe
+  with the king removed from its origin.
+- `Perft` and `PerftDivide` require `BuildAllAttacks`; `TestMain` builds the
+  tables once, and `cmd/perft` builds them at startup. `Perft(0)` is 1.
+- Pawn attack detection in `isSquareAttacked` uses bit shifts with file masks,
+  not the reverse attack tables. The tables are zero on ranks where a pawn of
+  that colour cannot exist (for example black pawns on rank 8), but those
+  entries are needed to find attackers of back-rank squares.
 
 ## Naming conventions
 
@@ -168,15 +206,22 @@ Things to be careful with:
   with random blocker boards, a magic save/load round-trip, disk restore by
   default (`LoadMagicsFromDisk`), the missing-CSV fallback path,
   `BuildAllAttacks`, and rejection of malformed magic CSVs.
-- Benchmarks cover `RookAttack`, `BishopAttack`, `ParseUCIMove`, and
-  `ParseFEN`.
-- There is no test coverage for move application or `LegalMoves` yet
-  (unimplemented).
+- Move-generation coverage includes move flags, make-move FEN transitions,
+  attack detection (including back-rank pawn attacks), castling, en passant,
+  promotions, pins, double check, and legal-move invariants. Perft is
+  data-driven from `data/perft.csv`; the fast rows run by default and the deep
+  rows run with `PERFT_DEEP=1`.
+- `TestPerftAgainstStockfish` is opt-in via `STOCKFISH_BIN` and compares a
+  deterministic random game with Stockfish, which is not required in CI.
+- Benchmarks cover `RookAttack`, `BishopAttack`, `ParseUCIMove`, `ParseFEN`,
+  and `Perft`.
 
 ## Security considerations
 
 - No network code, no external services, no secrets, no third-party Go
   modules — the attack surface is essentially nil.
+- `cmd/perft -compare` executes a local Stockfish binary when explicitly
+  requested; it is not used by CI and does not access the network.
 - Runtime input is limited to FEN/UCI strings and the local `data/` files;
   the parsers return errors on malformed input and are unit-tested against
   invalid cases, but they are not fuzzed.
