@@ -504,6 +504,12 @@
       if (state.status === "stalemate") {
         return "Stalemate — no legal moves";
       }
+      if (state.status === "threefold") {
+        return "Draw — threefold repetition";
+      }
+      if (state.status === "fifty-move") {
+        return "Draw — fifty-move rule";
+      }
       return state.inCheck ? "Check!" : "Game in progress";
     }
 

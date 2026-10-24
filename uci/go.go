@@ -48,7 +48,7 @@ func (e *Engine) handleGo(args []string) {
 		return
 	}
 
-	position, ok := e.positionForGo()
+	position, history, ok := e.positionForGo()
 	if !ok {
 		e.out.line("info string no valid position")
 		e.out.line("bestmove 0000")
@@ -65,9 +65,10 @@ func (e *Engine) handleGo(args []string) {
 	budget := allocateBudget(params, position.SideToMove(), e.options.moveOverhead)
 
 	limits := chess.SearchLimits{
-		MaxDepth:  params.depth,
-		MaxNodes:  params.nodes,
-		RootMoves: rootMoves,
+		MaxDepth:    params.depth,
+		MaxNodes:    params.nodes,
+		RootMoves:   rootMoves,
+		GameHistory: history,
 	}
 	if budget.ok {
 		now := time.Now()

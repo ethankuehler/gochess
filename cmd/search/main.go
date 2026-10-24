@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -26,6 +27,7 @@ func run(args []string, out, errOut io.Writer) error {
 	flags := flag.NewFlagSet("search", flag.ContinueOnError)
 	flags.SetOutput(errOut)
 	fen := flags.String("fen", "", "position in FEN (default: starting position)")
+	moves := flags.String("moves", "", "space-separated UCI moves to apply after the FEN")
 	depth := flags.Int("depth", 4, "search depth in plies")
 	evalOnly := flags.Bool("eval", false, "print the static evaluation and exit")
 
@@ -48,6 +50,19 @@ func run(args []string, out, errOut io.Writer) error {
 		return fmt.Errorf("parse FEN: %w", err)
 	}
 
+	history := make([]chess.PositionKey, 0, len(strings.Fields(*moves)))
+	if *moves != "" {
+		chess.BuildAllAttacks()
+		for _, uci := range strings.Fields(*moves) {
+			history = append(history, position.Key())
+			next, _, err := position.ApplyUCIMove(uci)
+			if err != nil {
+				return fmt.Errorf("apply move %q: %w", uci, err)
+			}
+			position = next
+		}
+	}
+
 	if *evalOnly {
 		score := position.Evaluate()
 		fmt.Fprintf(out, "evaluation %+.2f (white)\n", float64(score)/100)
@@ -65,11 +80,17 @@ func run(args []string, out, errOut io.Writer) error {
 	chess.BuildAllAttacks()
 
 	start := time.Now()
-	result := position.Search(*depth)
+	result := position.SearchWithLimits(context.Background(), chess.SearchLimits{
+		MaxDepth:    *depth,
+		GameHistory: history,
+	}, nil)
 	elapsed := time.Since(start)
 
 	fmt.Fprintf(out, "fen        %s\n", position.FEN())
 	fmt.Fprintf(out, "depth      %d\n", result.Depth)
+	if result.Draw {
+		fmt.Fprintln(out, "draw       fifty-move or threefold repetition")
+	}
 	if !result.HasMove {
 		fmt.Fprintln(out, "bestmove   (none)")
 		if position.InCheck() {

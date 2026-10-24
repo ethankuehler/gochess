@@ -21,7 +21,7 @@ func (e *Engine) handlePosition(args []string) {
 		return
 	}
 
-	position, err := parsePosition(args)
+	position, history, err := parsePosition(args)
 	if err != nil {
 		e.positionFailed(err)
 		return
@@ -29,6 +29,7 @@ func (e *Engine) handlePosition(args []string) {
 
 	e.mu.Lock()
 	e.position = position
+	e.history = history
 	e.posValid = true
 	e.hasPosition = true
 	e.mu.Unlock()
@@ -38,16 +39,18 @@ func (e *Engine) positionFailed(err error) {
 	e.out.line("info string position error: %v", err)
 	e.mu.Lock()
 	e.position = nil
+	e.history = nil
 	e.posValid = false
 	e.hasPosition = true
 	e.mu.Unlock()
 }
 
 // parsePosition parses a position command's arguments and applies every move.
-// It returns a new position and never mutates the engine state on failure.
-func parsePosition(args []string) (*chess.Position, error) {
+// It returns the new position and the keys of the positions before it, oldest
+// first, and never mutates the engine state on failure.
+func parsePosition(args []string) (*chess.Position, []chess.PositionKey, error) {
 	if len(args) == 0 {
-		return nil, fmt.Errorf("position: expected startpos or fen")
+		return nil, nil, fmt.Errorf("position: expected startpos or fen")
 	}
 
 	var (
@@ -67,7 +70,7 @@ func parsePosition(args []string) (*chess.Position, error) {
 			index++
 		}
 		if len(fenFields) < 4 {
-			return nil, fmt.Errorf("position: FEN has %d fields, expected at least 4", len(fenFields))
+			return nil, nil, fmt.Errorf("position: FEN has %d fields, expected at least 4", len(fenFields))
 		}
 		for len(fenFields) < 6 {
 			if len(fenFields) == 4 {
@@ -78,26 +81,28 @@ func parsePosition(args []string) (*chess.Position, error) {
 		}
 		parsed, err := chess.ParseFEN(strings.Join(fenFields, " "))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		position = parsed
 	default:
-		return nil, fmt.Errorf("position: expected startpos or fen, got %q", args[0])
+		return nil, nil, fmt.Errorf("position: expected startpos or fen, got %q", args[0])
 	}
 
+	history := make([]chess.PositionKey, 0, len(args))
 	if index < len(args) {
 		if !strings.EqualFold(args[index], "moves") {
-			return nil, fmt.Errorf("position: unexpected token %q", args[index])
+			return nil, nil, fmt.Errorf("position: unexpected token %q", args[index])
 		}
 		index++
 		for ; index < len(args); index++ {
+			history = append(history, position.Key())
 			next, _, err := position.ApplyUCIMove(args[index])
 			if err != nil {
-				return nil, fmt.Errorf("position: move %q: %w", args[index], err)
+				return nil, nil, fmt.Errorf("position: move %q: %w", args[index], err)
 			}
 			position = next
 		}
 	}
 
-	return position, nil
+	return position, history, nil
 }

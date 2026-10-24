@@ -18,6 +18,11 @@ const (
 	// and the wall-clock deadline. Node and depth limits are checked on every
 	// node; cancellation is checked often enough to keep stop responsive.
 	searchCheckInterval = 256
+
+	// maxRepeatHistory bounds the game history copied into a search. A
+	// position with a halfmove clock of 100 or more is already a draw, so at
+	// most 99 earlier positions can still take part in a repetition.
+	maxRepeatHistory = 100
 )
 
 // SearchLimits describes the bounds of one search. Zero values mean "no limit"
@@ -26,9 +31,10 @@ const (
 type SearchLimits struct {
 	MaxDepth     int
 	MaxNodes     uint64
-	Deadline     time.Time // hard wall-clock deadline; zero means none
-	SoftDeadline time.Time // stop between iterations after this time; zero means none
-	RootMoves    []Move    // nil means every legal move; non-nil restricts the root
+	Deadline     time.Time     // hard wall-clock deadline; zero means none
+	SoftDeadline time.Time     // stop between iterations after this time; zero means none
+	RootMoves    []Move        // nil means every legal move; non-nil restricts the root
+	GameHistory  []PositionKey // keys of positions before the root, oldest first
 }
 
 // SearchInfo is the result of one completed iterative-deepening iteration.
@@ -47,6 +53,7 @@ type SearchResult struct {
 	PonderMove Move   // second PV move, when one exists
 	Score      int    // centipawns from the side to move's point of view
 	HasMove    bool   // false for checkmate and stalemate
+	Draw       bool   // root is already a claimable fifty-move or threefold draw
 	Depth      int    // deepest completed iteration, in plies
 	SelDepth   int    // deepest ply reached
 	Nodes      uint64 // negamax nodes visited, excluding the root
@@ -116,6 +123,33 @@ func (b *Position) SearchWithLimits(ctx context.Context, limits SearchLimits, in
 		deadline: limits.Deadline,
 		maxNodes: limits.MaxNodes,
 	}
+
+	// Only positions since the last irreversible move can repeat, and a
+	// halfmove clock of 100 or more is already a draw, so the useful history
+	// is bounded.
+	history := limits.GameHistory
+	if len(history) > int(b.halfmoveClock) {
+		history = history[len(history)-int(b.halfmoveClock):]
+	}
+	if len(history) > maxRepeatHistory {
+		history = history[len(history)-maxRepeatHistory:]
+	}
+	for i, key := range history {
+		s.keys[i] = uint64(key)
+	}
+	s.pathBase = len(history)
+
+	if b.IsFiftyMoveDraw() || s.repetitionDraw(b.key, int(b.halfmoveClock), 0) {
+		// The root is already a claimable draw, but the UCI protocol still
+		// requires a legal move when the GUI asks for one.
+		result.BestMove = moves[0]
+		result.Score = 0
+		result.HasMove = true
+		result.Draw = true
+		result.PV = []Move{moves[0]}
+		return result
+	}
+	s.keys[s.pathBase] = b.key
 
 	fallback := moves[0]
 	ordered := append([]Move(nil), moves...)
@@ -223,8 +257,40 @@ type searcher struct {
 	stopped  bool
 	seldepth int
 
+	// pathBase is the number of game-history keys prepended to keys. The key
+	// for the node at ply p lives at keys[pathBase+p], which makes repetition
+	// checks a short backwards scan.
+	pathBase int
+	keys     [maxRepeatHistory + maxPly + 1]uint64
+
 	pvTable  [maxPly + 1][maxPly + 1]Move
 	pvLength [maxPly + 1]int
+}
+
+// repetitionDraw reports whether key has already occurred twice in the last
+// halfmoveClock positions of the current line, which would make this the third
+// occurrence and therefore a draw. The current node's key has not been written
+// yet, so only earlier positions are compared.
+func (s *searcher) repetitionDraw(key uint64, halfmoveClock, ply int) bool {
+	if halfmoveClock <= 0 {
+		return false
+	}
+	index := s.pathBase + ply
+	available := index
+	if halfmoveClock < available {
+		available = halfmoveClock
+	}
+	occurrences := 0
+	for offset := 1; offset <= available; offset++ {
+		if s.keys[index-offset] != key {
+			continue
+		}
+		occurrences++
+		if occurrences >= 2 {
+			return true
+		}
+	}
+	return false
 }
 
 // tick counts a node and checks the node limit and, periodically, the context
@@ -282,17 +348,16 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 		s.pvLength[ply] = 0
 	}
 
-	// The fifty-move rule makes the position a claimable draw.
-	if b.halfmoveClock >= 100 {
-		return 0
-	}
-
 	var buf, ordered [256]Move
 	if depth == 0 {
 		// Checkmate at the horizon still has to be detected, otherwise a
-		// depth-1 search would miss mate in one.
+		// depth-1 search would miss mate in one. It also takes precedence over
+		// a draw claim, because checkmate ends the game immediately.
 		if b.InCheck() && len(b.legalMoves(buf[:0])) == 0 {
 			return -mateScore + ply
+		}
+		if b.IsFiftyMoveDraw() || s.repetitionDraw(b.key, int(b.halfmoveClock), ply) {
+			return 0
 		}
 		return b.evaluateForSideToMove()
 	}
@@ -304,6 +369,12 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 		}
 		return 0 // stalemate
 	}
+	// The fifty-move rule and a third repetition are claimable draws, but a
+	// checkmate on the same node still wins.
+	if b.IsFiftyMoveDraw() || s.repetitionDraw(b.key, int(b.halfmoveClock), ply) {
+		return 0
+	}
+	s.keys[s.pathBase+ply] = b.key
 
 	best := -infinity
 	for _, m := range orderMoves(moves, ordered[:0]) {

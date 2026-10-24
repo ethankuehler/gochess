@@ -77,7 +77,7 @@ CGO_ENABLED=0 go build -trimpath \
 | Command | What it does |
 | --- | --- |
 | `go run ./cmd/web [-addr 127.0.0.1:8080]` | Local board. You play White; toggle **Engine** to play Black at a depth you choose, or **Auto play** to watch the engine play both sides. Click-to-move, undo, and reset; reset cancels a running search. |
-| `go run ./cmd/search -depth 5` | Fixed-depth search; prints best move, score, nodes, time, and nps. Add `-fen "<FEN>"` or `-eval` for a static score. |
+| `go run ./cmd/search -depth 5` | Fixed-depth search; prints best move, score, nodes, time, and nps. Add `-fen "<FEN>"`, `-moves "e2e4 e7e5 ..."`, or `-eval` for a static score. |
 | `go run ./cmd/perft -depth 5` | Move-generation node count with time and nps. Flags: `-fen`, `-moves`, `-divide`, `-suite data/perft.csv`, `-deep`, `-compare [-stockfish path]`. |
 | `go run ./cmd/genmagics` | Regenerate `data/rook_magics.csv` and `data/bishop_magics.csv`. |
 | `python3 generate_attack_tables.py` | Regenerate the knight/king/pawn CSVs; requires `pandas`. |
@@ -153,6 +153,7 @@ data/        embedded attack tables, magics, and test fixtures
 ## Known limitations
 
 No transposition table, pondering, MultiPV, Chess960, tablebases, or opening
-book. Threefold repetition and insufficient material are not detected because
-`Position` carries no history; the fifty-move rule is checked during search.
-The engine can find short mates and win free material, but it is not strong yet.
+book. Threefold repetition and the fifty-move rule are detected during search
+when the caller supplies game history (the UCI move list and the web demo both
+do); insufficient material is still not detected. The engine can find short
+mates and win free material, but it is not strong yet.

@@ -211,7 +211,7 @@ func TestAllocateBudget(t *testing.T) {
 }
 
 func TestParsePosition(t *testing.T) {
-	start, err := parsePosition([]string{"startpos"})
+	start, _, err := parsePosition([]string{"startpos"})
 	if err != nil {
 		t.Fatalf("startpos: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestParsePosition(t *testing.T) {
 		t.Fatalf("startpos FEN = %q", start.FEN())
 	}
 
-	afterMove, err := parsePosition([]string{"startpos", "moves", "e2e4", "e7e5"})
+	afterMove, history, err := parsePosition([]string{"startpos", "moves", "e2e4", "e7e5"})
 	if err != nil {
 		t.Fatalf("startpos moves: %v", err)
 	}
@@ -227,8 +227,14 @@ func TestParsePosition(t *testing.T) {
 	if afterMove.FEN() != want {
 		t.Fatalf("after moves FEN = %q, want %q", afterMove.FEN(), want)
 	}
+	if len(history) != 2 {
+		t.Fatalf("after moves history length = %d, want 2", len(history))
+	}
+	if got := afterMove.RepetitionCount(history); got != 0 {
+		t.Fatalf("after moves RepetitionCount = %d, want 0", got)
+	}
 
-	fourFields, err := parsePosition([]string{
+	fourFields, _, err := parsePosition([]string{
 		"fen", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq", "-",
 	})
 	if err != nil {
@@ -238,7 +244,7 @@ func TestParsePosition(t *testing.T) {
 		t.Fatalf("four-field FEN = %q", fourFields.FEN())
 	}
 
-	fiveFields, err := parsePosition([]string{
+	fiveFields, _, err := parsePosition([]string{
 		"fen", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", "w", "KQkq", "-", "4",
 	})
 	if err != nil {
@@ -259,7 +265,7 @@ func TestParsePositionErrors(t *testing.T) {
 		{"startpos", "moves", "e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6", "b5c6", "d7c6", "e1g1", "e8g8"},
 	}
 	for _, args := range cases {
-		if _, err := parsePosition(args); err == nil {
+		if _, _, err := parsePosition(args); err == nil {
 			t.Errorf("parsePosition(%v) succeeded, want an error", args)
 		}
 	}
