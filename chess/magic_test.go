@@ -14,32 +14,32 @@ import (
 func TestPawnAttacks(t *testing.T) {
 	BuildPawnAttacks()
 
-	if WHITE_PAWN_ATTACKS == nil {
+	if whitePawnAttacks == nil {
 		t.Error("nil map")
 	}
 
-	if len(WHITE_PAWN_ATTACKS) != 64 {
-		t.Errorf("map incorrect size, 64 != %d", len(WHITE_PAWN_ATTACKS))
+	if len(whitePawnAttacks) != 64 {
+		t.Errorf("map incorrect size, 64 != %d", len(whitePawnAttacks))
 	}
 }
 
 func TestPawnMoves(t *testing.T) {
 	BuildPawnMoves()
 
-	if WHITE_PAWN_MOVES == nil {
+	if whitePawnMoves == nil {
 		t.Error("White nil map")
 	}
 
-	if len(WHITE_PAWN_MOVES) != 64 {
-		t.Errorf("White map incorrect size, 64 != %d", len(WHITE_PAWN_ATTACKS))
+	if len(whitePawnMoves) != 64 {
+		t.Errorf("White map incorrect size, 64 != %d", len(whitePawnAttacks))
 	}
 
-	if BLACK_PAWN_MOVES == nil {
+	if blackPawnMoves == nil {
 		t.Error("Black nil map")
 	}
 
-	if len(BLACK_PAWN_MOVES) != 64 {
-		t.Errorf("Black map incorrect size, 64 != %d", len(WHITE_PAWN_ATTACKS))
+	if len(blackPawnMoves) != 64 {
+		t.Errorf("Black map incorrect size, 64 != %d", len(whitePawnAttacks))
 	}
 
 	records, err := readCSV("data/white_pawn_move.csv")
@@ -52,8 +52,8 @@ func TestPawnMoves(t *testing.T) {
 		if err != nil {
 			t.Fatalf("could not convert record %v", err)
 		}
-		if WHITE_PAWN_MOVES[val[0]] != BitBoard(val[2]) {
-			t.Errorf("white move did not match gen=%d actual=%d", WHITE_PAWN_MOVES[val[0]], val[2])
+		if whitePawnMoves[val[0]] != BitBoard(val[2]) {
+			t.Errorf("white move did not match gen=%d actual=%d", whitePawnMoves[val[0]], val[2])
 		}
 	}
 
@@ -67,25 +67,25 @@ func TestPawnMoves(t *testing.T) {
 		if err != nil {
 			t.Fatalf("could not convert record %v", err)
 		}
-		if BLACK_PAWN_MOVES[val[0]] != BitBoard(val[2]) {
-			t.Errorf("black move did not match gen=%d actual=%d", BLACK_PAWN_MOVES[val[0]], val[2])
+		if blackPawnMoves[val[0]] != BitBoard(val[2]) {
+			t.Errorf("black move did not match gen=%d actual=%d", blackPawnMoves[val[0]], val[2])
 		}
 	}
 }
 
-func rayCastReference(start Shift, blockers BitBoard, ray Ray) BitBoard {
-	startRow := int(start) / ROW_COL_SIZE
-	startCol := int(start) % ROW_COL_SIZE
+func slidingAttacksReference(start Square, blockers BitBoard, directions Directions) BitBoard {
+	startRow := int(start) / boardSize
+	startCol := int(start) % boardSize
 	var attacks BitBoard = 0
 
-	for _, direction := range ray {
+	for _, direction := range directions {
 		dRow, dCol := direction[0], direction[1]
 		if dRow == 0 && dCol == 0 {
 			continue
 		}
 		row, col := startRow+dRow, startCol+dCol
-		for row >= 0 && row < ROW_COL_SIZE && col >= 0 && col < ROW_COL_SIZE {
-			loc := BitBoard(1) << Shift(col+row*ROW_COL_SIZE)
+		for row >= 0 && row < boardSize && col >= 0 && col < boardSize {
+			loc := BitBoard(1) << Square(col+row*boardSize)
 			attacks |= loc
 			if blockers&loc > 0 {
 				break
@@ -99,11 +99,11 @@ func rayCastReference(start Shift, blockers BitBoard, ray Ray) BitBoard {
 }
 
 type rayCastExample struct {
-	Name     string   `json:"name"`
-	Start    string   `json:"start"`
-	Blockers []string `json:"blockers"`
-	Expected []string `json:"expected"`
-	Ray      string   `json:"ray"`
+	Name       string   `json:"name"`
+	Start      string   `json:"start"`
+	Blockers   []string `json:"blockers"`
+	Expected   []string `json:"expected"`
+	Directions string   `json:"directions"`
 }
 
 func loadRayCastExamples(path string) ([]rayCastExample, error) {
@@ -119,30 +119,30 @@ func loadRayCastExamples(path string) ([]rayCastExample, error) {
 	return tests, nil
 }
 
-func rayFromString(ray string) (Ray, error) {
-	switch ray {
+func parseDirections(directions string) (Directions, error) {
+	switch directions {
 	case "rook":
-		return ROOK_RAY, nil
+		return rookDirections, nil
 	case "bishop":
-		return BISHOP_RAY, nil
+		return bishopDirections, nil
 	default:
-		return Ray{}, fmt.Errorf("invalid ray %q", ray)
+		return Directions{}, fmt.Errorf("invalid directions %q", directions)
 	}
 }
 
-func TestRayCastExamples(t *testing.T) {
-	tests, err := loadRayCastExamples("data/raycast_examples.json")
+func TestSlidingAttacksExamples(t *testing.T) {
+	tests, err := loadRayCastExamples("data/sliding_attacks_examples.json")
 	if err != nil {
 		t.Fatalf("could not load raycast examples: %v", err)
 	}
 
 	for _, test := range tests {
 		t.Run(test.Name, func(t *testing.T) {
-			ray, err := rayFromString(test.Ray)
+			directions, err := parseDirections(test.Directions)
 			if err != nil {
 				t.Fatal(err)
 			}
-			start, err := ShiftFromAlg(test.Start)
+			start, err := ParseSquare(test.Start)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -154,7 +154,7 @@ func TestRayCastExamples(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := RayCast(start, blockers, ray)
+			got := SlidingAttacks(start, blockers, directions)
 
 			if got != expected {
 				t.Errorf("raycast mismatch\nexpected:\n%s\ngot:\n%s", expected.String(), got.String())
@@ -163,13 +163,13 @@ func TestRayCastExamples(t *testing.T) {
 	}
 }
 
-func TestRayCastReferenceCoverage(t *testing.T) {
+func TestSlidingAttacksReferenceCoverage(t *testing.T) {
 	fullBoard := BitBoard(^uint64(0))
 
-	for start := Shift(0); start < Shift(SHIFT_SIZE); start++ {
+	for start := Square(0); start < Square(squareCount); start++ {
 		source := BitBoard(1) << start
 		occupancies := []BitBoard{0, fullBoard &^ source}
-		for blocker := Shift(0); blocker < Shift(SHIFT_SIZE); blocker++ {
+		for blocker := Square(0); blocker < Square(squareCount); blocker++ {
 			if blocker == start {
 				continue
 			}
@@ -177,8 +177,8 @@ func TestRayCastReferenceCoverage(t *testing.T) {
 		}
 
 		for _, blockers := range occupancies {
-			rookExpected := rayCastReference(start, blockers, ROOK_RAY)
-			rookGot := RayCast(start, blockers, ROOK_RAY)
+			rookExpected := slidingAttacksReference(start, blockers, rookDirections)
+			rookGot := SlidingAttacks(start, blockers, rookDirections)
 			if rookGot != rookExpected {
 				t.Fatalf("rook mismatch at start=%d blockers=%d", start, blockers)
 			}
@@ -186,8 +186,8 @@ func TestRayCastReferenceCoverage(t *testing.T) {
 				t.Fatalf("rook attack includes source square at start=%d", start)
 			}
 
-			bishopExpected := rayCastReference(start, blockers, BISHOP_RAY)
-			bishopGot := RayCast(start, blockers, BISHOP_RAY)
+			bishopExpected := slidingAttacksReference(start, blockers, bishopDirections)
+			bishopGot := SlidingAttacks(start, blockers, bishopDirections)
 			if bishopGot != bishopExpected {
 				t.Fatalf("bishop mismatch at start=%d blockers=%d", start, blockers)
 			}
@@ -198,12 +198,12 @@ func TestRayCastReferenceCoverage(t *testing.T) {
 	}
 }
 
-func TestRayCastWithEmptyRay(t *testing.T) {
-	start, _ := ShiftFromAlg("d4")
+func TestSlidingAttacksWithEmptyDirections(t *testing.T) {
+	start, _ := ParseSquare("d4")
 	blockers, _ := SquaresToBitBoard([]string{"d5", "e4", "e5"})
-	got := RayCast(start, blockers, Ray{})
+	got := SlidingAttacks(start, blockers, Directions{})
 	if got != 0 {
-		t.Fatalf("expected no attacks for empty ray, got:\n%s", got.String())
+		t.Fatalf("expected no attacks for empty directions, got:\n%s", got.String())
 	}
 }
 
@@ -234,12 +234,12 @@ func TestGetBishopMask(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.Name, func(t *testing.T) {
-			shift, err := ShiftFromAlg(test.Start)
+			shift, err := ParseSquare(test.Start)
 			if err != nil {
 				t.Fatalf("bad start square %q: %v", test.Start, err)
 			}
 
-			mask := GetBishopMask(CoordsFromShift(shift))
+			mask := GetBishopMask(FileRankFromSquare(shift))
 
 			expected, err := SquaresToBitBoard(test.Expected)
 			if err != nil {
@@ -260,25 +260,25 @@ func TestGetBishopMask(t *testing.T) {
 
 func TestRelevantBlockers(t *testing.T) {
 	cases := []struct {
-		square string
-		ray    Ray
-		bits   int
+		square     string
+		directions Directions
+		bits       int
 	}{
-		{"a1", ROOK_RAY, 12},
-		{"a4", ROOK_RAY, 11},
-		{"d4", ROOK_RAY, 10},
-		{"h8", ROOK_RAY, 12},
-		{"a1", BISHOP_RAY, 6},
-		{"d4", BISHOP_RAY, 9},
-		{"h8", BISHOP_RAY, 6},
+		{"a1", rookDirections, 12},
+		{"a4", rookDirections, 11},
+		{"d4", rookDirections, 10},
+		{"h8", rookDirections, 12},
+		{"a1", bishopDirections, 6},
+		{"d4", bishopDirections, 9},
+		{"h8", bishopDirections, 6},
 	}
 
 	for _, c := range cases {
-		shift, err := ShiftFromAlg(c.square)
+		shift, err := ParseSquare(c.square)
 		if err != nil {
 			t.Fatalf("bad square %q: %v", c.square, err)
 		}
-		mask := RelevantBlockers(CoordsFromShift(shift), c.ray)
+		mask := RelevantBlockers(FileRankFromSquare(shift), c.directions)
 		if got := bits.OnesCount64(uint64(mask)); got != c.bits {
 			t.Errorf("%s: expected %d relevant bits, got %d", c.square, c.bits, got)
 		}
@@ -293,15 +293,15 @@ func TestMagicAttacksAgainstRayCast(t *testing.T) {
 	BuildBishopAttacks()
 
 	rng := rand.New(rand.NewPCG(1, 2))
-	for shift := Shift(0); shift < SHIFT_SIZE; shift++ {
+	for shift := Square(0); shift < squareCount; shift++ {
 		for range 200 {
 			occupancy := BitBoard(rng.Uint64())
-			rookWant := RayCast(shift, occupancy, ROOK_RAY)
-			if got := GetRookAttack(shift, occupancy); got != rookWant {
+			rookWant := SlidingAttacks(shift, occupancy, rookDirections)
+			if got := RookAttack(shift, occupancy); got != rookWant {
 				t.Fatalf("rook mismatch at shift=%d\nexpected:\n%s\ngot:\n%s", shift, rookWant.String(), got.String())
 			}
-			bishopWant := RayCast(shift, occupancy, BISHOP_RAY)
-			if got := GetBishopAttack(shift, occupancy); got != bishopWant {
+			bishopWant := SlidingAttacks(shift, occupancy, bishopDirections)
+			if got := BishopAttack(shift, occupancy); got != bishopWant {
 				t.Fatalf("bishop mismatch at shift=%d\nexpected:\n%s\ngot:\n%s", shift, bishopWant.String(), got.String())
 			}
 		}
@@ -312,15 +312,15 @@ func TestMagicsSaveLoadRoundTrip(t *testing.T) {
 	BuildRookAttacks()
 
 	path := filepath.Join(t.TempDir(), "rook_magics.csv")
-	SaveMagics(path, ROOK_MAGIC)
-	loaded := LoadMagics(path)
+	SaveMagicEntries(path, rookMagicEntries)
+	loaded := LoadMagicEntries(path)
 
-	if len(loaded) != len(ROOK_MAGIC) {
-		t.Fatalf("loaded %d entries, expected %d", len(loaded), len(ROOK_MAGIC))
+	if len(loaded) != len(rookMagicEntries) {
+		t.Fatalf("loaded %d entries, expected %d", len(loaded), len(rookMagicEntries))
 	}
-	for i := range ROOK_MAGIC {
-		if loaded[i] != ROOK_MAGIC[i] {
-			t.Errorf("square %d: loaded %+v != generated %+v", i, loaded[i], ROOK_MAGIC[i])
+	for i := range rookMagicEntries {
+		if loaded[i] != rookMagicEntries[i] {
+			t.Errorf("square %d: loaded %+v != generated %+v", i, loaded[i], rookMagicEntries[i])
 		}
 	}
 }
@@ -334,13 +334,13 @@ func TestBuildMagicsFromDisk(t *testing.T) {
 	BuildBishopAttacks()
 
 	rng := rand.New(rand.NewPCG(3, 4))
-	for shift := Shift(0); shift < SHIFT_SIZE; shift++ {
+	for shift := Square(0); shift < squareCount; shift++ {
 		for range 10 {
 			occupancy := BitBoard(rng.Uint64())
-			if got, want := GetRookAttack(shift, occupancy), RayCast(shift, occupancy, ROOK_RAY); got != want {
+			if got, want := RookAttack(shift, occupancy), SlidingAttacks(shift, occupancy, rookDirections); got != want {
 				t.Fatalf("disk-loaded rook mismatch at shift=%d\nexpected:\n%s\ngot:\n%s", shift, want.String(), got.String())
 			}
-			if got, want := GetBishopAttack(shift, occupancy), RayCast(shift, occupancy, BISHOP_RAY); got != want {
+			if got, want := BishopAttack(shift, occupancy), SlidingAttacks(shift, occupancy, bishopDirections); got != want {
 				t.Fatalf("disk-loaded bishop mismatch at shift=%d\nexpected:\n%s\ngot:\n%s", shift, want.String(), got.String())
 			}
 		}
@@ -357,9 +357,9 @@ func TestSaveMagicsToDiskFlag(t *testing.T) {
 	})
 
 	path := filepath.Join(t.TempDir(), "bishop_magics.csv")
-	magics, _ := buildSliderAttacks(BISHOP_RAY, path)
+	magics, _ := buildSliderAttacks(bishopDirections, path)
 
-	loaded := LoadMagics(path)
+	loaded := LoadMagicEntries(path)
 	for i := range magics {
 		if loaded[i] != magics[i] {
 			t.Errorf("square %d: saved %+v != generated %+v", i, loaded[i], magics[i])
@@ -380,14 +380,14 @@ func TestMagicsLoadFromDiskByDefault(t *testing.T) {
 		build func()
 		get   func() []MagicEntry
 	}{
-		{"rook", "data/rook_magics.csv", BuildRookAttacks, func() []MagicEntry { return ROOK_MAGIC }},
-		{"bishop", "data/bishop_magics.csv", BuildBishopAttacks, func() []MagicEntry { return BISHOP_MAGIC }},
+		{"rook", "data/rook_magics.csv", BuildRookAttacks, func() []MagicEntry { return rookMagicEntries }},
+		{"bishop", "data/bishop_magics.csv", BuildBishopAttacks, func() []MagicEntry { return bishopMagicEntries }},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.build()
-			disk := LoadMagics(tc.file)
+			disk := LoadMagicEntries(tc.file)
 			built := tc.get()
 			if len(built) != len(disk) {
 				t.Fatalf("built %d entries, disk has %d", len(built), len(disk))
@@ -411,15 +411,15 @@ func TestBuildSliderAttacksFallsBackWhenMissing(t *testing.T) {
 	})
 
 	missing := filepath.Join(t.TempDir(), "missing.csv")
-	magics, tables := buildSliderAttacks(BISHOP_RAY, missing)
-	if len(magics) != SHIFT_SIZE || len(tables) != SHIFT_SIZE {
-		t.Fatalf("expected %d entries, got %d magics and %d tables", SHIFT_SIZE, len(magics), len(tables))
+	magics, tables := buildSliderAttacks(bishopDirections, missing)
+	if len(magics) != squareCount || len(tables) != squareCount {
+		t.Fatalf("expected %d entries, got %d magics and %d tables", squareCount, len(magics), len(tables))
 	}
 
 	occupancy := BitBoard(0x00FF000000FF0000)
-	for shift := Shift(0); shift < SHIFT_SIZE; shift++ {
-		want := RayCast(shift, occupancy, BISHOP_RAY)
-		got := tables[shift][MagicIndex(magics[shift], occupancy)]
+	for shift := Square(0); shift < squareCount; shift++ {
+		want := SlidingAttacks(shift, occupancy, bishopDirections)
+		got := tables[shift][magicIndex(magics[shift], occupancy)]
 		if got != want {
 			t.Fatalf("shift %d: fallback attack mismatch\nexpected:\n%s\ngot:\n%s", shift, want.String(), got.String())
 		}
@@ -437,7 +437,7 @@ func TestTryLoadMagicsRejectsBadCSV(t *testing.T) {
 
 	var b strings.Builder
 	b.WriteString("square,mask,magic\n")
-	for i := 0; i < SHIFT_SIZE; i++ {
+	for i := 0; i < squareCount; i++ {
 		if i == 7 {
 			fmt.Fprintf(&b, "%d,1,not-a-number\n", i)
 			continue
@@ -457,11 +457,11 @@ func TestGetQueenAttack(t *testing.T) {
 	BuildBishopAttacks()
 
 	rng := rand.New(rand.NewPCG(5, 6))
-	for shift := Shift(0); shift < SHIFT_SIZE; shift++ {
+	for shift := Square(0); shift < squareCount; shift++ {
 		for range 25 {
 			occupancy := BitBoard(rng.Uint64())
-			want := RayCast(shift, occupancy, ROOK_RAY) | RayCast(shift, occupancy, BISHOP_RAY)
-			if got := GetQueenAttack(shift, occupancy); got != want {
+			want := SlidingAttacks(shift, occupancy, rookDirections) | SlidingAttacks(shift, occupancy, bishopDirections)
+			if got := QueenAttack(shift, occupancy); got != want {
 				t.Fatalf("queen mismatch at shift=%d\nexpected:\n%s\ngot:\n%s", shift, want.String(), got.String())
 			}
 		}
@@ -472,23 +472,23 @@ func TestBuildAllAttacks(t *testing.T) {
 	BuildAllAttacks()
 
 	tables := map[string][]BitBoard{
-		"knight":             KNIGHT_ATTACKS,
-		"king":               KING_ATTACKS,
-		"white pawn attacks": WHITE_PAWN_ATTACKS,
-		"white pawn moves":   WHITE_PAWN_MOVES,
-		"black pawn attacks": BLACK_PAWN_ATTACKS,
-		"black pawn moves":   BLACK_PAWN_MOVES,
+		"knight":             knightAttacks,
+		"king":               kingAttacks,
+		"white pawn attacks": whitePawnAttacks,
+		"white pawn moves":   whitePawnMoves,
+		"black pawn attacks": blackPawnAttacks,
+		"black pawn moves":   blackPawnMoves,
 	}
 	for name, table := range tables {
-		if len(table) != SHIFT_SIZE {
-			t.Errorf("%s table has %d entries, want %d", name, len(table), SHIFT_SIZE)
+		if len(table) != squareCount {
+			t.Errorf("%s table has %d entries, want %d", name, len(table), squareCount)
 		}
 	}
 
-	if len(ROOK_MAGIC) != SHIFT_SIZE || len(rookAttacks) != SHIFT_SIZE {
-		t.Errorf("rook tables have %d magics and %d attack tables", len(ROOK_MAGIC), len(rookAttacks))
+	if len(rookMagicEntries) != squareCount || len(rookAttackTables) != squareCount {
+		t.Errorf("rook tables have %d magics and %d attack tables", len(rookMagicEntries), len(rookAttackTables))
 	}
-	if len(BISHOP_MAGIC) != SHIFT_SIZE || len(BISHOP_ATTACKS) != SHIFT_SIZE {
-		t.Errorf("bishop tables have %d magics and %d attack tables", len(BISHOP_MAGIC), len(BISHOP_ATTACKS))
+	if len(bishopMagicEntries) != squareCount || len(bishopAttackTables) != squareCount {
+		t.Errorf("bishop tables have %d magics and %d attack tables", len(bishopMagicEntries), len(bishopAttackTables))
 	}
 }

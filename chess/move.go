@@ -8,7 +8,7 @@ import (
 )
 
 // promotionFlag marks a move that promotes a pawn. The low three bits of
-// encoding then hold the promotion Piece (QUEEN, ROOK, BISHOP, or KNIGHT).
+// encoding then hold the promotion Piece (Queen, Rook, Bishop, or Knight).
 const promotionFlag uint16 = 1 << 3
 
 type Move struct {
@@ -17,18 +17,18 @@ type Move struct {
 	encoding uint16   //flags; see promotionFlag
 }
 
-// NewMoveUCI creates a move from a UCI string such as "e2e4" or "e7e8q".
-func NewMoveUCI(UCI string) (*Move, error) {
+// ParseUCIMove creates a move from a UCI string such as "e2e4" or "e7e8q".
+func ParseUCIMove(UCI string) (*Move, error) {
 	if len(UCI) != 4 && len(UCI) != 5 {
 		return nil, fmt.Errorf("invalid UCI move %q: expected 4 or 5 characters", UCI)
 	}
 
-	start, err := LocFromAlg(UCI[:2])
+	start, err := BitBoardFromAlg(UCI[:2])
 	if err != nil {
 		return nil, fmt.Errorf("invalid UCI move %q: %w", UCI, err)
 	}
 
-	end, err := LocFromAlg(UCI[2:4])
+	end, err := BitBoardFromAlg(UCI[2:4])
 	if err != nil {
 		return nil, fmt.Errorf("invalid UCI move %q: %w", UCI, err)
 	}
@@ -42,13 +42,13 @@ func NewMoveUCI(UCI string) (*Move, error) {
 		var promotion Piece
 		switch strings.ToLower(UCI[4:]) {
 		case "q":
-			promotion = QUEEN
+			promotion = Queen
 		case "r":
-			promotion = ROOK
+			promotion = Rook
 		case "b":
-			promotion = BISHOP
+			promotion = Bishop
 		case "n":
-			promotion = KNIGHT
+			promotion = Knight
 		default:
 			return nil, fmt.Errorf("invalid UCI move %q: promotion must be q, r, b, or n", UCI)
 		}
@@ -68,20 +68,20 @@ func (m Move) String() string {
 }
 
 // From returns the square the move starts on.
-func (m Move) From() Shift {
-	return Shift(bits.TrailingZeros64(uint64(m.start)))
+func (m Move) From() Square {
+	return Square(bits.TrailingZeros64(uint64(m.start)))
 }
 
 // To returns the square the move ends on.
-func (m Move) To() Shift {
-	return Shift(bits.TrailingZeros64(uint64(m.end)))
+func (m Move) To() Square {
+	return Square(bits.TrailingZeros64(uint64(m.end)))
 }
 
 // Promotion returns the piece a pawn promotes to. ok is false for moves that
 // are not promotions.
 func (m Move) Promotion() (promotion Piece, ok bool) {
 	if m.encoding&promotionFlag == 0 {
-		return ALL, false
+		return NoPiece, false
 	}
 	return Piece(m.encoding & 0b111), true
 }
@@ -89,8 +89,8 @@ func (m Move) Promotion() (promotion Piece, ok bool) {
 // find algebraic position from position
 func AlgFromLoc(loc BitBoard) string {
 	col, row := 0, 0
-	colMask := COLUMN_MASK
-	rowMask := ROW_MASK
+	colMask := fileAMask
+	rowMask := rank1Mask
 	for i := range 8 {
 		if colMask&loc > 0 {
 			col = i
@@ -102,15 +102,15 @@ func AlgFromLoc(loc BitBoard) string {
 		rowMask = rowMask << 8
 	}
 
-	return fmt.Sprintf("%c%d", COLUMNS[col], row+1)
+	return fmt.Sprintf("%c%d", fileNames[col], row+1)
 }
 
-func RowColFromAlg(alg string) (uint64, uint64, error) {
+func ParseFileRank(alg string) (uint64, uint64, error) {
 	if len(alg) != 2 {
 		return 0, 0, fmt.Errorf("invalid algebraic notation %q: expected two characters", alg)
 	}
 
-	col := slices.Index(COLUMNS, rune(alg[0]))
+	col := slices.Index(fileNames, rune(alg[0]))
 	if col == -1 || alg[1] < '1' || alg[1] > '8' {
 		return 0, 0, fmt.Errorf("invalid algebraic notation %q", alg)
 	}
@@ -119,17 +119,17 @@ func RowColFromAlg(alg string) (uint64, uint64, error) {
 	return uint64(row), uint64(col), nil
 }
 
-func ShiftFromAlg(alg string) (Shift, error) {
-	row, col, err := RowColFromAlg(alg)
+func ParseSquare(alg string) (Square, error) {
+	row, col, err := ParseFileRank(alg)
 	if err != nil {
 		return 0, err
 	}
-	return ShiftFromCoords(Coordinates{row: row, col: col}), nil
+	return SquareFromFileRank(FileRank{row: row, col: col}), nil
 }
 
 // Given algebraic notation for a position (e.g. c5) calculate the position.
-func LocFromAlg(alg string) (BitBoard, error) {
-	shift, err := ShiftFromAlg(alg)
+func BitBoardFromAlg(alg string) (BitBoard, error) {
+	shift, err := ParseSquare(alg)
 	if err != nil {
 		return 0, err
 	}

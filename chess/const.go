@@ -4,52 +4,52 @@ import (
 	"iter"
 )
 
-type Shift int
+type Square int
 
-const SHIFT_SIZE = 64
-const ROW_COL_SIZE = 8
+const squareCount = 64
+const boardSize = 8
 
-type Coordinates struct {
+type FileRank struct {
 	row uint64
 	col uint64
 }
 
-func CoordsFromShift(shift Shift) Coordinates {
-	col := shift % ROW_COL_SIZE
-	row := shift / ROW_COL_SIZE
-	return Coordinates{row: uint64(row), col: uint64(col)}
+func FileRankFromSquare(shift Square) FileRank {
+	col := shift % boardSize
+	row := shift / boardSize
+	return FileRank{row: uint64(row), col: uint64(col)}
 }
 
-func ShiftFromCoords(coord Coordinates) Shift {
-	return Shift(coord.col + coord.row*ROW_COL_SIZE)
+func SquareFromFileRank(coord FileRank) Square {
+	return Square(coord.col + coord.row*boardSize)
 }
 
 // Index for certain pieces.
 type Piece int
 
 const (
-	ALL    Piece = -1
-	PAWN   Piece = 0
-	BISHOP Piece = 1
-	KNIGHT Piece = 2
-	ROOK   Piece = 3
-	QUEEN  Piece = 4
-	KING   Piece = 5
+	NoPiece Piece = -1
+	Pawn    Piece = 0
+	Bishop  Piece = 1
+	Knight  Piece = 2
+	Rook    Piece = 3
+	Queen   Piece = 4
+	King    Piece = 5
 )
 
-const BLACK_OFFSET = 6
+const blackPieceOffset = 6
 
-func PiecesIter(colour Colour) iter.Seq[Piece] {
+func PieceTypes(colour Colour) iter.Seq[Piece] {
 	var start Piece
 	var stop Piece
 	switch colour {
-	case WHITE:
+	case White:
 		start = 0
-		stop = BLACK_OFFSET
-	case BLACK:
-		start = BLACK_OFFSET
-		stop = BLACK_OFFSET + 6
-	case BOTH:
+		stop = blackPieceOffset
+	case Black:
+		start = blackPieceOffset
+		stop = blackPieceOffset + 6
+	case Both:
 		start = 0
 		stop = 12
 	}
@@ -66,31 +66,31 @@ func PiecesIter(colour Colour) iter.Seq[Piece] {
 
 // mask for game encoding.
 const (
-	TURN_MASK     uint8 = 1
-	WHITEOO_MASK  uint8 = 1 << 1
-	WHITEOOO_MASK uint8 = 1 << 2
-	BLACKOO_MASK  uint8 = 1 << 3
-	BLACKOOO_MASK uint8 = 1 << 4
+	whiteToMove            uint8 = 1
+	whiteKingsideCastling  uint8 = 1 << 1
+	whiteQueensideCastling uint8 = 1 << 2
+	blackKingsideCastling  uint8 = 1 << 3
+	blackQueensideCastling uint8 = 1 << 4
 )
 
 type Colour int
 
 const (
-	BOTH  Colour = -1
-	WHITE Colour = 0
-	BLACK Colour = 1
+	Both  Colour = -1
+	White Colour = 0
+	Black Colour = 1
 )
 
 // precalculated positional masking.
 const (
-	ROW_MASK    BitBoard = 255
-	COLUMN_MASK BitBoard = 72340172838076673
+	rank1Mask BitBoard = 255
+	fileAMask BitBoard = 72340172838076673
 )
 
 // String information for formatting and chess notation.
 var (
 	pieceSymbols        = []string{"P", "B", "N", "R", "Q", "K", "p", "b", "n", "r", "q", "k"}
 	unicodePieceSymbols = []string{"♙", "♗", "♘", "♖", "♕", "♔", "♟", "♝", "♞", "♜", "♛", "♚"}
-	CASTLE_SYM          = []string{"K", "Q", "k", "q"}
-	COLUMNS             = []rune{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'}
+	castlingSymbols     = []string{"K", "Q", "k", "q"}
+	fileNames           = []rune{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'}
 )

@@ -8,8 +8,8 @@ import (
 	"strconv"
 )
 
-func LoadAttacks(fileName string) []BitBoard {
-	target := make([]BitBoard, SHIFT_SIZE)
+func loadAttackTable(fileName string) []BitBoard {
+	target := make([]BitBoard, squareCount)
 	data, err := readCSV(fileName)
 	if err != nil {
 		log.Fatalf("Unable to read file: %s", err.Error())
@@ -58,10 +58,10 @@ func readRecord(record []string) ([]uint64, error) {
 	return output, nil
 }
 
-// LoadMagics reads a CSV of magic entries (square, mask, magic), one row
+// LoadMagicEntries reads a CSV of magic entries (square, mask, magic), one row
 // per square, and exits the process on failure. Callers that can recover
 // should use tryLoadMagics.
-func LoadMagics(fileName string) []MagicEntry {
+func LoadMagicEntries(fileName string) []MagicEntry {
 	entries, err := tryLoadMagics(fileName)
 	if err != nil {
 		log.Fatalf("Unable to load magics from %s: %s", fileName, err.Error())
@@ -72,17 +72,17 @@ func LoadMagics(fileName string) []MagicEntry {
 // tryLoadMagics reads and validates a magic CSV. IndexBits is recomputed
 // from the mask so it always agrees with the data.
 func tryLoadMagics(fileName string) ([]MagicEntry, error) {
-	target := make([]MagicEntry, SHIFT_SIZE)
+	target := make([]MagicEntry, squareCount)
 	data, err := readCSV(fileName)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(data) != SHIFT_SIZE+1 {
-		return nil, fmt.Errorf("expected %d data rows, filename: %s", SHIFT_SIZE, fileName)
+	if len(data) != squareCount+1 {
+		return nil, fmt.Errorf("expected %d data rows, filename: %s", squareCount, fileName)
 	}
 
-	seen := make(map[uint64]bool, SHIFT_SIZE)
+	seen := make(map[uint64]bool, squareCount)
 	for _, record := range data[1:] {
 		val, err := readRecord(record)
 		if err != nil {
@@ -91,23 +91,23 @@ func tryLoadMagics(fileName string) ([]MagicEntry, error) {
 		if len(val) != 3 {
 			return nil, fmt.Errorf("expected 3 columns, filename: %s", fileName)
 		}
-		if val[0] >= SHIFT_SIZE {
+		if val[0] >= squareCount {
 			return nil, fmt.Errorf("square %d out of range, filename: %s", val[0], fileName)
 		}
 		if seen[val[0]] {
 			return nil, fmt.Errorf("duplicate square %d, filename: %s", val[0], fileName)
 		}
 		seen[val[0]] = true
-		target[val[0]] = NewMagicEntry(BitBoard(val[1]), val[2])
+		target[val[0]] = newMagicEntry(BitBoard(val[1]), val[2])
 	}
 	return target, nil
 }
 
-// SaveMagics writes magic entries to a CSV (square, mask, magic), one row
-// per square, in the same format LoadMagics reads.
-func SaveMagics(fileName string, entries []MagicEntry) {
-	if len(entries) != SHIFT_SIZE {
-		log.Fatalf("Error, expected %d magic entries, got %d", SHIFT_SIZE, len(entries))
+// SaveMagicEntries writes magic entries to a CSV (square, mask, magic), one row
+// per square, in the same format LoadMagicEntries reads.
+func SaveMagicEntries(fileName string, entries []MagicEntry) {
+	if len(entries) != squareCount {
+		log.Fatalf("Error, expected %d magic entries, got %d", squareCount, len(entries))
 	}
 
 	file, err := os.Create(fileName)
