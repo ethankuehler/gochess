@@ -5,8 +5,8 @@
 `gochess` is a personal, work-in-progress chess engine written in Go. The author
 is using it to learn Go; per the README it is "not close to done". The codebase
 covers board representation, FEN handling, attack-table generation/lookup, legal
-move generation, perft verification, a hand-written evaluation, and a
-fixed-depth alpha-beta search. There is no UCI protocol yet.
+move generation, perft verification, a hand-written evaluation, iterative-
+deepening alpha-beta search, and a UCI front end.
 
 - Module: `github.com/ethankuehler/gochess` (see `go.mod`, `go 1.23.2`)
 - Dependencies: Go standard library only. There is no `go.sum`.
@@ -14,15 +14,22 @@ fixed-depth alpha-beta search. There is no UCI protocol yet.
   - `main` (repo root, `main.go`) — a scratch/demo binary that builds attack
     tables, parses a FEN, and prints boards. Not a real application yet.
   - `chess` (`chess/`) — the actual library. All engine logic lives here.
+  - `uci` (`uci/`) — the UCI protocol layer: command loop, position/go parsing,
+    time management, info formatting, options, and bench. It imports `chess`
+    and `data`; `chess` does not import it.
+  - `data` (`data/`) — embeds the eight runtime CSVs with `//go:embed` so the
+    UCI binary is self-contained. The CSVs remain the canonical source data.
+  - `cmd/uci` (`cmd/uci/`) — the UCI executable. Thin wrapper around `uci.Run`
+    with `bench` and `-version` modes.
   - `cmd/genmagics` (`cmd/genmagics/`) — CLI that regenerates the magic-number
     CSVs in `data/`.
   - `cmd/perft` (`cmd/perft/`) — perft runner, divide printer, fixture suite,
     and optional Stockfish comparison.
   - `cmd/search` (`cmd/search/`) — fixed-depth search CLI; prints the best
     move, score, nodes, time, and nps, or just the static evaluation.
-  - `cmd/web` (`cmd/web/`) — local browser board backed by the engine; play
-    against the alpha-beta search (human White, engine Black), plus random
-    moves, click-to-move, auto-play, undo, and reset.
+  - `cmd/web` (`cmd/web/`) — local browser board; human White, engine Black.
+    Engine replies are requested through an in-process `uci.Client` using
+    `position`/`go depth`, plus random moves, click-to-move, undo, and reset.
 
 ## Repository layout
 
@@ -35,11 +42,38 @@ fixed-depth alpha-beta search. There is no UCI protocol yet.
 - `cmd/search/main.go` — parses a FEN, builds the attack tables, and runs
   `Position.Search`; `-eval` prints the static score instead. Run from the repo
   root so the `data/` paths resolve.
+- `cmd/uci/main.go` — the UCI executable. `go build -o gochess ./cmd/uci`
+  produces a self-contained binary; `gochess bench [depth]` runs the benchmark
+  and exits, and `gochess -version` prints the version. Normal startup runs the
+  UCI command loop on stdin/stdout.
 - `cmd/web/main.go` and `cmd/web/index.html` — HTTP server and embedded board
   UI. The server owns one in-memory game and exposes `/api/state`,
   `/api/random`, `/api/move`, `/api/engine`, `/api/engine/move`, `/api/reset`,
-  and `/api/undo`. Engine mode plays Black against a human White; the panel has
-  an engine toggle and a 1-5 ply depth selector.
+  and `/api/undo`. Engine mode plays Black against a human White; each engine
+  move sends `position fen` and `go depth N` to an in-process `uci.Client` and
+  applies the returned `bestmove`. The panel has an engine toggle and a 1-5 ply
+  depth selector. `newGame` starts the client; `game.Close` shuts it down, and
+  tests must close the game.
+- `uci/` — the UCI protocol layer (`package uci`):
+  - `engine.go` — `Engine`, `Run`, command loop, handshake, `isready`,
+    `setoption`, `ucinewgame`, `stop`, `quit`, EOF handling, and the
+    command-loop/search-goroutine state split.
+  - `position.go` — `position startpos|fen ... moves ...`, 4/5-field FEN
+    padding, and move application through `Position.ApplyUCIMove`.
+  - `go.go` — `go` parsing, `searchmoves`, root filtering, and conservative
+    clock allocation (`allocateBudget`, `Move Overhead`).
+  - `search.go` — search goroutine, info formatting, final info, `bestmove`,
+    infinite-mode waiting, and panic recovery.
+  - `client.go` — GUI-side `Client` used by `cmd/web` and tests:
+    `StartInProcess`, `SetPosition`, `GoDepth`, `NewGame`, and `Close`. A
+    dedicated reader goroutine drains engine output so a command write cannot
+    deadlock against an `info string` response.
+  - `options.go` — the two advertised options (`Threads` fixed at 1 and
+    `Move Overhead`) plus tolerant `setoption` parsing for ignored options.
+  - `output.go` — mutex-protected, flushed stdout writer.
+  - `bench.go` — fixed-position deterministic benchmark.
+  - `version.go` — engine name, author, and `Version` (overridable with
+    `-ldflags -X`).
 - `chess/` — the engine library (`package chess`):
   - `bitboard.go` — `BitBoard` (`uint64`) and `Position` types, validated FEN
     parse/serialize (`ParseFEN`, `FEN()`), board printing (`String`,
@@ -51,15 +85,19 @@ fixed-depth alpha-beta search. There is no UCI protocol yet.
     (`IsCapture`, `IsEnPassant`, `IsCastling`, `IsDoublePush`), and
     algebraic-notation helpers (`SquareName`, `ParseFileRank`, `ParseSquare`,
     `BitBoardFromAlgebraic`).
+  - `ucimove.go` — `FindLegalMove` (matches notation-only moves by
+    from/to/promotion and returns the flagged generated move) and
+    `ApplyUCIMove` (parse, match, and apply in one step). Use these for any
+    UCI/FEN move list; `ParseUCIMove` alone is not enough for `ApplyMove`.
   - `magic.go` — precomputed attack tables (knight, king, pawn) loaded from
-    CSV, `SlidingAttacks` for sliding pieces, and magic-bitboard
-    generation/lookup for rooks and bishops (`MagicEntry`, `findMagic`,
-    `tryMagic`, `RelevantBlockers`, `RookAttack`, `BishopAttack`,
-    `QueenAttack`).
-  - `csv.go` — CSV plumbing (`readCSV`, `readRecord`) and attack-table loading
-    (`loadAttackTable`).
+    CSV, `SlidingAttacks` for sliding pieces, magic-bitboard generation/lookup
+    for rooks and bishops (`MagicEntry`, `findMagic`, `tryMagic`,
+    `RelevantBlockers`, `RookAttack`, `BishopAttack`, `QueenAttack`), and
+    `BuildAllAttacksFromFS` for the embedded UCI tables.
+  - `csv.go` — CSV plumbing (`readCSV`, `readCSVFS`, `readRecord`) and
+    attack-table loading (`loadAttackTable`, `loadAttackTableFS`).
   - `magic_io.go` — magic-number CSV load/save (`LoadMagicEntries`,
-    `SaveMagicEntries`).
+    `LoadMagicEntriesFS`, `SaveMagicEntries`).
   - `movegen.go` — attack detection (`isSquareAttacked`), pseudo-legal
     generation, castling checks, king-safety filtering, `LegalMoves`, and
     `InCheck`.
@@ -68,11 +106,16 @@ fixed-depth alpha-beta search. There is no UCI protocol yet.
   - `perft.go` — `Perft`, `PerftDivide`, and `PerftResult`.
   - `eval.go` — material values and the precomputed piece-square table
     (centrality, king safety, pawn advancement), plus `Position.Evaluate`.
-  - `search.go` — `MateScore`, `SearchResult`, fixed-depth negamax alpha-beta
-    `Search`, capture-first move ordering, and `ScoreToMate`.
+  - `search.go` — `MateScore`, `SearchResult`, `SearchInfo`, `SearchLimits`,
+    fixed-depth `Search`, iterative-deepening `SearchWithLimits`, capture-first
+    move ordering, PV tracking, seldepth, cancellation/deadline/node limits,
+    and `ScoreToMate`.
   - `bench_test.go` — benchmarks for attack lookups, parsers, perft,
     evaluation, and search.
-- `data/` — generated/test data, loaded at runtime via **relative** paths:
+- `data/` — generated/test data:
+  - `assets.go` — `package data` with `//go:embed` of the eight runtime CSVs.
+    The UCI binary calls `BuildAllAttacksFromFS(data.FS)` and therefore does not
+    depend on the working directory.
   - `knight_attacks.csv`, `king_attacks.csv`, `white/black_pawn_move.csv`,
     `white/black_pawn_attacks.csv` — attack tables (columns: index, start
     square bit, move bitboard), generated by `generate_attack_tables.py`.
@@ -83,6 +126,10 @@ fixed-depth alpha-beta search. There is no UCI protocol yet.
   - `sliding_attacks_examples.json` — JSON fixture for sliding attacks.
   - `perft.csv` — Stockfish-verified perft fixtures (columns: fen, depth,
     nodes, deep). Rows with `deep=1` run only with `PERFT_DEEP=1`.
+  - `cmd/search`, `cmd/perft`, `cmd/genmagics`, and the package tests still
+    read these files from disk via relative `data/...` paths and must run from
+    the repo root. `cmd/uci` and `cmd/web` initialize from the embedded FS, so
+    they do not depend on the working directory.
 - `generate_attack_tables.py` — Python 3 script that regenerates the CSV
   attack tables in `data/`. Requires `pandas`. Run from the repo root
   (`python3 generate_attack_tables.py`); it writes to `data/*.csv`.
@@ -94,8 +141,10 @@ fixed-depth alpha-beta search. There is no UCI protocol yet.
 
 ```sh
 go build ./...            # build everything
+go build -o gochess ./cmd/uci  # self-contained UCI engine
 go run .                  # run the demo binary (must run from repo root)
-go run ./cmd/web          # local board UI; turn on Engine to play the search
+go run ./cmd/uci          # run the UCI engine on stdin/stdout
+go run ./cmd/web          # local board UI; Engine uses the in-process UCI client
 go run ./cmd/genmagics    # regenerate data/*_magics.csv (from repo root)
 go run ./cmd/perft -depth 5
 go run ./cmd/perft -moves -fen "<FEN>"
@@ -105,6 +154,9 @@ go run ./cmd/perft -suite data/perft.csv
 go run ./cmd/search -depth 4
 go run ./cmd/search -fen "<FEN>" -depth 5
 go run ./cmd/search -fen "<FEN>" -eval
+./gochess bench           # deterministic bench; prints "<nodes> nodes <nps> nps"
+./gochess bench 6         # optional depth
+./gochess -version
 go test ./...             # run all tests
 go test -race ./...       # run tests under the race detector
 PERFT_DEEP=1 go test ./chess -run '^TestPerft$' -v
@@ -113,16 +165,22 @@ go test -bench . ./chess  # run benchmarks
 go vet ./...              # static checks
 ```
 
-Working directory matters: the `chess` package's `Build*` functions and the
-tests open `data/...` via relative paths. Run the binary and tests from the
-repo root. The test suite handles this itself with a `TestMain` in
-`chess/bitboard_test.go` that `os.Chdir("..")`s to the repo root — preserve
-that pattern if you add tests that touch `data/`.
+Working directory matters for `cmd/search`, `cmd/perft`, and `cmd/genmagics`:
+the `chess` package's disk `Build*` functions and the tests open `data/...` via
+relative paths. Run those binaries and tests from the repo root. The test suite
+handles this with a `TestMain` in `chess/bitboard_test.go` that `os.Chdir("..")`s
+to the repo root — preserve that pattern if you add tests that touch `data/`.
+
+`cmd/uci` and `cmd/web` are different: they initialize from
+`BuildAllAttacksFromFS(data.FS)`, so they do not read `data/` at runtime.
+`cmd/uci` is tested from an empty temporary directory. If you add a runtime CSV,
+add it to the `//go:embed` list in `data/assets.go` and to the FS loader.
 
 CI runs on pushes to `main` and on pull requests: `gofmt` check, `go build`,
 `go vet`, and `go test -race ./...`. The compiled `gochess` binary,
-`.vscode/`, and some planning notes (`MAGIC_BITBOARD_PLAN.md`,
-`CODE_REVIEW.md`) are gitignored.
+`gochess-uci`, `.vscode/`, the local Go caches
+(`.gocache/`, `.gomodcache/`, `.gopath/`), and some planning notes
+(`MAGIC_BITBOARD_PLAN.md`, `CODE_REVIEW.md`) are gitignored.
 
 ## Core conventions and architecture
 
@@ -153,8 +211,9 @@ Bitboard representation:
 - `Move` stores a `from`/`to` `Square` plus flags. The low three bits hold the
   promotion `Piece`; bit 3 is `promotionFlag`, bit 4 `captureFlag`, bit 5
   `doublePushFlag`, bit 6 `enPassantFlag`, and bit 7 `castlingFlag`. Generated
-  moves carry the flags; `ParseUCIMove` is notation-only and must be matched
-  against `LegalMoves` before being applied.
+  moves carry the flags; `ParseUCIMove` is notation-only. Use
+  `Position.FindLegalMove` or `Position.ApplyUCIMove` to turn notation into the
+  flagged generated move before calling `ApplyMove`/`makeMove`.
 - `makeMove` is copy-make and returns a new `Position`. It clears castling
   rights for any move from or to e1/a1/h1/e8/a8/h8, clears the en passant
   square unless the move is a double push, updates the halfmove/fullmove
@@ -183,10 +242,25 @@ Evaluation and search:
 - `SearchResult.Score` is from the **side to move's** point of view, the negamax
   convention. `evaluateForSideToMove` does the sign flip for Black; forgetting
   it is the classic evaluation bug.
-- `Position.Search(depth)` is fixed-depth negamax alpha-beta. Depth is in
-  plies and must be at least 1. It uses `legalMoves` with caller-owned
-  `[256]Move` buffers, makes moves with copy-make, and orders captures,
-  en passant, and promotions before quiet moves.
+- `Position.Search(depth)` is the fixed-depth entry point. Depth is in plies and
+  must be at least 1. It delegates to `SearchWithLimits` with `MaxDepth=depth` and
+  no deadline, so existing callers keep the same scores and determinism while
+  gaining iterative deepening internally.
+- `Position.SearchWithLimits(ctx, limits, info)` performs iterative-deepening
+  negamax alpha-beta. `SearchLimits` has `MaxDepth` (0 means no explicit cap, up
+  to `maxPly`), `MaxNodes`, `Deadline` (hard wall clock), `SoftDeadline` (stop
+  between iterations), and `RootMoves` (nil means all legal moves; a non-nil
+  empty list means no root moves). It checks cancellation and the hard deadline
+  every 256 nodes and at every root move, so `stop` stays responsive.
+- `SearchWithLimits` returns the last completed iteration's `BestMove`, `Score`,
+  `PV`, and `Depth`. If it stops before any iteration completes it returns the
+  first legal move with `Depth == 0`; a terminal position returns
+  `HasMove == false`. `Nodes` is cumulative across iterations, `SelDepth` is the
+  deepest ply reached, and `PonderMove` is the second PV move when present. The
+  `info` callback runs once per completed iteration.
+- UCI `searchmoves` is resolved to generated moves and passed as `RootMoves`.
+  UCI clocks become `Deadline`/`SoftDeadline` through `uci.allocateBudget`;
+  `Move Overhead` is reserved before the deadline is computed.
 - Checkmate is `-MateScore + ply`; the ply offset makes the search prefer
   shorter mates. Stalemate is 0. `ScoreToMate` converts a mate score into a
   distance in moves. Mate scores are always far above ordinary evaluations.
@@ -199,12 +273,55 @@ Evaluation and search:
 - `cmd/search` builds the attack tables itself. Run it from the repo root so
   the `data/` paths resolve.
 - `cmd/web` owns engine mode: `engineEnabled`, `engineDepth` (default 4, capped
-  at 5), and the last `engineInfo`. The engine plays Black. `POST /api/engine`
-  updates settings, `POST /api/engine/move` plays one search move, and
-  `/api/move` rejects a human move when it is the engine's turn. Undo removes
-  the engine's reply as well, and random moves are disabled while the engine is
-  on. `GET /api/state` includes the engine fields so the page can drive the
-  reply loop.
+  at 5), the `uci.Client`, and the last `engineInfo`. The engine plays Black.
+  `POST /api/engine` updates settings, `POST /api/engine/move` asks the client
+  for one move, and `/api/move` rejects a human move when it is the engine's
+  turn. Undo removes the engine's reply as well, and random moves are disabled
+  while the engine is on. `GET /api/state` includes the engine fields so the
+  page can drive the reply loop. `resetLocked` sends `ucinewgame`; each engine
+  move sends the current FEN and applies the returned move with
+  `ApplyUCIMove`. Close the game in tests and on HTTP shutdown to stop the
+  engine goroutines.
+
+UCI protocol:
+
+- `uci.Run` is the engine side; `uci.Client` is the GUI side for the web demo and
+  tests. `StartInProcess` runs the engine over `io.Pipe`, completes the
+  handshake, and starts a reader goroutine. `Client.SetPosition` waits for
+  `readyok` and surfaces `info string position error`; `Client.GoDepth` reads
+  info lines until `bestmove`; `Client.NewGame` sends `ucinewgame`; `Close`
+  sends `quit`, closes the pipes, and waits for the engine goroutine. The client
+  is not safe for concurrent use, so the web game's mutex serializes calls.
+- `uci.Run` owns stdin/stdout and never writes protocol text anywhere else.
+  `lineWriter` serializes and flushes stdout because search info and `readyok`
+  can come from different goroutines; diagnostics go to a locked stderr writer.
+- The command loop and the search goroutine split responsibilities. The loop
+  owns position/options and handles `isready`, `stop`, `quit`, and EOF while a
+  search is running; the search goroutine owns the search and is the only writer
+  of `bestmove`.
+- `isready` is answered immediately, including during a search. `stop` cancels
+  the search context; `quit` cancels and waits for the search to finish. EOF is
+  treated like quit, so the process exits cleanly when its stdin closes.
+- `position` is accepted only while idle. It supports `startpos` and `fen`, pads
+  4/5-field FENs, and applies moves with `ApplyUCIMove`. A parse or move failure
+  invalidates the position; a later `go` replies `info string no valid position`
+  and `bestmove 0000` rather than searching a stale board.
+- `go` supports `depth`, `nodes`, `movetime`, `wtime`/`btime`/`winc`/`binc`/
+  `movestogo`, `infinite`, `ponder` (treated as infinite; `ponderhit` acts as stop because
+  pondering is not implemented), and `searchmoves`.
+  A bare `go` is treated as infinite. `infinite` waits for `stop` after the
+  search result is ready; terminal positions send `bestmove 0000` immediately.
+- Checkmate and stalemate use `bestmove 0000`; checkmate is `info score mate 0`
+  and stalemate is `info score cp 0`. Scores are side-to-move relative, and mate
+  distances are in moves via `ScoreToMate`.
+- Only `Threads` (1..1) and `Move Overhead` are advertised. `Hash`,
+  `Clear Hash`, `Ponder`, `MultiPV`, and `UCI_Chess960` are accepted/ignored
+  where harmless but are not advertised because they are not implemented. There
+  is no transposition table, pondering, MultiPV, Chess960, tablebase, or opening
+  book support.
+- `bench` uses a fixed position list, fixed depth, one thread, and no clock; its
+  final stdout line is `<nodes> nodes <nps> nps`. `./gochess bench` exits after
+  printing; the UCI `bench` command returns to the command loop.
 
 ## Naming conventions
 
@@ -221,11 +338,19 @@ Evaluation and search:
 
 - Uses Go 1.22+ features: `iter.Seq` iterators (`PieceTypes`) and
   `math/rand/v2`. Keep compatibility with the `go 1.23.2` directive.
-- Error handling is plain `errors.New` / `fmt.Errorf`; `loadAttackTable`
-  uses `log.Fatal`; `PieceBitboard` panics on invalid input. Match the
-  surrounding style when editing nearby code.
-- `LoadMagicEntries` and `SaveMagicEntries` return errors. Both CSV loaders
-  validate row count, column count, square range, and duplicate squares.
+- Error handling is plain `errors.New` / `fmt.Errorf`; the disk
+  `loadAttackTable` helper uses `log.Fatal`, while `loadAttackTableFS`,
+  `LoadMagicEntriesFS`, and `BuildAllAttacksFromFS` return errors.
+  `PieceBitboard` panics on invalid input. Match the surrounding style when
+  editing nearby code.
+- `LoadMagicEntries`, `LoadMagicEntriesFS`, and `SaveMagicEntries` return
+  errors. Both CSV loaders validate row count, column count, square range, and
+  duplicate squares. `BuildAllAttacksFromFS` loads every table into locals
+  before assigning the package globals, so a bad embedded file leaves the
+  previous tables intact.
+- The UCI layer must never call `log.Fatal` or write non-protocol text to
+  stdout. Initialization failures become `info string` plus `readyok` or
+  `bestmove 0000`, not a process exit. Diagnostics go to stderr.
 
 Things to be careful with:
 
@@ -243,6 +368,25 @@ Things to be careful with:
 - `LoadMagicsFromDisk` and `SaveMagicsToDisk` are package-level mutable
   flags. Tests set and restore them; treat the attack tables as init-time
   state and don't mutate them concurrently.
+- The UCI engine builds the tables from `data.FS`, not from the working
+  directory. `BuildAllAttacksFromFS` deliberately does not fall back to a
+  random magic search: a bad embedded file should be a startup error, not an
+  unpredictable delay.
+- `SearchWithLimits` counts nodes at `negamax` entry, excluding the root, and
+  polls cancellation/deadlines every 256 nodes. If you change the polling
+  interval, keep `stop` responsive at low time controls. `SearchResult.Nodes`
+  is cumulative across iterative-deepening iterations.
+- The UCI search goroutine marks the session idle with `finishSearch` before it
+  writes the final `bestmove`. Do not move that call after the write: a GUI may
+  send `position`/`go` immediately after seeing `bestmove`, and the command loop
+  must already accept it. `finishSearch` must be called exactly once; the
+  `finished` guard in `searchRoutine` enforces that.
+- `bestmove` is written exactly once by the search goroutine. `stop` only
+  cancels; it never writes a move. `quit`/EOF set `quitting`, cancel, and wait
+  for the search goroutine, which suppresses the final `bestmove`.
+- `go infinite` can reach a depth/node limit before `stop`. The search
+  goroutine waits for `ctx.Done()` before reporting in that mode; terminal
+  positions are the exception because there is nothing to search.
 - `generate_attack_tables.py` is a one-off generator script, not part of the
   Go build; the CSVs it writes are committed and treated as source data.
 
@@ -276,16 +420,35 @@ Things to be careful with:
 - Search coverage includes mate in one, checkmate, stalemate, a free queen, a
   poisoned-pawn horizon case, best-move legality, determinism, non-mutation, and
   a score comparison against a full-width reference minimax at depths 1-3.
+- `chess/ucimove_test.go` covers double pushes, captures, en passant, castling,
+  all four promotions, promotion captures, illegal/malformed moves, and
+  `FindLegalMove` with flagless notation. `chess/data_fs_test.go` covers
+  `BuildAllAttacksFromFS(data.FS)`, missing embedded files, and
+  `LoadMagicEntriesFS`. `chess/search_limits_test.go` covers iterative
+  deepening, info callbacks, PV legality, soft deadlines, node limits,
+  cancellation/fallback, `RootMoves`, terminal positions, and non-mutation.
+- `uci` tests use in-process `io.Pipe` sessions: handshake, `isready` during a
+  search, `position` with FEN/moves, clocks, `stop`, `quit`, EOF, `searchmoves`,
+  node limits, terminal `bestmove 0000`, invalid FEN/move handling, options,
+  debug echo, and stdout purity. Unit tests cover `setoption`, `go`, FEN
+  padding, time allocation, and bench determinism.
+- `uci/client_test.go` covers `StartInProcess`, `SetPosition` (including an
+  invalid FEN and recovery), `GoDepth`, PV legality, terminal positions,
+  `NewGame`, idempotent `Close`, and `parseInfo` for cp/mate/nodes/time/pv.
+- `cmd/uci` tests build the binary and run it from an empty temporary directory,
+  which verifies embedded data and working-directory independence. They also
+  exercise `bench` and `-version` as separate processes.
 - `cmd/search` tests call `run` with buffers and cover `-eval`, mate/checkmate
   output, and invalid depth, arguments, and FENs. Its `TestMain` changes to the
   repo root because `BuildAllAttacks` reads `data/`.
 - `TestPerftAgainstStockfish` is opt-in via `STOCKFISH_BIN` and compares a
   deterministic random game with Stockfish, which is not required in CI.
 - `cmd/web` tests exercise the state, move, random, reset, and undo endpoints
-  with `httptest`, plus engine settings/depth validation, engine replies, the
-  engine-turn and random guards, engine-aware undo, and reset preserving the
-  engine settings. Its `TestMain` changes to the repo root before building
-  attack tables, like the `chess` package tests.
+  with `httptest`, plus engine settings/depth validation, UCI engine replies,
+  the engine-turn and random guards, engine-aware undo, and reset preserving
+  the engine settings. Each test server starts a `uci.Client` and closes it in
+  cleanup. Its `TestMain` builds the attack tables from `data.FS`, so the web
+  tests do not depend on the working directory.
 - Benchmarks cover `RookAttack`, `BishopAttack`, `ParseUCIMove`, `ParseFEN`,
   `Perft`, `Evaluate`, and `Search` depth 4.
 
@@ -298,8 +461,15 @@ Things to be careful with:
 - `cmd/web` binds to `127.0.0.1:8080` by default, keeps a single in-memory
   game, and has no authentication. It is a local demo, not a public server.
   Engine depth is capped at 5 so a request cannot ask for an unbounded search.
+  Engine moves go through an in-process `uci.Client`; no engine binary is
+  spawned and no network access is performed.
 - `cmd/search` is a local, single-position CLI. It reads only its flags and the
   local `data/` attack tables and performs no network access.
+- `cmd/uci` is a local stdin/stdout engine. It performs no network access, has
+  no authentication, and trusts the controlling GUI. Commands can request long
+  searches (`go infinite`) or large node/depth limits; the GUI is responsible
+  for sending `stop`/`quit`. The binary embeds its data, so it does not read
+  `data/` at runtime.
 - Runtime input is limited to FEN/UCI strings and the local `data/` files;
   the parsers return errors on malformed input and are unit-tested against
   invalid cases, but they are not fuzzed.

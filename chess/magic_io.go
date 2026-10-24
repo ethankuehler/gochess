@@ -3,6 +3,7 @@ package chess
 import (
 	"encoding/csv"
 	"fmt"
+	"io/fs"
 	"os"
 	"strconv"
 )
@@ -11,15 +12,32 @@ import (
 // (square, mask, magic), one row per square. IndexBits is recomputed from
 // the mask so it always agrees with the data.
 func LoadMagicEntries(fileName string) ([]MagicEntry, error) {
-	target := make([]MagicEntry, squareCount)
 	data, err := readCSV(fileName)
 	if err != nil {
 		return nil, err
 	}
+	return parseMagicEntries(data, fileName)
+}
+
+// LoadMagicEntriesFS reads and validates magic entries from an fs.FS.
+func LoadMagicEntriesFS(fsys fs.FS, fileName string) ([]MagicEntry, error) {
+	if fsys == nil {
+		return nil, fmt.Errorf("nil filesystem")
+	}
+	data, err := readCSVFS(fsys, fileName)
+	if err != nil {
+		return nil, fmt.Errorf("could not read %s: %w", fileName, err)
+	}
+	return parseMagicEntries(data, fileName)
+}
+
+// parseMagicEntries validates magic CSV records and returns the entries.
+func parseMagicEntries(data [][]string, fileName string) ([]MagicEntry, error) {
 	if len(data) != squareCount+1 {
 		return nil, fmt.Errorf("%s: expected %d data rows, got %d", fileName, squareCount, len(data))
 	}
 
+	target := make([]MagicEntry, squareCount)
 	seen := make(map[uint64]bool, squareCount)
 	for _, record := range data[1:] {
 		values, err := readRecord(record)

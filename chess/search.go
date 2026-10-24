@@ -1,5 +1,10 @@
 package chess
 
+import (
+	"context"
+	"time"
+)
+
 // MateScore is the score of a checkmate at the root. Scores within 128 points of
 // ±MateScore encode forced mates and describe the distance to mate.
 const MateScore = 1_000_000
@@ -8,15 +13,44 @@ const (
 	mateScore = MateScore
 	maxPly    = 128
 	infinity  = mateScore + 1
+
+	// searchCheckInterval controls how often the searcher polls the context
+	// and the wall-clock deadline. Node and depth limits are checked on every
+	// node; cancellation is checked often enough to keep stop responsive.
+	searchCheckInterval = 256
 )
 
-// SearchResult is the outcome of a fixed-depth alpha-beta search.
+// SearchLimits describes the bounds of one search. Zero values mean "no limit"
+// except for MaxDepth, where zero also means "no explicit depth limit" and the
+// searcher deepens until the deadline, the node limit, or cancellation.
+type SearchLimits struct {
+	MaxDepth     int
+	MaxNodes     uint64
+	Deadline     time.Time // hard wall-clock deadline; zero means none
+	SoftDeadline time.Time // stop between iterations after this time; zero means none
+	RootMoves    []Move    // nil means every legal move; non-nil restricts the root
+}
+
+// SearchInfo is the result of one completed iterative-deepening iteration.
+type SearchInfo struct {
+	Depth    int
+	SelDepth int
+	Score    int // centipawns from the side to move's point of view
+	Nodes    uint64
+	Time     time.Duration
+	PV       []Move
+}
+
+// SearchResult is the outcome of one search.
 type SearchResult struct {
-	BestMove Move   // valid only when HasMove is true
-	Score    int    // centipawns from the side to move's point of view
-	HasMove  bool   // false for checkmate and stalemate
-	Depth    int    // search depth in plies
-	Nodes    uint64 // negamax nodes visited, excluding the root
+	BestMove   Move   // valid only when HasMove is true
+	PonderMove Move   // second PV move, when one exists
+	Score      int    // centipawns from the side to move's point of view
+	HasMove    bool   // false for checkmate and stalemate
+	Depth      int    // deepest completed iteration, in plies
+	SelDepth   int    // deepest ply reached
+	Nodes      uint64 // negamax nodes visited, excluding the root
+	PV         []Move // principal variation from the last completed iteration
 }
 
 // Search returns the best move for the side to move at the given depth in plies.
@@ -26,10 +60,25 @@ func (b *Position) Search(depth int) SearchResult {
 	if depth < 1 {
 		panic("chess: search depth must be at least 1")
 	}
+	return b.SearchWithLimits(context.Background(), SearchLimits{MaxDepth: depth}, nil)
+}
+
+// SearchWithLimits performs iterative-deepening alpha-beta search subject to
+// limits. It reports every completed iteration through info, which may be nil.
+// Cancellation through ctx, the deadline, and the node limit are all checked
+// during the search; a stopped search returns the best move and PV from the
+// last completed iteration, or a legal fallback move if no iteration completed.
+//
+// The attack tables must have been built with BuildAllAttacks,
+// BuildAllAttacksFromFS, or the individual builders.
+func (b *Position) SearchWithLimits(ctx context.Context, limits SearchLimits, info func(SearchInfo)) SearchResult {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	ensureAttackTables()
 
-	result := SearchResult{Depth: depth}
-	var buf, ordered [256]Move
+	result := SearchResult{}
+	var buf [256]Move
 	moves := b.legalMoves(buf[:0])
 	if len(moves) == 0 {
 		if b.InCheck() {
@@ -38,37 +87,200 @@ func (b *Position) Search(depth int) SearchResult {
 		return result
 	}
 
-	s := searcher{}
-	alpha, beta := -infinity, infinity
-	best := -infinity
-	for _, m := range orderMoves(moves, ordered[:0]) {
-		child := b.makeMove(m)
-		score := -s.negamax(child, depth-1, -beta, -alpha, 1)
-		if score > best {
-			best = score
-			result.BestMove = m
-			result.HasMove = true
+	if limits.RootMoves != nil {
+		filtered := make([]Move, 0, len(limits.RootMoves))
+		seen := make(map[Move]bool, len(limits.RootMoves))
+		for _, candidate := range limits.RootMoves {
+			for _, legal := range moves {
+				if legal == candidate && !seen[legal] {
+					filtered = append(filtered, legal)
+					seen[legal] = true
+					break
+				}
+			}
 		}
-		if score > alpha {
-			alpha = score
+		moves = filtered
+		if len(moves) == 0 {
+			return result
 		}
 	}
-	result.Score = best
+
+	maxDepth := limits.MaxDepth
+	if maxDepth < 1 || maxDepth > maxPly {
+		maxDepth = maxPly
+	}
+
+	start := time.Now()
+	s := searcher{
+		ctx:      ctx,
+		deadline: limits.Deadline,
+		maxNodes: limits.MaxNodes,
+	}
+
+	fallback := moves[0]
+	ordered := append([]Move(nil), moves...)
+	completedDepth := 0
+	var bestMove Move
+	var bestScore int
+	var bestPV []Move
+
+	for depth := 1; depth <= maxDepth; depth++ {
+		if s.shouldStop() {
+			break
+		}
+
+		s.pvLength[0] = 0
+		alpha, beta := -infinity, infinity
+		iterBest := Move{}
+		iterScore := -infinity
+		var iterPV []Move
+		found := false
+		aborted := false
+
+		for _, m := range ordered {
+			if s.shouldStop() {
+				aborted = true
+				break
+			}
+			child := b.makeMove(m)
+			score := -s.negamax(child, depth-1, -beta, -alpha, 1)
+			if s.stopped {
+				aborted = true
+				break
+			}
+			if score > iterScore {
+				iterScore = score
+				iterBest = m
+				found = true
+				iterPV = make([]Move, 1, 1+s.pvLength[1])
+				iterPV[0] = m
+				iterPV = append(iterPV, s.pvTable[1][:s.pvLength[1]]...)
+			}
+			if score > alpha {
+				alpha = score
+			}
+		}
+
+		if aborted || !found {
+			break
+		}
+
+		completedDepth = depth
+		bestMove, bestScore, bestPV = iterBest, iterScore, iterPV
+		result.BestMove = iterBest
+		result.Score = iterScore
+		result.HasMove = true
+		result.Depth = depth
+		result.SelDepth = s.seldepth
+		result.Nodes = s.nodes
+		result.PV = append([]Move(nil), iterPV...)
+		if len(iterPV) >= 2 {
+			result.PonderMove = iterPV[1]
+		}
+
+		if info != nil {
+			info(SearchInfo{
+				Depth:    depth,
+				SelDepth: s.seldepth,
+				Score:    iterScore,
+				Nodes:    s.nodes,
+				Time:     time.Since(start),
+				PV:       append([]Move(nil), iterPV...),
+			})
+		}
+
+		promoteMove(ordered, iterBest)
+		if !limits.SoftDeadline.IsZero() && !time.Now().Before(limits.SoftDeadline) {
+			break
+		}
+	}
+
+	if completedDepth == 0 {
+		// The search was stopped before a full iteration. A legal move is
+		// still required for every go command.
+		result.BestMove = fallback
+		result.Score = 0
+		result.HasMove = true
+		result.Depth = 0
+		result.SelDepth = s.seldepth
+		result.Nodes = s.nodes
+		result.PV = []Move{fallback}
+		return result
+	}
+
+	result.BestMove, result.Score, result.PV = bestMove, bestScore, bestPV
 	result.Nodes = s.nodes
+	result.SelDepth = s.seldepth
 	return result
 }
 
-// searcher carries the node counter for one search.
+// searcher carries the node counter, limits, and PV table for one search.
 type searcher struct {
-	nodes uint64
+	ctx      context.Context
+	deadline time.Time
+	maxNodes uint64
+	nodes    uint64
+	stopped  bool
+	seldepth int
+
+	pvTable  [maxPly + 1][maxPly + 1]Move
+	pvLength [maxPly + 1]int
+}
+
+// tick counts a node and checks the node limit and, periodically, the context
+// and the wall-clock deadline.
+func (s *searcher) tick() bool {
+	s.nodes++
+	if s.maxNodes > 0 && s.nodes >= s.maxNodes {
+		s.stopped = true
+		return true
+	}
+	if s.nodes%searchCheckInterval == 0 {
+		return s.shouldStop()
+	}
+	return false
+}
+
+// shouldStop reports whether the search should stop. It is cheap enough to call
+// at root move boundaries and every searchCheckInterval nodes.
+func (s *searcher) shouldStop() bool {
+	if s.stopped {
+		return true
+	}
+	if s.maxNodes > 0 && s.nodes >= s.maxNodes {
+		s.stopped = true
+		return true
+	}
+	if s.ctx != nil {
+		select {
+		case <-s.ctx.Done():
+			s.stopped = true
+			return true
+		default:
+		}
+	}
+	if !s.deadline.IsZero() && !time.Now().Before(s.deadline) {
+		s.stopped = true
+		return true
+	}
+	return false
 }
 
 // negamax returns the score of the position for the side to move. ply is the
-// distance from the root and is used only to prefer shorter mates. Position is
-// passed by value: it is small, and the value parameter keeps the copy-make child
-// on the stack instead of forcing a heap allocation per node.
+// distance from the root and is used to prefer shorter mates and to index the
+// PV table. Position is passed by value: it is small, and the value parameter
+// keeps the copy-make child on the stack instead of forcing a heap allocation
+// per node.
 func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
-	s.nodes++
+	if s.tick() {
+		return 0
+	}
+	if ply > s.seldepth {
+		s.seldepth = ply
+	}
+	if ply < len(s.pvLength) {
+		s.pvLength[ply] = 0
+	}
 
 	// The fifty-move rule makes the position a claimable draw.
 	if b.halfmoveClock >= 100 {
@@ -97,8 +309,12 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 	for _, m := range orderMoves(moves, ordered[:0]) {
 		child := b.makeMove(m)
 		score := -s.negamax(child, depth-1, -beta, -alpha, ply+1)
+		if s.stopped {
+			return 0
+		}
 		if score > best {
 			best = score
+			s.updatePV(ply, m)
 		}
 		if score > alpha {
 			alpha = score
@@ -108,6 +324,36 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 		}
 	}
 	return best
+}
+
+// updatePV stores the line beginning with m at ply. The child line is copied
+// from ply+1; pvLength is bounded so the table index stays in range even at the
+// maximum depth.
+func (s *searcher) updatePV(ply int, m Move) {
+	s.pvTable[ply][0] = m
+	if ply >= maxPly {
+		s.pvLength[ply] = 1
+		return
+	}
+	n := s.pvLength[ply+1]
+	if n > maxPly-ply-1 {
+		n = maxPly - ply - 1
+	}
+	copy(s.pvTable[ply][1:], s.pvTable[ply+1][:n])
+	s.pvLength[ply] = 1 + n
+}
+
+// promoteMove moves best to the front of moves, preserving the relative order
+// of the others. It is used to search the previous iteration's best move first.
+func promoteMove(moves []Move, best Move) {
+	for i, m := range moves {
+		if m != best {
+			continue
+		}
+		copy(moves[1:i+1], moves[:i])
+		moves[0] = best
+		return
+	}
 }
 
 // orderMoves puts captures, en passant, and promotions before quiet moves. It

@@ -1,6 +1,6 @@
-// Command web serves a small local chess board UI. The board is backed by the
-// chess package: the server generates legal moves, and the page can play random
-// moves, accept clicked moves, or play against the alpha-beta engine.
+// Command web serves a small local chess board UI. The board state and legal
+// moves live here; engine moves are requested from an in-process UCI engine
+// session, so the page exercises the same protocol a GUI would use.
 package main
 
 import (
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ethankuehler/gochess/chess"
+	"github.com/ethankuehler/gochess/uci"
 )
 
 //go:embed index.html
@@ -57,13 +58,29 @@ type game struct {
 	engineEnabled bool
 	engineDepth   int
 	engineInfo    *engineInfo
+	engine        *uci.Client
+	engineErr     error
 }
 
 func newGame() *game {
-	return &game{
+	g := &game{
 		positions:   []*chess.Position{chess.NewStartingPosition()},
 		history:     []string{},
 		engineDepth: defaultEngineDepth,
+	}
+	client, err := uci.StartInProcess(log.Writer())
+	if err != nil {
+		g.engineErr = fmt.Errorf("start UCI engine: %w", err)
+		return g
+	}
+	g.engine = client
+	return g
+}
+
+// Close shuts down the UCI engine session.
+func (g *game) Close() {
+	if g.engine != nil {
+		_ = g.engine.Close()
 	}
 }
 
@@ -77,11 +94,19 @@ func (g *game) pushLocked(next *chess.Position, m chess.Move) {
 	g.lastMove = m.String()
 }
 
-func (g *game) resetLocked() {
+func (g *game) resetLocked() error {
 	g.positions = []*chess.Position{chess.NewStartingPosition()}
 	g.history = []string{}
 	g.lastMove = ""
 	g.engineInfo = nil
+	if g.engine != nil {
+		if err := g.engine.NewGame(); err != nil {
+			g.engineErr = err
+			return err
+		}
+		g.engineErr = nil
+	}
+	return nil
 }
 
 func (g *game) undoOneLocked() {
@@ -149,11 +174,17 @@ func (g *game) setEngineLocked(enabled bool, depth int) error {
 	return nil
 }
 
-// engineMoveLocked searches the current position and plays the best move for
-// Black. It is a no-op when the game is already over.
+// engineMoveLocked asks the UCI engine for Black's move in the current
+// position and applies it. It is a no-op when the game is already over.
 func (g *game) engineMoveLocked() error {
 	if !g.engineEnabled {
 		return errors.New("engine is disabled")
+	}
+	if g.engine == nil {
+		if g.engineErr != nil {
+			return g.engineErr
+		}
+		return errors.New("UCI engine is unavailable")
 	}
 	b := g.currentLocked()
 	if b.SideToMove() != chess.Black {
@@ -161,65 +192,53 @@ func (g *game) engineMoveLocked() error {
 	}
 
 	start := time.Now()
-	result := b.Search(g.engineDepth)
-	elapsed := time.Since(start)
-	if !result.HasMove {
+	if err := g.engine.SetPosition(b.FEN()); err != nil {
+		return err
+	}
+	result, err := g.engine.GoDepth(g.engineDepth)
+	if err != nil {
+		return err
+	}
+	if result.BestMove == "" {
 		g.engineInfo = nil
 		return nil
 	}
 
-	next, err := b.ApplyMove(result.BestMove)
+	next, move, err := b.ApplyUCIMove(result.BestMove)
 	if err != nil {
-		return err
+		return fmt.Errorf("engine returned illegal move %q: %w", result.BestMove, err)
 	}
-	g.pushLocked(next, result.BestMove)
+	g.pushLocked(next, move)
 
-	timeMS := elapsed.Milliseconds()
+	timeMS := result.TimeMS
 	if timeMS < 1 {
-		timeMS = 1
+		timeMS = time.Since(start).Milliseconds()
+		if timeMS < 1 {
+			timeMS = 1
+		}
 	}
 	info := &engineInfo{
 		Depth:  result.Depth,
-		Score:  -result.Score, // search score is Black-relative
+		Score:  -result.Score, // UCI score is Black-relative here
 		Nodes:  result.Nodes,
 		TimeMS: timeMS,
 	}
-	if moves, ok := chess.ScoreToMate(result.Score); ok {
-		info.MateIn = moves
+	if result.HasMate {
+		info.MateIn = result.MateIn
 	}
 	g.engineInfo = info
+	g.engineErr = nil
 	return nil
 }
 
 func (g *game) applyUCILocked(uci string) error {
-	parsed, err := chess.ParseUCIMove(uci)
+	next, move, err := g.currentLocked().ApplyUCIMove(uci)
 	if err != nil {
 		return err
 	}
-
-	b := g.currentLocked()
-	for _, m := range b.LegalMoves() {
-		if m.From() != parsed.From() || m.To() != parsed.To() {
-			continue
-		}
-		movePromotion, moveHasPromotion := m.Promotion()
-		parsedPromotion, parsedHasPromotion := parsed.Promotion()
-		if moveHasPromotion != parsedHasPromotion {
-			continue
-		}
-		if moveHasPromotion && movePromotion != parsedPromotion {
-			continue
-		}
-
-		next, err := b.ApplyMove(m)
-		if err != nil {
-			return err
-		}
-		g.pushLocked(next, m)
-		g.engineInfo = nil
-		return nil
-	}
-	return fmt.Errorf("illegal move %q", uci)
+	g.pushLocked(next, move)
+	g.engineInfo = nil
+	return nil
 }
 
 func (g *game) snapshotLocked() stateResponse {
@@ -456,7 +475,10 @@ func (g *game) handleReset(w http.ResponseWriter, r *http.Request) {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.resetLocked()
+	if err := g.resetLocked(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, http.StatusOK, g.snapshotLocked())
 }
 
@@ -474,11 +496,14 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:8080", "HTTP listen address")
 	flag.Parse()
 
-	chess.BuildAllAttacks()
-
+	game := newGame()
+	if game.engine == nil {
+		log.Fatalf("could not start UCI engine: %v", game.engineErr)
+	}
+	defer game.Close()
 	server := &http.Server{
 		Addr:              *addr,
-		Handler:           newMux(newGame()),
+		Handler:           newMux(game),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	log.Printf("gochess board demo: http://%s", *addr)

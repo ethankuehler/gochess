@@ -38,3 +38,14 @@ jobs:
 
       - name: Test
         run: go test -race ./...
+
+      - name: UCI smoke test
+        run: |
+          go build -o gochess ./cmd/uci
+          ./gochess bench 4
+          ./gochess -version
+
+      - name: Cross-compile UCI
+        run: |
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -o /tmp/gochess.exe ./cmd/uci
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -o /tmp/gochess-darwin ./cmd/uci
