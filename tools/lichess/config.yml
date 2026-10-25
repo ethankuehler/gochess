@@ -21,13 +21,16 @@ engine:
   debug: false
   uci_options:
     # Only list options gochess advertises. python-chess rejects unknown UCI
-    # options, so Hash/SyzygyPath/UCI_ShowWDL from the stock config must stay out.
+    # options, so SyzygyPath/UCI_ShowWDL from the stock config must stay out.
+    # 256 MB, deliberately above the 128 MB sweet spot so the table does not
+    # fill in middlegames. With two simultaneous games this is 512 MB total.
+    Hash: 256
     Threads: 1
     Move Overhead: 100
     go_commands:
-      # ~4.9s per move after Move Overhead. Recent 3+2 games ended around 2:00
-      # left at 3.5s, so this spends roughly a minute more over a 40-move game
-      # and still leaves about a minute, with more nodes per move.
+      # This is a ceiling, not a fixed search: gochess still uses the clock
+      # budget when less than 5s remains, so a final mate in one is played
+      # instead of flagging. With a healthy clock it gives more nodes per move.
       movetime: 5000
   draw_or_resign:
     # gochess's evaluation is too rough to resign or offer draws on.
@@ -51,6 +54,7 @@ challenge:
   variants:
     - standard
   time_controls:
+    - bullet
     - blitz
     - rapid
   modes:
@@ -58,13 +62,13 @@ challenge:
     # enabled so bot-vs-bot matchmaking can still affect the rating.
     - casual
     - rated
-  min_base: 180          # 3 minutes
+  min_base: 60           # 1 minute; accepts bullet through 10-minute rapid
   max_base: 600          # 10 minutes, to keep games moving
-  max_increment: 5
-  # Require an increment. Clock-based allocation spends a lot early, and a
-  # no-increment game is where a long endgame can flag. Human challenges need
-  # at least +2 too; the bot's profile can say so.
-  min_increment: 2
+  max_increment: 10
+  # No minimum increment any more. The clock-aware movetime ceiling scales the
+  # search down when time is short, so 3+0/5+0/10+0 are accepted too. Bullet
+  # games can still be tight at 1+0; raise min_base if flags become common.
+  min_increment: 0
   # Follow the bot's rating instead of a fixed band. New bots start at 3000,
   # so this begins at 2000-4000 and follows the rating down as it loses.
   rating_difference: 1000

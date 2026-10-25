@@ -40,21 +40,27 @@ func TestParseSetOption(t *testing.T) {
 func TestOptions(t *testing.T) {
 	options := defaultOptions()
 	lines := options.lines()
-	wantLines := 2
+	wantLines := 4
 	if metricsSupported {
-		wantLines = 3
+		wantLines = 5
 	}
 	if len(lines) != wantLines {
 		t.Fatalf("got %d option lines, want %d: %v", len(lines), wantLines, lines)
 	}
-	if !strings.Contains(lines[0], "option name Threads type spin default 1 min 1 max 1") {
-		t.Errorf("unexpected Threads line: %s", lines[0])
+	if !strings.Contains(lines[0], "option name Hash type spin default 16 min 1 max 1024") {
+		t.Errorf("unexpected Hash line: %s", lines[0])
 	}
-	if !strings.Contains(lines[1], "option name Move Overhead type spin default 50 min 0 max 5000") {
-		t.Errorf("unexpected Move Overhead line: %s", lines[1])
+	if lines[1] != "option name Clear Hash type button" {
+		t.Errorf("unexpected Clear Hash line: %s", lines[1])
 	}
-	if metricsSupported && lines[2] != "option name Analysis type check default false" {
-		t.Errorf("unexpected Analysis line: %s", lines[2])
+	if !strings.Contains(lines[2], "option name Threads type spin default 1 min 1 max 1") {
+		t.Errorf("unexpected Threads line: %s", lines[2])
+	}
+	if !strings.Contains(lines[3], "option name Move Overhead type spin default 50 min 0 max 5000") {
+		t.Errorf("unexpected Move Overhead line: %s", lines[3])
+	}
+	if metricsSupported && lines[4] != "option name Analysis type check default false" {
+		t.Errorf("unexpected Analysis line: %s", lines[4])
 	}
 	if options.analysis {
 		t.Error("Analysis defaults to true")
@@ -98,6 +104,20 @@ func TestOptions(t *testing.T) {
 
 	if msg := options.set("Hash", "256", true); msg != "" {
 		t.Errorf("Hash message = %q, want empty", msg)
+	}
+	if options.hashMB != 256 {
+		t.Errorf("hashMB = %d, want 256", options.hashMB)
+	}
+	options.set("Hash", "0", true)
+	if options.hashMB != chess.MinHashMB {
+		t.Errorf("hashMB = %d after 0, want %d", options.hashMB, chess.MinHashMB)
+	}
+	options.set("Hash", "99999", true)
+	if options.hashMB != chess.MaxHashMB {
+		t.Errorf("hashMB = %d after a huge value, want %d", options.hashMB, chess.MaxHashMB)
+	}
+	if msg := options.set("Hash", "not-a-number", true); !strings.Contains(msg, "invalid Hash value") {
+		t.Errorf("invalid Hash message = %q", msg)
 	}
 	if msg := options.set("Clear Hash", "", false); msg != "" {
 		t.Errorf("Clear Hash message = %q, want empty", msg)
@@ -225,6 +245,44 @@ func TestAllocateBudget(t *testing.T) {
 	lowTime := allocateBudget(goParams{hasClock: true, wtime: 100 * time.Millisecond}, chess.White, overhead)
 	if !lowTime.ok || lowTime.soft != time.Millisecond || lowTime.hard != time.Millisecond {
 		t.Fatalf("low-time budget = %+v", lowTime)
+	}
+
+	// A movetime is a ceiling when the clock is also present. At 3+2 with
+	// three seconds left the clock budget is 750ms soft / 1.5s hard, not 5s.
+	clockCapped := allocateBudget(goParams{
+		hasClock:    true,
+		wtime:       3 * time.Second,
+		btime:       3 * time.Second,
+		winc:        2 * time.Second,
+		binc:        2 * time.Second,
+		movetime:    5 * time.Second,
+		movetimeSet: true,
+	}, chess.White, overhead)
+	if !clockCapped.ok || clockCapped.soft != 750*time.Millisecond || clockCapped.hard != 1500*time.Millisecond {
+		t.Fatalf("clock-capped movetime = %+v", clockCapped)
+	}
+
+	// With plenty of clock, the movetime ceiling wins.
+	movetimeCeiling := allocateBudget(goParams{
+		hasClock:    true,
+		wtime:       5 * time.Minute,
+		btime:       5 * time.Minute,
+		movetime:    500 * time.Millisecond,
+		movetimeSet: true,
+	}, chess.White, overhead)
+	if !movetimeCeiling.ok || movetimeCeiling.soft != 450*time.Millisecond || movetimeCeiling.hard != 450*time.Millisecond {
+		t.Fatalf("movetime ceiling = %+v", movetimeCeiling)
+	}
+
+	// A low clock overrides a large movetime completely.
+	lowClockWithMovetime := allocateBudget(goParams{
+		hasClock:    true,
+		wtime:       100 * time.Millisecond,
+		movetime:    5 * time.Second,
+		movetimeSet: true,
+	}, chess.White, overhead)
+	if !lowClockWithMovetime.ok || lowClockWithMovetime.soft != time.Millisecond || lowClockWithMovetime.hard != time.Millisecond {
+		t.Fatalf("low clock with movetime = %+v", lowClockWithMovetime)
 	}
 
 	zeroClock := allocateBudget(goParams{hasClock: true}, chess.White, overhead)

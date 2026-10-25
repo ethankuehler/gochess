@@ -31,11 +31,12 @@ const (
 type SearchLimits struct {
 	MaxDepth       int
 	MaxNodes       uint64
-	Deadline       time.Time     // hard wall-clock deadline; zero means none
-	SoftDeadline   time.Time     // stop between iterations after this time; zero means none
-	RootMoves      []Move        // nil means every legal move; non-nil restricts the root
-	GameHistory    []PositionKey // keys of positions before the root, oldest first
-	CollectMetrics bool          // honored only in a MetricsEnabled build
+	Deadline       time.Time           // hard wall-clock deadline; zero means none
+	SoftDeadline   time.Time           // stop between iterations after this time; zero means none
+	RootMoves      []Move              // nil means every legal move; non-nil restricts the root
+	GameHistory    []PositionKey       // keys of positions before the root, oldest first
+	TT             *TranspositionTable // nil disables the transposition table
+	CollectMetrics bool                // honored only in a MetricsEnabled build
 }
 
 // SearchMetrics contains runtime counters and inclusive wall-clock durations
@@ -86,17 +87,27 @@ type SearchResult struct {
 	SelDepth   int            // deepest ply reached
 	Nodes      uint64         // negamax nodes visited, excluding the root
 	PV         []Move         // principal variation from the last completed iteration
+	TT         TTStats        // transposition-table activity for this search
 	Metrics    *SearchMetrics // nil unless CollectMetrics is true and MetricsEnabled
 }
 
 // Search returns the best move for the side to move at the given depth in plies.
 // It panics if depth is less than 1. The attack tables must have been built with
 // BuildAllAttacks or the individual builders.
+//
+// Search allocates a fresh transposition table for each call, so repeated calls
+// are deterministic. Shallower searches skip the allocation: at one or two
+// plies there are too few transpositions to repay it. Use SearchWithLimits with
+// SearchLimits.TT to reuse a table across searches.
 func (b *Position) Search(depth int) SearchResult {
 	if depth < 1 {
 		panic("chess: search depth must be at least 1")
 	}
-	return b.SearchWithLimits(context.Background(), SearchLimits{MaxDepth: depth}, nil)
+	limits := SearchLimits{MaxDepth: depth}
+	if depth >= 3 {
+		limits.TT = NewTranspositionTable(DefaultHashMB)
+	}
+	return b.SearchWithLimits(context.Background(), limits, nil)
 }
 
 // SearchWithLimits performs iterative-deepening alpha-beta search subject to
@@ -127,8 +138,13 @@ func (b *Position) SearchWithLimits(ctx context.Context, limits SearchLimits, in
 		ctx:      ctx,
 		deadline: limits.Deadline,
 		maxNodes: limits.MaxNodes,
+		tt:       limits.TT,
 		metrics:  metrics,
 	}
+	defer func() {
+		result.TT = s.ttStats
+	}()
+	s.tt.newSearch()
 
 	var buf [256]Move
 	moves := s.legalMoves(b, buf[:0])
@@ -191,8 +207,20 @@ func (b *Position) SearchWithLimits(ctx context.Context, limits SearchLimits, in
 	}
 	s.keys[s.pathBase] = b.key
 
+	// A persistent table can supply a root move from an earlier search. The
+	// move is only used for ordering; searchmoves filtering still wins.
+	var rootHash Move
+	if s.tt != nil {
+		s.ttStats.Probes++
+		if entry, ok := s.tt.probe(b.key); ok {
+			s.ttStats.Hits++
+			rootHash = entry.move
+		}
+	}
+
 	fallback := moves[0]
 	ordered := append([]Move(nil), moves...)
+	promoteMove(ordered, rootHash)
 	completedDepth := 0
 	var bestMove Move
 	var bestScore int
@@ -251,6 +279,15 @@ func (b *Position) SearchWithLimits(ctx context.Context, limits SearchLimits, in
 		if len(iterPV) >= 2 {
 			result.PonderMove = iterPV[1]
 		}
+		if s.tt != nil && b.halfmoveClock < ttMaxHalfmoveClock {
+			// Keep the completed root result for the next search. The score is
+			// exact at this depth, and the move is the best ordering hint a
+			// later search on the same position can get. The clock guard
+			// matches negamax: a score found near the fifty-move horizon must
+			// not leak into a fresh position with the same key.
+			s.tt.store(b.key, depth, scoreToTT(iterScore, 0), ttExact, iterBest)
+			s.ttStats.Stores++
+		}
 
 		if info != nil {
 			info(SearchInfo{
@@ -297,6 +334,9 @@ type searcher struct {
 	stopped  bool
 	seldepth int
 	metrics  *SearchMetrics
+
+	tt      *TranspositionTable
+	ttStats TTStats
 
 	// pathBase is the number of game-history keys prepended to keys. The key
 	// for the node at ply p lives at keys[pathBase+p], which makes repetition
@@ -406,23 +446,56 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 		return s.evaluate(&b)
 	}
 
+	alphaOrig := alpha
+	inCheck := b.InCheck()
+	ttUsable := s.tt != nil && b.halfmoveClock < ttMaxHalfmoveClock
+	var hashMove Move
+
+	// When the side to move is not in check, the draw checks can run before
+	// move generation, which lets a table cutoff skip that work entirely. When
+	// it is in check, mate has to be ruled out first: checkmate beats a fifty-
+	// move or repetition claim on the same node.
+	if !inCheck {
+		if b.IsFiftyMoveDraw() || b.IsInsufficientMaterial() || s.repetitionDraw(b.key, int(b.halfmoveClock), ply) {
+			return 0
+		}
+		if ttUsable {
+			if score, cutoff, move := s.probeTT(b.key, depth, alpha, beta, ply); cutoff {
+				return score
+			} else {
+				hashMove = move
+			}
+		}
+	}
+
 	var buf, ordered [256]Move
 	moves := s.legalMoves(&b, buf[:0])
 	if len(moves) == 0 {
-		if b.InCheck() {
+		if inCheck {
 			return -mateScore + ply
 		}
 		return 0 // stalemate
 	}
-	// The fifty-move rule and a third repetition are claimable draws, but a
-	// checkmate on the same node still wins.
-	if b.IsFiftyMoveDraw() || b.IsInsufficientMaterial() || s.repetitionDraw(b.key, int(b.halfmoveClock), ply) {
-		return 0
+
+	if inCheck {
+		// The fifty-move rule and a third repetition are claimable draws, but
+		// a checkmate on the same node still wins.
+		if b.IsFiftyMoveDraw() || b.IsInsufficientMaterial() || s.repetitionDraw(b.key, int(b.halfmoveClock), ply) {
+			return 0
+		}
+		if ttUsable {
+			if score, cutoff, move := s.probeTT(b.key, depth, alpha, beta, ply); cutoff {
+				return score
+			} else {
+				hashMove = move
+			}
+		}
 	}
 	s.keys[s.pathBase+ply] = b.key
 
 	best := -infinity
-	for _, m := range orderMoves(moves, ordered[:0]) {
+	var bestMove Move
+	for _, m := range orderMoves(moves, ordered[:0], hashMove) {
 		child := s.makeMove(&b, m)
 		score := -s.negamax(child, depth-1, -beta, -alpha, ply+1)
 		if s.stopped {
@@ -430,6 +503,7 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 		}
 		if score > best {
 			best = score
+			bestMove = m
 			s.updatePV(ply, m)
 		}
 		if score > alpha {
@@ -442,7 +516,64 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 			break
 		}
 	}
+
+	if ttUsable {
+		s.storeTT(b.key, depth, best, alphaOrig, beta, ply, bestMove)
+	}
 	return best
+}
+
+// probeTT looks up key and applies the standard alpha-beta table cutoff. A
+// cutoff is only taken at null-window nodes; principal-variation nodes keep
+// searching so the PV is built from real lines rather than a cached score. The
+// returned move is useful for ordering even when the entry is too shallow.
+func (s *searcher) probeTT(key uint64, depth, alpha, beta, ply int) (score int, cutoff bool, move Move) {
+	s.ttStats.Probes++
+	entry, ok := s.tt.probe(key)
+	if !ok {
+		return 0, false, Move{}
+	}
+	s.ttStats.Hits++
+	move = entry.move
+	if int(entry.depth) < depth || beta-alpha <= 1 {
+		return 0, false, move
+	}
+
+	score = scoreFromTT(entry.score, ply)
+	switch entry.bound {
+	case ttExact:
+		s.ttStats.Cutoffs++
+		return score, true, move
+	case ttLower:
+		if score >= beta {
+			s.ttStats.Cutoffs++
+			return score, true, move
+		}
+	case ttUpper:
+		if score <= alpha {
+			s.ttStats.Cutoffs++
+			return score, true, move
+		}
+	}
+	return 0, false, move
+}
+
+// storeTT records the result of a completed node. Fail-soft alpha-beta can
+// return a score outside the search window, so the original alpha and beta
+// decide whether the result is exact or a bound.
+func (s *searcher) storeTT(key uint64, depth, best, alphaOrig, beta, ply int, move Move) {
+	if s.tt == nil || s.stopped {
+		return
+	}
+	bound := ttExact
+	switch {
+	case best <= alphaOrig:
+		bound = ttUpper
+	case best >= beta:
+		bound = ttLower
+	}
+	s.tt.store(key, depth, scoreToTT(best, ply), bound, move)
+	s.ttStats.Stores++
 }
 
 // updatePV stores the line beginning with m at ply. The child line is copied
@@ -475,17 +606,32 @@ func promoteMove(moves []Move, best Move) {
 	}
 }
 
-// orderMoves puts captures, en passant, and promotions before quiet moves. It
-// writes into scratch and returns the used slice; ordering changes the number of
-// nodes visited but never the search score.
-func orderMoves(moves, scratch []Move) []Move {
+// orderMoves puts the transposition-table move first, then captures, en
+// passant, and promotions, then quiet moves. It writes into scratch and returns
+// the used slice; ordering changes the number of nodes visited but never the
+// search score. A hash move that is not in the legal list is ignored.
+func orderMoves(moves, scratch []Move, hashMove Move) []Move {
 	out := scratch[:0]
+	if hashMove != (Move{}) {
+		for _, m := range moves {
+			if m == hashMove {
+				out = append(out, m)
+				break
+			}
+		}
+	}
 	for _, m := range moves {
+		if m == hashMove {
+			continue
+		}
 		if _, promotion := m.Promotion(); m.IsCapture() || promotion {
 			out = append(out, m)
 		}
 	}
 	for _, m := range moves {
+		if m == hashMove {
+			continue
+		}
 		if _, promotion := m.Promotion(); !m.IsCapture() && !promotion {
 			out = append(out, m)
 		}

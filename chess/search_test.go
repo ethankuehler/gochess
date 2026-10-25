@@ -160,7 +160,7 @@ func TestOrderMoves(t *testing.T) {
 	moves := position.LegalMoves()
 
 	var scratch [256]Move
-	ordered := orderMoves(moves, scratch[:0])
+	ordered := orderMoves(moves, scratch[:0], Move{})
 	if len(ordered) != len(moves) {
 		t.Fatalf("ordered %d moves, want %d", len(ordered), len(moves))
 	}

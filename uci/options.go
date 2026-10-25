@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ethankuehler/gochess/chess"
 )
 
 const (
@@ -12,13 +14,14 @@ const (
 	maxMoveOverheadMS     = 5000
 )
 
-// options holds the settings that are actually implemented. Hash, Ponder,
-// MultiPV, and similar options are deliberately absent: setoption accepts
-// them so a GUI does not break, but advertising them would promise behaviour
-// the engine does not have.
+// options holds the settings that are actually implemented. Ponder, MultiPV,
+// and similar options are deliberately absent: setoption accepts them so a GUI
+// does not break, but advertising them would promise behaviour the engine does
+// not have.
 type options struct {
 	moveOverhead time.Duration
 	threads      int
+	hashMB       int
 	analysis     bool
 }
 
@@ -26,12 +29,15 @@ func defaultOptions() options {
 	return options{
 		moveOverhead: defaultMoveOverheadMS * time.Millisecond,
 		threads:      1,
+		hashMB:       chess.DefaultHashMB,
 	}
 }
 
 // lines returns the option declarations sent in response to uci.
 func (o options) lines() []string {
 	lines := []string{
+		fmt.Sprintf("option name Hash type spin default %d min %d max %d", chess.DefaultHashMB, chess.MinHashMB, chess.MaxHashMB),
+		"option name Clear Hash type button",
 		"option name Threads type spin default 1 min 1 max 1",
 		fmt.Sprintf("option name Move Overhead type spin default %d min 0 max %d", defaultMoveOverheadMS, maxMoveOverheadMS),
 	}
@@ -88,9 +94,25 @@ func (o *options) set(name, value string, hasValue bool) string {
 			return fmt.Sprintf("invalid Analysis value %q", value)
 		}
 		return ""
-	case "hash", "clear hash":
-		// No transposition table yet. Accept the option so GUIs that always
-		// set Hash still work; do not advertise it.
+	case "hash":
+		if !hasValue {
+			return ""
+		}
+		mb, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil {
+			return fmt.Sprintf("invalid Hash value %q", value)
+		}
+		if mb < chess.MinHashMB {
+			mb = chess.MinHashMB
+		}
+		if mb > chess.MaxHashMB {
+			mb = chess.MaxHashMB
+		}
+		o.hashMB = mb
+		return ""
+	case "clear hash":
+		// The engine clears its table in handleSetOption; the option parser
+		// only needs to accept the button.
 		return ""
 	case "ponder":
 		// Ponder is not advertised. Ignore the value rather than beginning to

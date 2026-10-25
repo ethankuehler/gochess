@@ -83,6 +83,7 @@ func run(args []string, out, errOut io.Writer) error {
 	result := position.SearchWithLimits(context.Background(), chess.SearchLimits{
 		MaxDepth:    *depth,
 		GameHistory: history,
+		TT:          chess.NewTranspositionTable(chess.DefaultHashMB),
 	}, nil)
 	elapsed := time.Since(start)
 
@@ -111,6 +112,8 @@ func run(args []string, out, errOut io.Writer) error {
 		}
 	}
 	fmt.Fprintf(out, "nodes      %d\n", result.Nodes)
+	fmt.Fprintf(out, "hash       %d probes, %d hits, %d cutoffs, %d stores\n",
+		result.TT.Probes, result.TT.Hits, result.TT.Cutoffs, result.TT.Stores)
 	fmt.Fprintf(out, "time       %s\n", elapsed.Round(time.Millisecond))
 	if elapsed > 0 {
 		fmt.Fprintf(out, "nps        %d\n", int64(float64(result.Nodes)/elapsed.Seconds()))

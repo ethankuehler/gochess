@@ -37,11 +37,12 @@ Supported commands: `uci`, `isready`, `debug`, `ucinewgame`, `position`
 `infinite`, `searchmoves`, or clock fields `wtime`, `btime`, `winc`, `binc`,
 `movestogo`), `stop`, `quit`, and `bench`. It emits `info` lines (`depth`,
 `seldepth`, `score`, `nodes`, `nps`, `time`, `pv`) and `bestmove`; checkmate
-and stalemate are `bestmove 0000`. Options are `Threads` (fixed at 1) and
-`Move Overhead` (default 50 ms, range 0–5000). A `metrics` build also advertises
-`Analysis` (default false; adds final search metrics as `info string analysis`).
-`Hash`, `Ponder`, `MultiPV`, and Chess960 are accepted but ignored, since none
-are implemented yet.
+and stalemate are `bestmove 0000`. Options are `Hash` (default 16 MB, range
+1–1024), `Clear Hash`, `Threads` (fixed at 1), and `Move Overhead` (default
+50 ms, range 0–5000). A `metrics` build also advertises `Analysis` (default
+false; adds final search metrics as `info string analysis`). `Ponder`,
+`MultiPV`, and Chess960 are accepted but ignored, since none are implemented
+yet.
 
 Search metrics are compiled out by default. Build an instrumented binary with:
 
@@ -76,8 +77,9 @@ CGO_ENABLED=0 go build -trimpath \
   search flips to the side-to-move convention.
 - **Search** — iterative-deepening negamax alpha-beta with capture-first move
   ordering, PV tracking, mate-distance scoring, and cancellation by deadline,
-  node count, or stop. There is no transposition table, pondering, or opening
-  book.
+  node count, or stop. A Zobrist-keyed transposition table caches results,
+  supplies a hash move for ordering, and is reused across moves in a UCI game;
+  `Hash` and `Clear Hash` control it. There is no pondering or opening book.
 - **UCI layer** — `uci.Run` is the engine side, a separate goroutine owns each
   search, and `uci.Client` drives an in-process engine. `cmd/uci` is the
   standalone binary; `cmd/web` is the browser demo.
@@ -87,7 +89,7 @@ CGO_ENABLED=0 go build -trimpath \
 | Command | What it does |
 | --- | --- |
 | `go run ./cmd/web [-addr 127.0.0.1:8080]` | Local board. You play White; toggle **Engine** to play Black at a depth you choose, or **Auto play** to watch the engine play both sides. Click-to-move, undo, reset, PGN export, and a **Claim draw** button for threefold/fifty-move draws; auto play claims those draws automatically, and reset cancels a running search. |
-| `go run ./cmd/search -depth 5` | Fixed-depth search; prints best move, score, nodes, time, and nps. Add `-fen "<FEN>"`, `-moves "e2e4 e7e5 ..."`, or `-eval` for a static score. |
+| `go run ./cmd/search -depth 5` | Fixed-depth search; prints best move, score, nodes, transposition-table probes/hits/cutoffs, time, and nps. Add `-fen "<FEN>"`, `-moves "e2e4 e7e5 ..."`, or `-eval` for a static score. |
 | `go run ./cmd/perft -depth 5` | Move-generation node count with time and nps. Flags: `-fen`, `-moves`, `-divide`, `-suite data/perft.csv`, `-deep`, `-compare [-stockfish path]`. |
 | `go run ./cmd/match -stockfish stockfish -games 4 -depth 4` | Play gochess against Stockfish. Every position is compared with Stockfish's perft, every move is checked for legality, and checkmate, stalemate, fifty-move, threefold, and insufficient-material results are adjudicated. Fails on any rule mismatch. Flags: `-fen`, `-moves`, `-random-plies`, `-seed`, `-validate-depth`, `-max-moves`, `-verbose`. |
 | `go run ./cmd/genmagics` | Regenerate `data/rook_magics.csv` and `data/bishop_magics.csv`. |
@@ -258,8 +260,11 @@ tools/lichess/  optional Lichess Bot API bridge (Python, not in the Go build)
 
 ## Known limitations
 
-No transposition table, pondering, MultiPV, Chess960, tablebases, or opening
-book. Threefold repetition and the fifty-move rule are detected during search
-when the caller supplies game history (the UCI move list and the web demo both
-do); insufficient material is detected as well. The engine can find short mates
-and win free material, but it is not strong yet.
+No pondering, MultiPV, Chess960, tablebases, or opening book. The transposition
+table is single-threaded and keyed by the Zobrist position key, which excludes
+the halfmove clock; table use is disabled near the fifty-move rule to avoid
+reusing a score found in a different clock regime. Threefold repetition and the
+fifty-move rule are detected during search when the caller supplies game history
+(the UCI move list and the web demo both do); insufficient material is detected
+as well. The engine can find short mates and win free material, but it is not
+strong yet.

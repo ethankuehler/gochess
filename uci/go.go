@@ -69,6 +69,7 @@ func (e *Engine) handleGo(args []string) {
 		MaxNodes:       params.nodes,
 		RootMoves:      rootMoves,
 		GameHistory:    history,
+		TT:             e.transpositionTable(),
 		CollectMetrics: e.options.analysis && metricsSupported,
 	}
 	if budget.ok {
@@ -199,22 +200,44 @@ func (e *Engine) resolveRootMoves(position *chess.Position, params goParams) []c
 
 // allocateBudget turns UCI clock fields into a soft and hard time allowance.
 // It is deliberately conservative: losing on time is worse than playing a
-// slightly weaker move.
+// slightly weaker move. A movetime command is a ceiling, not an override, when
+// clock fields are also present. GUIs such as lichess-bot send both; without
+// this the engine would search the full movetime even with only a few seconds
+// left and flag instead of playing a mate in one.
 func allocateBudget(params goParams, side chess.Colour, overhead time.Duration) searchBudget {
 	if params.infinite || params.ponder {
 		return searchBudget{}
 	}
-	if params.movetimeSet {
-		budget := params.movetime - overhead
-		if budget < time.Millisecond {
-			budget = time.Millisecond
-		}
-		return searchBudget{soft: budget, hard: budget, ok: true}
-	}
-	if !params.hasClock {
-		return searchBudget{}
-	}
 
+	clock := searchBudget{}
+	if params.hasClock {
+		clock = allocateClockBudget(params, side, overhead)
+	}
+	if params.movetimeSet {
+		limit := params.movetime - overhead
+		if limit < time.Millisecond {
+			limit = time.Millisecond
+		}
+		if !clock.ok {
+			return searchBudget{soft: limit, hard: limit, ok: true}
+		}
+		if clock.soft > limit {
+			clock.soft = limit
+		}
+		if clock.hard > limit {
+			clock.hard = limit
+		}
+		if clock.hard < clock.soft {
+			clock.hard = clock.soft
+		}
+		return clock
+	}
+	return clock
+}
+
+// allocateClockBudget computes a budget from the side-to-move clock. It does
+// not consider a movetime cap; allocateBudget applies that afterwards.
+func allocateClockBudget(params goParams, side chess.Colour, overhead time.Duration) searchBudget {
 	remaining := params.wtime
 	increment := params.winc
 	if side == chess.Black {

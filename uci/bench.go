@@ -51,6 +51,7 @@ func runBench(out *lineWriter, errOut io.Writer, depth int) int {
 	}
 	start := time.Now()
 	var total uint64
+	tt := chess.NewTranspositionTable(chess.DefaultHashMB)
 
 	for i, fen := range benchPositions {
 		position, err := chess.ParseFEN(fen)
@@ -58,9 +59,17 @@ func runBench(out *lineWriter, errOut io.Writer, depth int) int {
 			fmt.Fprintf(errOut, "bench: position %d: %v\n", i+1, err)
 			return 1
 		}
-		result := position.SearchWithLimits(context.Background(), chess.SearchLimits{MaxDepth: depth}, nil)
+		// Clear between positions so each search starts from the same table
+		// state and the per-position timings are comparable.
+		tt.Clear()
+		result := position.SearchWithLimits(context.Background(), chess.SearchLimits{
+			MaxDepth: depth,
+			TT:       tt,
+		}, nil)
 		total += result.Nodes
-		fmt.Fprintf(errOut, "bench %d/%d nodes %d\n", i+1, len(benchPositions), result.Nodes)
+		fmt.Fprintf(errOut, "bench %d/%d nodes %d tt %d/%d cutoffs %d\n",
+			i+1, len(benchPositions), result.Nodes,
+			result.TT.Hits, result.TT.Probes, result.TT.Cutoffs)
 	}
 
 	elapsed := time.Since(start)

@@ -145,6 +145,8 @@ func (s *testSession) handshake() {
 	s.send("uci")
 	s.expectPrefix("id name gochess")
 	s.expectPrefix("id author ")
+	s.expectPrefix("option name Hash")
+	s.expectPrefix("option name Clear Hash")
 	s.expectPrefix("option name Threads")
 	s.expectPrefix("option name Move Overhead")
 	if metricsSupported {
@@ -528,6 +530,30 @@ func TestDebugEcho(t *testing.T) {
 	s.send("debug off")
 	s.send("isready")
 	s.waitForPrefix("readyok")
+	s.send("quit")
+	s.waitExit()
+}
+
+func TestHashOptionResizeAndClear(t *testing.T) {
+	s := newTestSession(t)
+	s.handshake()
+
+	s.send("setoption name Hash value 1")
+	s.send("position startpos")
+	s.send("go depth 3")
+	s.assertBestmoveLegal(chess.NewStartingPosition().FEN())
+
+	s.send("setoption name Clear Hash")
+	s.send("go depth 3")
+	s.assertBestmoveLegal(chess.NewStartingPosition().FEN())
+
+	s.send("setoption name Hash value 32")
+	s.send("go depth 3")
+	s.assertBestmoveLegal(chess.NewStartingPosition().FEN())
+
+	s.send("setoption name Hash value nope")
+	s.waitForPrefix("info string invalid Hash value")
+
 	s.send("quit")
 	s.waitExit()
 }

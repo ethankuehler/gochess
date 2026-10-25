@@ -32,6 +32,7 @@ type Engine struct {
 	posValid    bool
 	hasPosition bool
 	options     options
+	tt          *chess.TranspositionTable
 	debug       bool
 	searching   bool
 	pondering   bool
@@ -191,9 +192,30 @@ func (e *Engine) handleSetOption(args []string) {
 		fmt.Fprintln(e.errOut, "setoption: missing name")
 		return
 	}
+	oldHash := e.options.hashMB
 	if message := e.options.set(name, value, hasValue); message != "" {
 		e.out.line("info string %s", message)
 	}
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "hash":
+		if e.options.hashMB != oldHash || e.tt == nil {
+			e.tt = chess.NewTranspositionTable(e.options.hashMB)
+		}
+	case "clear hash":
+		if e.tt != nil {
+			e.tt.Clear()
+		}
+	}
+}
+
+// transpositionTable returns the session table, allocating it on first use.
+// Only the command loop calls this, and it only does so while no search is
+// running, so the table is never resized underneath a search.
+func (e *Engine) transpositionTable() *chess.TranspositionTable {
+	if e.tt == nil {
+		e.tt = chess.NewTranspositionTable(e.options.hashMB)
+	}
+	return e.tt
 }
 
 func (e *Engine) handleNewGame() {
@@ -207,6 +229,9 @@ func (e *Engine) handleNewGame() {
 	e.posValid = true
 	e.hasPosition = true
 	e.mu.Unlock()
+	if e.tt != nil {
+		e.tt.Clear()
+	}
 }
 
 func (e *Engine) handleStop() {
