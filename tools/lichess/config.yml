@@ -83,6 +83,8 @@ matchmaking:
     - 300                # 5+2
   challenge_increment:
     - 2
-  # Same self-adjusting band as incoming challenges.
-  opponent_rating_difference: 1000
+  # Outgoing challenges stay closer to the bot's rating. A 1000-point band kept
+  # picking 2500+ bots that decline; 400 still includes the useful 1200-1900
+  # range. Incoming challenges keep the wider band above.
+  opponent_rating_difference: 400
   rating_preference: "none"
