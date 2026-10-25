@@ -1,8 +1,10 @@
 # gochess
 
-A personal, work-in-progress chess engine written in Go — an excuse to learn Go
-and see how far a garbage-collected language can get with bitboards. It is not
-close to done. (Meow. — Ethan)
+A personal, work-in-progress chess engine written in Go. This an excuse to learn Go
+and see how far a garbage-collected language can get with bitboards. 
+
+Meow
+Ethan.
 
 Go 1.23+ and the standard library only; there is nothing to `go get`.
 
