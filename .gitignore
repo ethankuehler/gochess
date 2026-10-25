@@ -1,6 +1,7 @@
 gochess
 gochess-uci
 gochess-uci.exe
+gochess-metrics
 chessprograming
 .vscode
 plans/
@@ -12,3 +13,11 @@ CODE_REVIEW.md
 dist/
 /arena
 /results/
+
+# Lichess bot bridge (installed by tools/lichess/setup.sh)
+tools/lichess/lichess-bot/
+tools/lichess/venv/
+tools/lichess/games/
+tools/lichess/*.log
+tools/lichess/config.local.yml
+tools/lichess/.env

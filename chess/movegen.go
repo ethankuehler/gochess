@@ -313,7 +313,7 @@ func (b *Position) legalMoves(moves []Move) []Move {
 
 	legal := pseudo[:0]
 	for _, m := range pseudo {
-		next := b.makeMove(m)
+		next := b.makeMoveForLegality(m)
 		if !next.isSquareAttacked(next.kingSquare(us), them) {
 			legal = append(legal, m)
 		}

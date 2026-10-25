@@ -19,6 +19,7 @@ const (
 type options struct {
 	moveOverhead time.Duration
 	threads      int
+	analysis     bool
 }
 
 func defaultOptions() options {
@@ -30,10 +31,14 @@ func defaultOptions() options {
 
 // lines returns the option declarations sent in response to uci.
 func (o options) lines() []string {
-	return []string{
+	lines := []string{
 		"option name Threads type spin default 1 min 1 max 1",
 		fmt.Sprintf("option name Move Overhead type spin default %d min 0 max %d", defaultMoveOverheadMS, maxMoveOverheadMS),
 	}
+	if metricsSupported {
+		lines = append(lines, "option name Analysis type check default false")
+	}
+	return lines
 }
 
 // set applies a setoption value. It returns a message worth reporting to the
@@ -69,6 +74,19 @@ func (o *options) set(name, value string, hasValue bool) string {
 			return "Threads is fixed at 1; this engine is single-threaded"
 		}
 		o.threads = 1
+		return ""
+	case "analysis":
+		if !hasValue {
+			return ""
+		}
+		switch {
+		case strings.EqualFold(strings.TrimSpace(value), "true"):
+			o.analysis = true
+		case strings.EqualFold(strings.TrimSpace(value), "false"):
+			o.analysis = false
+		default:
+			return fmt.Sprintf("invalid Analysis value %q", value)
+		}
 		return ""
 	case "hash", "clear hash":
 		// No transposition table yet. Accept the option so GUIs that always

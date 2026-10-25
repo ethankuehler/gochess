@@ -47,26 +47,22 @@ func (b *Position) PieceAt(square Square) (colour Colour, piece Piece, ok bool) 
 	return b.pieceAt(square)
 }
 
+// castlingClearTable maps a from/to square to the rights it invalidates. Any
+// move involving a king or rook home square clears the corresponding right,
+// which also handles a rook being captured in place.
+var castlingClearTable = [squareCount]uint8{
+	a1: whiteQueensideCastling,
+	e1: whiteKingsideCastling | whiteQueensideCastling,
+	h1: whiteKingsideCastling,
+	a8: blackQueensideCastling,
+	e8: blackKingsideCastling | blackQueensideCastling,
+	h8: blackKingsideCastling,
+}
+
 // castlingRightsToClear returns the rights that a move from or to square
-// invalidates. Any move involving a king or rook home square clears the
-// corresponding right, which also handles a rook being captured in place.
+// invalidates.
 func castlingRightsToClear(square Square) uint8 {
-	switch square {
-	case e1:
-		return whiteKingsideCastling | whiteQueensideCastling
-	case a1:
-		return whiteQueensideCastling
-	case h1:
-		return whiteKingsideCastling
-	case e8:
-		return blackKingsideCastling | blackQueensideCastling
-	case a8:
-		return blackQueensideCastling
-	case h8:
-		return blackKingsideCastling
-	default:
-		return 0
-	}
+	return castlingClearTable[square]
 }
 
 // makeMove applies m and returns the resulting position. It copies the
@@ -74,6 +70,17 @@ func castlingRightsToClear(square Square) uint8 {
 // otherwise carry the correct flags; a UCI move parsed by ParseUCIMove does
 // not have enough information on its own.
 func (b *Position) makeMove(m Move) Position {
+	return b.makeMoveInternal(m, true)
+}
+
+// makeMoveForLegality applies only the board changes needed to test whether the
+// mover's king is attacked. The result has a stale key, clocks, castling rights,
+// and en passant target, so it must not be used as a game position.
+func (b *Position) makeMoveForLegality(m Move) Position {
+	return b.makeMoveInternal(m, false)
+}
+
+func (b *Position) makeMoveInternal(m Move, updateKey bool) Position {
 	next := *b
 	us := b.sideToMove()
 	them := us.Opposite()
@@ -91,9 +98,12 @@ func (b *Position) makeMove(m Move) Position {
 	toMask := BitBoard(1) << m.to
 
 	// Start from the old key and remove the state that is about to change.
-	key := b.key
-	key ^= zobristCastling[(b.flags&^whiteToMove)>>1]
-	key ^= b.enPassantKey()
+	key := uint64(0)
+	if updateKey {
+		key = b.key
+		key ^= zobristCastling[(b.flags&^whiteToMove)>>1]
+		key ^= b.epHash
+	}
 
 	// Find and lift the moving piece.
 	moving := NoPiece
@@ -101,8 +111,11 @@ func (b *Position) makeMove(m Move) Position {
 		bb := &next.pieceBitboards[piece+offset]
 		if *bb&fromMask != 0 {
 			*bb &^= fromMask
+			next.occupancy[us] &^= fromMask
 			moving = piece
-			key ^= zobristPieces[int(piece)+int(offset)][m.from]
+			if updateKey {
+				key ^= zobristPieces[int(piece)+int(offset)][m.from]
+			}
 			break
 		}
 	}
@@ -117,13 +130,15 @@ func (b *Position) makeMove(m Move) Position {
 			captured = Square(int(m.to) + 8)
 		}
 		capturedMask := BitBoard(1) << captured
-		if next.pieceBitboards[Pawn+themOffset]&capturedMask != 0 {
+		if updateKey && next.pieceBitboards[Pawn+themOffset]&capturedMask != 0 {
 			key ^= zobristPieces[int(Pawn)+int(themOffset)][captured]
 		}
 		next.pieceBitboards[Pawn+themOffset] &^= capturedMask
+		next.occupancy[them] &^= capturedMask
 	} else if m.IsCapture() {
+		next.occupancy[them] &^= toMask
 		for piece := Pawn; piece <= King; piece++ {
-			if next.pieceBitboards[piece+themOffset]&toMask != 0 {
+			if updateKey && next.pieceBitboards[piece+themOffset]&toMask != 0 {
 				key ^= zobristPieces[int(piece)+int(themOffset)][m.to]
 			}
 			next.pieceBitboards[piece+themOffset] &^= toMask
@@ -137,10 +152,16 @@ func (b *Position) makeMove(m Move) Position {
 			panic("makeMove: invalid promotion piece")
 		}
 		next.pieceBitboards[promotion+offset] |= toMask
-		key ^= zobristPieces[int(promotion)+int(offset)][m.to]
+		next.occupancy[us] |= toMask
+		if updateKey {
+			key ^= zobristPieces[int(promotion)+int(offset)][m.to]
+		}
 	} else {
 		next.pieceBitboards[moving+offset] |= toMask
-		key ^= zobristPieces[int(moving)+int(offset)][m.to]
+		next.occupancy[us] |= toMask
+		if updateKey {
+			key ^= zobristPieces[int(moving)+int(offset)][m.to]
+		}
 	}
 
 	// Move the rook when castling.
@@ -161,33 +182,41 @@ func (b *Position) makeMove(m Move) Position {
 		rooks := &next.pieceBitboards[Rook+offset]
 		*rooks &^= BitBoard(1) << rookFrom
 		*rooks |= BitBoard(1) << rookTo
-		key ^= zobristPieces[int(Rook)+int(offset)][rookFrom]
-		key ^= zobristPieces[int(Rook)+int(offset)][rookTo]
+		next.occupancy[us] &^= BitBoard(1) << rookFrom
+		next.occupancy[us] |= BitBoard(1) << rookTo
+		if updateKey {
+			key ^= zobristPieces[int(Rook)+int(offset)][rookFrom]
+			key ^= zobristPieces[int(Rook)+int(offset)][rookTo]
+		}
 	}
 
-	next.flags &^= castlingRightsToClear(m.from) | castlingRightsToClear(m.to)
+	if updateKey {
+		next.flags &^= castlingRightsToClear(m.from) | castlingRightsToClear(m.to)
 
-	next.enPassantSquare = 0
-	if m.IsDoublePush() {
-		next.enPassantSquare = BitBoard(1) << Square((int(m.from)+int(m.to))/2)
+		next.enPassantSquare = 0
+		next.epHash = 0
+		if m.IsDoublePush() {
+			next.enPassantSquare = BitBoard(1) << Square((int(m.from)+int(m.to))/2)
+			next.epHash = next.computeEnPassantKey()
+		}
+
+		if moving == Pawn || m.IsCapture() {
+			next.halfmoveClock = 0
+		} else if next.halfmoveClock < 65535 {
+			next.halfmoveClock++
+		}
+		if us == Black && next.fullmoveNumber < 65535 {
+			next.fullmoveNumber++
+		}
+
+		next.flags ^= whiteToMove
+
+		// Add the new castling rights, en passant target, and side to move.
+		key ^= zobristCastling[(next.flags&^whiteToMove)>>1]
+		key ^= next.epHash
+		key ^= zobristSide
+		next.key = key
 	}
-
-	if moving == Pawn || m.IsCapture() {
-		next.halfmoveClock = 0
-	} else if next.halfmoveClock < 65535 {
-		next.halfmoveClock++
-	}
-	if us == Black && next.fullmoveNumber < 65535 {
-		next.fullmoveNumber++
-	}
-
-	next.flags ^= whiteToMove
-
-	// Add the new castling rights, en passant target, and side to move.
-	key ^= zobristCastling[(next.flags&^whiteToMove)>>1]
-	key ^= next.enPassantKey()
-	key ^= zobristSide
-	next.key = key
 
 	return next
 }

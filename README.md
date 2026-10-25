@@ -38,8 +38,18 @@ Supported commands: `uci`, `isready`, `debug`, `ucinewgame`, `position`
 `movestogo`), `stop`, `quit`, and `bench`. It emits `info` lines (`depth`,
 `seldepth`, `score`, `nodes`, `nps`, `time`, `pv`) and `bestmove`; checkmate
 and stalemate are `bestmove 0000`. Options are `Threads` (fixed at 1) and
-`Move Overhead` (default 50 ms, range 0–5000). `Hash`, `Ponder`, `MultiPV`, and
-Chess960 are accepted but ignored, since none are implemented yet.
+`Move Overhead` (default 50 ms, range 0–5000). A `metrics` build also advertises
+`Analysis` (default false; adds final search metrics as `info string analysis`).
+`Hash`, `Ponder`, `MultiPV`, and Chess960 are accepted but ignored, since none
+are implemented yet.
+
+Search metrics are compiled out by default. Build an instrumented binary with:
+
+```sh
+go build ./cmd/uci                          # normal, no metrics overhead
+go build -tags metrics -o gochess-metrics ./cmd/uci
+go test -tags metrics ./...                 # metrics tests
+```
 
 For a release build with a version stamp:
 
@@ -88,6 +98,58 @@ Run `cmd/search`, `cmd/perft`, and `cmd/genmagics` from the repo root: they open
 `data/...` via relative paths. `cmd/uci`, `cmd/web`, and `cmd/match` use the
 embedded files and do not care about the working directory.
 
+## Runtime analysis
+
+Runtime analysis is disabled by default. Start the local board with:
+
+```sh
+go run ./cmd/web -analysis
+```
+
+To include search phase metrics in the panel, use the metrics build:
+
+```sh
+go run -tags metrics ./cmd/web -analysis
+```
+
+The default build still provides CPU, heap, goroutine, and pprof sampling; only
+the search-metric fields and the UCI `Analysis` option are compiled out.
+
+Open **Runtime analysis** in the side panel during engine play or auto play. The
+page plots process CPU utilization, live heap, goroutines, and per-iteration
+search nodes, time, and NPS. CPU utilization is process user+system time and is
+marked unavailable if the platform cannot supply it. It also shows inclusive
+wall-clock timings and call
+counts for pseudo-legal generation, legality filtering (copy-make plus attack
+test), evaluation, and search-edge copy-make. Every copy-make call is counted,
+including the copies made while filtering; their time is reported with the
+legality filter because timing each individual copy would add too much overhead.
+The bars are disjoint but incomplete: the panel reports the measured share and
+an unattributed remainder covering draw checks, ordering, PV maintenance,
+callbacks, and the timing instrumentation itself. `elapsedNs` is search-loop time, not the UCI `time` field. The server
+retains five minutes of runtime samples and the latest 64 searches.
+
+In the metrics build, collecting search metrics adds measurable overhead
+(roughly 20–60% at moderate fixed depth, depending on the position and search
+size), so a time-limited search may complete fewer iterations while it is on.
+The default build has no metrics-wrapper or timer overhead; use it for real NPS
+and strength benchmarks.
+
+The panel links to Go CPU, heap, and trace profiles. Start a sustained search or
+auto play, download the 10-second CPU profile, then inspect function hotspots and
+flame graphs with:
+
+```sh
+go tool pprof -http=127.0.0.1:8081 gochess-cpu.pb.gz
+```
+
+Profiling routes and sampling exist only with `-analysis`, which requires a
+loopback listen address. Profiles cover the whole local process, including HTTP
+work, and short searches may contain too few CPU samples. Confirm optimizations
+with normal, non-profiled benchmarks. Other UCI clients can request only the
+final search metrics with `setoption name Analysis value true` when running a
+`metrics` build.
+
 ## Benchmarking
 
 ```sh
@@ -113,6 +175,33 @@ go run ./cmd/perft -depth 6
 go run ./cmd/perft -depth 4 -divide
 go run ./cmd/perft -suite data/perft.csv          # -deep to include slow rows
 ```
+
+## Playing on Lichess
+
+`tools/lichess` wires the engine into the [Lichess Bot
+API](https://lichess.org/api#tag/Bot) through the third-party
+[lichess-bot](https://github.com/lichess-bot-devs/lichess-bot) bridge. It is
+optional developer tooling: no Go package imports network code, and CI never
+runs it.
+
+```sh
+./tools/lichess/setup.sh                  # clone bridge, install deps, build gochess
+cp tools/lichess/.env.example tools/lichess/.env
+# edit .env: LICHESS_BOT_TOKEN=lip_...    # bot:play scope; .env is gitignored
+./tools/lichess/run.sh --upgrade          # once, irreversible
+./tools/lichess/run.sh                    # rated bots + casual human challenges
+```
+
+The default config accepts rated standard blitz/rapid games from other bots and
+casual challenges from humans; one of the two slots is reserved for human
+challengers. Humans can challenge
+[gochess6767](https://lichess.org/@/gochess6767) (Lichess only offers casual
+games against bots), with at least a +2 increment. It writes PGNs to
+`tools/lichess/games/` and logs to `tools/lichess/lichess-bot.log`. Lichess caps
+bot-vs-bot games at 100/day, so a stable Glicko-2 rating takes several days of
+running. That number is not comparable to `cmd/arena`'s Stockfish-scale Elo; use
+it as a periodic external check, not a per-commit benchmark. See
+[tools/lichess/README.md](tools/lichess/README.md) for the full walkthrough.
 
 ## Testing
 
@@ -164,6 +253,7 @@ cmd/match/   gochess-vs-Stockfish match and rules verifier
 cmd/perft/   perft runner, suite, and Stockfish comparison
 cmd/genmagics/  magic-number CSV generator
 data/        embedded attack tables, magics, and test fixtures
+tools/lichess/  optional Lichess Bot API bridge (Python, not in the Go build)
 ```
 
 ## Known limitations

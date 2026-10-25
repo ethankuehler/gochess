@@ -98,17 +98,17 @@ func (b *Position) computeKey() uint64 {
 		}
 	}
 	key ^= zobristCastling[(b.flags&^whiteToMove)>>1]
-	key ^= b.enPassantKey()
+	key ^= b.computeEnPassantKey()
 	if b.flags&whiteToMove == 0 {
 		key ^= zobristSide
 	}
 	return key
 }
 
-// enPassantKey returns the hash contribution of the en passant target. FIDE
-// considers positions different only when the en passant capture is actually
-// available, so a target with no adjacent pawn contributes nothing.
-func (b *Position) enPassantKey() uint64 {
+// computeEnPassantKey returns the hash contribution of the en passant target.
+// FIDE considers positions different only when the en passant capture is
+// actually available, so a target with no adjacent pawn contributes nothing.
+func (b *Position) computeEnPassantKey() uint64 {
 	if !b.hasEnPassantCapture() {
 		return 0
 	}

@@ -39,6 +39,9 @@ jobs:
       - name: Test
         run: go test -race ./...
 
+      - name: Test with search metrics
+        run: go test -tags metrics -race ./...
+
       - name: Install Stockfish
         run: |
           sudo apt-get update

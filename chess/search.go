@@ -29,12 +29,40 @@ const (
 // except for MaxDepth, where zero also means "no explicit depth limit" and the
 // searcher deepens until the deadline, the node limit, or cancellation.
 type SearchLimits struct {
-	MaxDepth     int
-	MaxNodes     uint64
-	Deadline     time.Time     // hard wall-clock deadline; zero means none
-	SoftDeadline time.Time     // stop between iterations after this time; zero means none
-	RootMoves    []Move        // nil means every legal move; non-nil restricts the root
-	GameHistory  []PositionKey // keys of positions before the root, oldest first
+	MaxDepth       int
+	MaxNodes       uint64
+	Deadline       time.Time     // hard wall-clock deadline; zero means none
+	SoftDeadline   time.Time     // stop between iterations after this time; zero means none
+	RootMoves      []Move        // nil means every legal move; non-nil restricts the root
+	GameHistory    []PositionKey // keys of positions before the root, oldest first
+	CollectMetrics bool          // honored only in a MetricsEnabled build
+}
+
+// SearchMetrics contains runtime counters and inclusive wall-clock durations
+// for one search. Move generation, legality filtering, evaluation, and
+// search-edge copy-make are timed separately, so the phases do not overlap.
+// They do not cover all search work: draw checks, move ordering, PV
+// maintenance, and the info callback are unmeasured.
+//
+// MakeMoveCalls counts every copy-make performed during the search, including
+// the copies legal move generation makes to test king safety.
+// SearchMakeMoveCalls is the subset made directly by the search tree. The time
+// spent on the legality-filter copies is included in LegalFilterNS because
+// separating it from the attack test would require timing every individual
+// copy.
+type SearchMetrics struct {
+	ElapsedNS           int64  `json:"elapsedNs"`
+	MoveGenCalls        uint64 `json:"moveGenCalls"`
+	PseudoMoves         uint64 `json:"pseudoMoves"`
+	LegalMoves          uint64 `json:"legalMoves"`
+	EvaluationCalls     uint64 `json:"evaluationCalls"`
+	MakeMoveCalls       uint64 `json:"makeMoveCalls"`
+	SearchMakeMoveCalls uint64 `json:"searchMakeMoveCalls"`
+	BetaCutoffs         uint64 `json:"betaCutoffs"`
+	MoveGenNS           int64  `json:"moveGenNs"`
+	LegalFilterNS       int64  `json:"legalFilterNs"`
+	EvaluationNS        int64  `json:"evaluationNs"`
+	SearchMakeMoveNS    int64  `json:"searchMakeMoveNs"`
 }
 
 // SearchInfo is the result of one completed iterative-deepening iteration.
@@ -49,15 +77,16 @@ type SearchInfo struct {
 
 // SearchResult is the outcome of one search.
 type SearchResult struct {
-	BestMove   Move   // valid only when HasMove is true
-	PonderMove Move   // second PV move, when one exists
-	Score      int    // centipawns from the side to move's point of view
-	HasMove    bool   // false for checkmate and stalemate
-	Draw       bool   // root is already a fifty-move, threefold, or insufficient-material draw
-	Depth      int    // deepest completed iteration, in plies
-	SelDepth   int    // deepest ply reached
-	Nodes      uint64 // negamax nodes visited, excluding the root
-	PV         []Move // principal variation from the last completed iteration
+	BestMove   Move           // valid only when HasMove is true
+	PonderMove Move           // second PV move, when one exists
+	Score      int            // centipawns from the side to move's point of view
+	HasMove    bool           // false for checkmate and stalemate
+	Draw       bool           // root is already a fifty-move, threefold, or insufficient-material draw
+	Depth      int            // deepest completed iteration, in plies
+	SelDepth   int            // deepest ply reached
+	Nodes      uint64         // negamax nodes visited, excluding the root
+	PV         []Move         // principal variation from the last completed iteration
+	Metrics    *SearchMetrics // nil unless CollectMetrics is true and MetricsEnabled
 }
 
 // Search returns the best move for the side to move at the given depth in plies.
@@ -78,15 +107,31 @@ func (b *Position) Search(depth int) SearchResult {
 //
 // The attack tables must have been built with BuildAllAttacks,
 // BuildAllAttacksFromFS, or the individual builders.
-func (b *Position) SearchWithLimits(ctx context.Context, limits SearchLimits, info func(SearchInfo)) SearchResult {
+func (b *Position) SearchWithLimits(ctx context.Context, limits SearchLimits, info func(SearchInfo)) (result SearchResult) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	ensureAttackTables()
 
-	result := SearchResult{}
+	var metrics *SearchMetrics
+	var metricsStart time.Time
+	if limits.CollectMetrics && MetricsEnabled {
+		metrics = &SearchMetrics{}
+		metricsStart = time.Now()
+		defer func() {
+			metrics.ElapsedNS = time.Since(metricsStart).Nanoseconds()
+			result.Metrics = metrics
+		}()
+	}
+	s := searcher{
+		ctx:      ctx,
+		deadline: limits.Deadline,
+		maxNodes: limits.MaxNodes,
+		metrics:  metrics,
+	}
+
 	var buf [256]Move
-	moves := b.legalMoves(buf[:0])
+	moves := s.legalMoves(b, buf[:0])
 	if len(moves) == 0 {
 		if b.InCheck() {
 			result.Score = -mateScore
@@ -118,11 +163,6 @@ func (b *Position) SearchWithLimits(ctx context.Context, limits SearchLimits, in
 	}
 
 	start := time.Now()
-	s := searcher{
-		ctx:      ctx,
-		deadline: limits.Deadline,
-		maxNodes: limits.MaxNodes,
-	}
 
 	// Only positions since the last irreversible move can repeat, and a
 	// halfmove clock of 100 or more is already a draw, so the useful history
@@ -176,7 +216,7 @@ func (b *Position) SearchWithLimits(ctx context.Context, limits SearchLimits, in
 				aborted = true
 				break
 			}
-			child := b.makeMove(m)
+			child := s.makeMove(b, m)
 			score := -s.negamax(child, depth-1, -beta, -alpha, 1)
 			if s.stopped {
 				aborted = true
@@ -256,6 +296,7 @@ type searcher struct {
 	nodes    uint64
 	stopped  bool
 	seldepth int
+	metrics  *SearchMetrics
 
 	// pathBase is the number of game-history keys prepended to keys. The key
 	// for the node at ply p lives at keys[pathBase+p], which makes repetition
@@ -348,21 +389,25 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 		s.pvLength[ply] = 0
 	}
 
-	var buf, ordered [256]Move
 	if depth == 0 {
 		// Checkmate at the horizon still has to be detected, otherwise a
 		// depth-1 search would miss mate in one. It also takes precedence over
-		// a draw claim, because checkmate ends the game immediately.
-		if b.InCheck() && len(b.legalMoves(buf[:0])) == 0 {
-			return -mateScore + ply
+		// a draw claim, because checkmate ends the game immediately. The move
+		// buffer is scoped here so the common quiet-leaf case does not zero it.
+		if b.InCheck() {
+			var buf [256]Move
+			if len(s.legalMoves(&b, buf[:0])) == 0 {
+				return -mateScore + ply
+			}
 		}
 		if b.IsFiftyMoveDraw() || b.IsInsufficientMaterial() || s.repetitionDraw(b.key, int(b.halfmoveClock), ply) {
 			return 0
 		}
-		return b.evaluateForSideToMove()
+		return s.evaluate(&b)
 	}
 
-	moves := b.legalMoves(buf[:0])
+	var buf, ordered [256]Move
+	moves := s.legalMoves(&b, buf[:0])
 	if len(moves) == 0 {
 		if b.InCheck() {
 			return -mateScore + ply
@@ -378,7 +423,7 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 
 	best := -infinity
 	for _, m := range orderMoves(moves, ordered[:0]) {
-		child := b.makeMove(m)
+		child := s.makeMove(&b, m)
 		score := -s.negamax(child, depth-1, -beta, -alpha, ply+1)
 		if s.stopped {
 			return 0
@@ -391,6 +436,9 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 			alpha = score
 		}
 		if alpha >= beta {
+			if MetricsEnabled && s.metrics != nil {
+				s.metrics.BetaCutoffs++
+			}
 			break
 		}
 	}

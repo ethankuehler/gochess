@@ -2,6 +2,7 @@ package uci
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ethankuehler/gochess/chess"
 )
 
 // EngineResult is the information a client collects from one `go` command.
@@ -16,14 +19,27 @@ import (
 // is true, MateIn is in moves (negative means the engine is being mated) and
 // Score is not meaningful.
 type EngineResult struct {
-	BestMove string
-	Score    int
-	MateIn   int
-	HasMate  bool
-	Depth    int
-	Nodes    uint64
-	TimeMS   int64
-	PV       []string
+	BestMove   string
+	Score      int
+	MateIn     int
+	HasMate    bool
+	Depth      int
+	SelDepth   int
+	Nodes      uint64
+	NPS        uint64
+	TimeMS     int64
+	PV         []string
+	Iterations []EngineIteration
+	Metrics    *chess.SearchMetrics
+}
+
+// EngineIteration is one iterative-deepening info sample.
+type EngineIteration struct {
+	Depth    int    `json:"depth"`
+	SelDepth int    `json:"seldepth"`
+	Nodes    uint64 `json:"nodes"`
+	NPS      uint64 `json:"nps"`
+	TimeMS   int64  `json:"timeMs"`
 }
 
 // Client is a small UCI client for a single engine session. It is not safe for
@@ -185,10 +201,25 @@ func (c *Client) goCommand(command string) (EngineResult, error) {
 
 	start := time.Now()
 	var result EngineResult
+	var analysisErr error
 	for {
 		line, err := c.readLine()
 		if err != nil {
 			return result, fmt.Errorf("read search: %w", err)
+		}
+		if strings.HasPrefix(line, "info string analysis ") {
+			var metrics chess.SearchMetrics
+			payload := strings.TrimPrefix(line, "info string analysis ")
+			if err := json.Unmarshal([]byte(payload), &metrics); err != nil {
+				// Keep reading until bestmove: aborting here would leave the
+				// move in the pipe and desynchronize the next command.
+				if analysisErr == nil {
+					analysisErr = fmt.Errorf("invalid analysis info: %w", err)
+				}
+			} else {
+				result.Metrics = &metrics
+			}
+			continue
 		}
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
@@ -196,7 +227,10 @@ func (c *Client) goCommand(command string) (EngineResult, error) {
 		}
 		switch fields[0] {
 		case "info":
-			parseInfo(fields, &result)
+			if len(fields) >= 2 && fields[1] != "string" {
+				parseInfo(fields, &result)
+				recordIteration(&result)
+			}
 		case "bestmove":
 			if len(fields) >= 2 && fields[1] != "0000" && fields[1] != "(none)" {
 				result.BestMove = fields[1]
@@ -207,9 +241,30 @@ func (c *Client) goCommand(command string) (EngineResult, error) {
 					result.TimeMS = 1
 				}
 			}
+			if analysisErr != nil {
+				return result, analysisErr
+			}
 			return result, nil
 		}
 	}
+}
+
+func recordIteration(result *EngineResult) {
+	if result.Depth <= 0 {
+		return
+	}
+	iteration := EngineIteration{
+		Depth:    result.Depth,
+		SelDepth: result.SelDepth,
+		Nodes:    result.Nodes,
+		NPS:      result.NPS,
+		TimeMS:   result.TimeMS,
+	}
+	if len(result.Iterations) > 0 && result.Iterations[len(result.Iterations)-1].Depth == iteration.Depth {
+		result.Iterations[len(result.Iterations)-1] = iteration
+		return
+	}
+	result.Iterations = append(result.Iterations, iteration)
 }
 
 func (c *Client) ready() error {
@@ -302,9 +357,17 @@ func parseInfo(fields []string, result *EngineResult) {
 			if value, ok := fieldInt(fields, i+1); ok && value >= 0 {
 				result.Depth = value
 			}
+		case "seldepth":
+			if value, ok := fieldInt(fields, i+1); ok && value >= 0 {
+				result.SelDepth = value
+			}
 		case "nodes":
 			if value, ok := fieldUint(fields, i+1); ok {
 				result.Nodes = value
+			}
+		case "nps":
+			if value, ok := fieldUint(fields, i+1); ok {
+				result.NPS = value
 			}
 		case "time":
 			if value, ok := fieldInt(fields, i+1); ok && value >= 0 {

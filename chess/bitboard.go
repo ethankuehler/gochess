@@ -16,11 +16,13 @@ type BitBoard uint64
 // castling rights, the en passant target, and both move clocks.
 type Position struct {
 	pieceBitboards  [12]BitBoard // one bitboard per piece type and colour
+	occupancy       [2]BitBoard  // cached white and black occupancy
 	enPassantSquare BitBoard     // en passant target square
 	flags           uint8        // packed turn and castling rights
 	halfmoveClock   uint16       // half moves since the last pawn advance or capture
 	fullmoveNumber  uint16       // full moves
 	key             uint64       // Zobrist key for repetition detection
+	epHash          uint64       // cached en passant contribution to key
 }
 
 func (b BitBoard) String() string {
@@ -81,6 +83,8 @@ func NewStartingPosition() *Position {
 	b.halfmoveClock = 0
 	b.fullmoveNumber = 1
 
+	b.refreshOccupancy()
+	b.epHash = b.computeEnPassantKey()
 	b.key = b.computeKey()
 
 	return &b
@@ -227,6 +231,8 @@ func ParseFEN(fen string) (*Position, error) {
 	}
 	b.fullmoveNumber = uint16(v)
 
+	b.refreshOccupancy()
+	b.epHash = b.computeEnPassantKey()
 	b.key = b.computeKey()
 
 	return &b, nil
@@ -343,14 +349,34 @@ func (b *Position) FEN() string {
 	return buffer.String()
 }
 
+// refreshOccupancy rebuilds the cached per-colour occupancy from the piece
+// bitboards. Constructors call it; makeMove updates the cache incrementally.
+func (b *Position) refreshOccupancy() {
+	b.occupancy[White] = b.pieceBitboards[Pawn] |
+		b.pieceBitboards[Knight] |
+		b.pieceBitboards[Bishop] |
+		b.pieceBitboards[Rook] |
+		b.pieceBitboards[Queen] |
+		b.pieceBitboards[King]
+	b.occupancy[Black] = b.pieceBitboards[Pawn+blackPieceOffset] |
+		b.pieceBitboards[Knight+blackPieceOffset] |
+		b.pieceBitboards[Bishop+blackPieceOffset] |
+		b.pieceBitboards[Rook+blackPieceOffset] |
+		b.pieceBitboards[Queen+blackPieceOffset] |
+		b.pieceBitboards[King+blackPieceOffset]
+}
+
 // Occupancy returns a mask of every occupied square for the given colour.
 // Colour should be White, Black, or Both.
 func (b *Position) Occupancy(colour Colour) BitBoard {
-	var occupied BitBoard
-	for i := range PieceTypes(colour) {
-		occupied |= b.pieceBitboards[i]
+	switch colour {
+	case White, Black:
+		return b.occupancy[colour]
+	case Both:
+		return b.occupancy[White] | b.occupancy[Black]
+	default:
+		return 0
 	}
-	return occupied
 }
 
 // PieceBitboard returns the bitboard for one piece type and colour.

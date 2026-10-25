@@ -284,3 +284,33 @@ func TestPublicPositionHelpers(t *testing.T) {
 		t.Errorf("SideToMove() after e2e4 = %v, want Black", got)
 	}
 }
+
+func TestMakeMoveMaintainsOccupancy(t *testing.T) {
+	fens := []string{
+		NewStartingPosition().FEN(),
+		kiwipeteFEN,
+		"4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1",
+		"8/P7/8/8/8/8/8/K6k w - - 0 1",
+		"1n6/P7/8/8/8/8/8/K6k w - - 0 1",
+		"r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1",
+	}
+	for _, fen := range fens {
+		position := mustFEN(t, fen)
+		for _, move := range position.LegalMoves() {
+			next := position.makeMove(move)
+			for _, colour := range []Colour{White, Black} {
+				offset := 0
+				if colour == Black {
+					offset = blackPieceOffset
+				}
+				var want BitBoard
+				for piece := Pawn; piece <= King; piece++ {
+					want |= next.pieceBitboards[int(piece)+offset]
+				}
+				if got := next.Occupancy(colour); got != want {
+					t.Fatalf("%s %s: colour %d occupancy = %#x, want %#x", fen, move, colour, got, want)
+				}
+			}
+		}
+	}
+}

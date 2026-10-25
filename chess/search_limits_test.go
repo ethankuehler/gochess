@@ -2,6 +2,8 @@ package chess
 
 import (
 	"context"
+	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -246,5 +248,145 @@ func TestSearchWithLimitsNoInfoAfterCancellation(t *testing.T) {
 	}
 	if !result.HasMove {
 		t.Fatal("no fallback move after cancellation")
+	}
+}
+
+func TestSearchMetricsPreserveSearchResults(t *testing.T) {
+	if !MetricsEnabled {
+		t.Skip("metrics build tag not enabled")
+	}
+	position := mustFEN(t, kiwipeteFEN)
+	var plainInfo, measuredInfo []SearchInfo
+	plain := position.SearchWithLimits(context.Background(), SearchLimits{MaxDepth: 4}, func(info SearchInfo) {
+		plainInfo = append(plainInfo, info)
+	})
+	measured := position.SearchWithLimits(context.Background(), SearchLimits{MaxDepth: 4, CollectMetrics: true}, func(info SearchInfo) {
+		measuredInfo = append(measuredInfo, info)
+	})
+
+	if plain.Metrics != nil {
+		t.Fatal("disabled search returned metrics")
+	}
+	if measured.Metrics == nil {
+		t.Fatal("enabled search returned nil metrics")
+	}
+	metrics := measured.Metrics
+	measured.Metrics = nil
+	if !reflect.DeepEqual(measured, plain) {
+		t.Fatalf("enabled result differs from disabled result:\nenabled:  %+v\ndisabled: %+v", measured, plain)
+	}
+	if len(plainInfo) != len(measuredInfo) {
+		t.Fatalf("info counts differ: disabled %d, enabled %d", len(plainInfo), len(measuredInfo))
+	}
+	for i := range plainInfo {
+		plainInfo[i].Time = 0
+		measuredInfo[i].Time = 0
+	}
+	if !reflect.DeepEqual(measuredInfo, plainInfo) {
+		t.Fatalf("enabled info differs from disabled info:\nenabled:  %+v\ndisabled: %+v", measuredInfo, plainInfo)
+	}
+	if metrics.ElapsedNS <= 0 || metrics.MoveGenNS <= 0 || metrics.LegalFilterNS <= 0 || metrics.EvaluationNS <= 0 || metrics.SearchMakeMoveNS <= 0 {
+		t.Fatalf("sub-millisecond metric duration was not preserved: %+v", metrics)
+	}
+	if metrics.MoveGenCalls == 0 || metrics.LegalMoves < metrics.MoveGenCalls {
+		t.Fatalf("invalid move generation counts: %+v", metrics)
+	}
+	if metrics.PseudoMoves < metrics.LegalMoves {
+		t.Fatalf("pseudo-legal moves < legal moves: %+v", metrics)
+	}
+	if metrics.EvaluationCalls == 0 || metrics.MakeMoveCalls == 0 || metrics.SearchMakeMoveCalls == 0 || metrics.BetaCutoffs == 0 {
+		t.Fatalf("missing recursive search counts: %+v", metrics)
+	}
+	if metrics.MakeMoveCalls != metrics.PseudoMoves+metrics.SearchMakeMoveCalls {
+		t.Fatalf("copy-make counts do not add up: %+v", metrics)
+	}
+	if metrics.SearchMakeMoveCalls != measured.Nodes {
+		t.Fatalf("search copy-make calls = %d, nodes = %d", metrics.SearchMakeMoveCalls, measured.Nodes)
+	}
+	if phaseSum := metrics.MoveGenNS + metrics.LegalFilterNS + metrics.EvaluationNS + metrics.SearchMakeMoveNS; phaseSum > metrics.ElapsedNS {
+		t.Fatalf("measured phases = %dns, elapsed = %dns", phaseSum, metrics.ElapsedNS)
+	}
+
+	second := position.SearchWithLimits(context.Background(), SearchLimits{MaxDepth: 1, CollectMetrics: true}, nil)
+	if second.Metrics == nil || second.Metrics == metrics {
+		t.Fatal("searches share metric storage")
+	}
+	original := second.Metrics.MoveGenCalls
+	metrics.MoveGenCalls++
+	if second.Metrics.MoveGenCalls != original {
+		t.Fatal("mutating one search's metrics changed another search")
+	}
+}
+
+func TestSearchMetricsEarlyReturns(t *testing.T) {
+	if !MetricsEnabled {
+		t.Skip("metrics build tag not enabled")
+	}
+	checkmate := mustFEN(t, "7k/6Q1/6K1/8/8/8/8/8 b - - 0 1")
+	terminal := checkmate.SearchWithLimits(context.Background(), SearchLimits{MaxDepth: 2, CollectMetrics: true}, nil)
+	if terminal.Metrics == nil {
+		t.Fatal("terminal search returned nil metrics")
+	}
+	if terminal.Metrics.ElapsedNS <= 0 || terminal.Metrics.MoveGenNS <= 0 {
+		t.Fatalf("terminal nanosecond durations were not preserved: %+v", terminal.Metrics)
+	}
+	if terminal.Metrics.MoveGenCalls != 1 || terminal.Metrics.PseudoMoves == 0 || terminal.Metrics.LegalMoves != 0 || terminal.Metrics.MakeMoveCalls != terminal.Metrics.PseudoMoves || terminal.Metrics.SearchMakeMoveCalls != 0 || terminal.Metrics.EvaluationCalls != 0 {
+		t.Fatalf("terminal metrics = %+v", terminal.Metrics)
+	}
+
+	position := NewStartingPosition()
+	emptyRoot := position.SearchWithLimits(context.Background(), SearchLimits{
+		MaxDepth:       2,
+		RootMoves:      []Move{},
+		CollectMetrics: true,
+	}, nil)
+	if emptyRoot.Metrics == nil || emptyRoot.Metrics.MoveGenCalls != 1 || emptyRoot.Metrics.PseudoMoves != 20 || emptyRoot.Metrics.LegalMoves != 20 || emptyRoot.Metrics.MakeMoveCalls != 20 || emptyRoot.Metrics.SearchMakeMoveCalls != 0 {
+		t.Fatalf("empty root metrics = %+v", emptyRoot.Metrics)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cancelled := position.SearchWithLimits(ctx, SearchLimits{MaxDepth: 3, CollectMetrics: true}, nil)
+	if cancelled.Metrics == nil {
+		t.Fatal("cancelled search returned nil metrics")
+	}
+	if !cancelled.HasMove || cancelled.Depth != 0 || cancelled.Nodes != 0 {
+		t.Fatalf("cancelled result = %+v", cancelled)
+	}
+	if cancelled.Metrics.MoveGenCalls != 1 || cancelled.Metrics.PseudoMoves != 20 || cancelled.Metrics.LegalMoves != 20 || cancelled.Metrics.MakeMoveCalls != 20 || cancelled.Metrics.SearchMakeMoveCalls != 0 || cancelled.Metrics.EvaluationCalls != 0 {
+		t.Fatalf("cancelled metrics = %+v", cancelled.Metrics)
+	}
+}
+
+func TestSearchMetricsJSONNames(t *testing.T) {
+	encoded, err := json.Marshal(SearchMetrics{
+		ElapsedNS:           1,
+		MoveGenCalls:        2,
+		PseudoMoves:         5,
+		LegalMoves:          4,
+		EvaluationCalls:     5,
+		MakeMoveCalls:       12,
+		SearchMakeMoveCalls: 7,
+		BetaCutoffs:         8,
+		MoveGenNS:           9,
+		LegalFilterNS:       10,
+		EvaluationNS:        11,
+		SearchMakeMoveNS:    12,
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	want := []string{"elapsedNs", "moveGenCalls", "pseudoMoves", "legalMoves", "evaluationCalls", "makeMoveCalls", "searchMakeMoveCalls", "betaCutoffs", "moveGenNs", "legalFilterNs", "evaluationNs", "searchMakeMoveNs"}
+	if len(fields) != len(want) {
+		t.Fatalf("JSON fields = %v", fields)
+	}
+	for _, name := range want {
+		if _, ok := fields[name]; !ok {
+			t.Errorf("JSON field %q missing from %s", name, encoded)
+		}
 	}
 }

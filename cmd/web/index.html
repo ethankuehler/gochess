@@ -351,6 +351,68 @@
       font-size: 0.8rem;
     }
 
+    .analysis summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+    }
+
+    .analysis[open] summary { margin-bottom: 0.75rem; }
+    .analysis h3 {
+      margin: 0.85rem 0 0.4rem;
+      color: #d8c7b1;
+      font-size: 0.78rem;
+    }
+    .analysis h4 {
+      margin: 0.55rem 0 0;
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+    .analysis .hint { margin: 0.45rem 0; font-size: 0.75rem; }
+    .analysis select {
+      box-sizing: border-box;
+      width: 100%;
+      margin-top: 0.45rem;
+      padding: 0.45rem;
+      border: 1px solid rgba(240, 185, 91, 0.25);
+      border-radius: 8px;
+      background: #241e19;
+      color: #d8c7b1;
+    }
+    .analysis-chart {
+      display: block;
+      width: 100%;
+      height: 112px;
+      margin-top: 0.3rem;
+      overflow: visible;
+    }
+    .analysis-chart text { fill: var(--muted); font-size: 9px; }
+    .analysis-chart .grid { stroke: rgba(255, 235, 205, 0.1); stroke-width: 1; }
+    .analysis-chart .series { fill: none; stroke: var(--accent); stroke-width: 2; }
+    .analysis-chart .latest { fill: var(--accent); }
+    .analysis-chart .empty { fill: var(--muted); font-size: 11px; }
+    .analysis-phase {
+      display: grid;
+      grid-template-columns: 92px minmax(60px, 1fr) 92px;
+      align-items: center;
+      gap: 0.4rem;
+      margin: 0.3rem 0;
+      color: var(--muted);
+      font-size: 0.72rem;
+    }
+    .analysis-phase-track { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.07); }
+    .analysis-phase-bar { height: 100%; border-radius: 4px; background: var(--accent); }
+    .analysis-phase-bar.other { background: var(--muted); opacity: 0.55; }
+    .analysis-phase-value { text-align: right; font-family: ui-monospace, monospace; }
+    .analysis-links { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.6rem; }
+    .analysis-links a { color: var(--accent); font-size: 0.75rem; }
+    .analysis code { color: #d8c7b1; font-size: 0.7rem; word-break: break-all; }
+    .analysis-status { color: var(--muted); font-size: 0.75rem; }
+
     .legend {
       display: flex;
       align-items: center;
@@ -422,6 +484,43 @@
       <p id="engineInfo" class="engine-info"></p>
       <p id="error" class="error" role="alert"></p>
 
+      <details id="analysisPanel" class="info analysis" hidden>
+        <summary>Runtime analysis</summary>
+        <p class="hint">Opt-in measurements include the whole local process. Keep auto play or a deep search running while capturing hotspots; confirm optimizations with normal, non-profiled benchmarks.</p>
+        <p id="analysisStatus" class="analysis-status">Open this panel to view runtime samples.</p>
+
+        <h3>Process CPU utilization</h3>
+        <p class="hint">Non-idle CPU across all cores; values can exceed 100%. A flat line at 0% means the process is idle between searches.</p>
+        <svg id="analysisCPUChart" class="analysis-chart" role="img" aria-label="Process CPU utilization over time"></svg>
+        <h3>Live heap</h3>
+        <svg id="analysisHeapChart" class="analysis-chart" role="img" aria-label="Live heap bytes over time"></svg>
+        <h3>Goroutines</h3>
+        <svg id="analysisGoroutinesChart" class="analysis-chart" role="img" aria-label="Goroutine count over time"></svg>
+
+        <h3>Search iterations</h3>
+        <select id="analysisSearch" aria-label="Search to analyze"></select>
+        <p id="analysisTotals" class="hint"></p>
+        <h4>Cumulative nodes</h4>
+        <svg id="analysisNodesChart" class="analysis-chart" role="img" aria-label="Cumulative nodes by completed depth"></svg>
+        <h4>Cumulative time</h4>
+        <svg id="analysisTimeChart" class="analysis-chart" role="img" aria-label="Cumulative search time by completed depth"></svg>
+        <h4>Nodes per second</h4>
+        <svg id="analysisNPSChart" class="analysis-chart" role="img" aria-label="Nodes per second by completed depth"></svg>
+
+        <h3>Search phases</h3>
+        <p class="hint">Inclusive wall time. Bars are disjoint: legality filtering includes its copy-make and attack test, while search copy-make covers only search-tree copies. Unattributed time is draw checks, ordering, PV, callbacks, and timer/runtime overhead.</p>
+        <div id="analysisPhases"></div>
+
+        <h3>Function-level hotspots</h3>
+        <div class="analysis-links">
+          <a id="analysisCPUDownload" href="/debug/pprof/profile?seconds=10" download>10-second CPU profile</a>
+          <a id="analysisHeapDownload" href="/debug/pprof/heap" download>Heap profile</a>
+          <a id="analysisTraceDownload" href="/debug/pprof/trace?seconds=1" download>1-second trace</a>
+          <a id="analysisPprofIndex" href="/debug/pprof/" target="_blank" rel="noopener">pprof index</a>
+        </div>
+        <p class="hint">After downloading the CPU profile during a search, run<br><code>go tool pprof -http=127.0.0.1:8081 gochess-cpu.pb.gz</code><br>for top functions, call graphs, and flame graphs.</p>
+      </details>
+
       <section class="info">
         <h2>Position</h2>
         <div id="fen" class="fen"></div>
@@ -457,6 +556,9 @@
     const engineBtn = document.getElementById("engine");
     const depthEl = document.getElementById("depth");
     const engineInfoEl = document.getElementById("engineInfo");
+    const analysisPanel = document.getElementById("analysisPanel");
+    const analysisStatusEl = document.getElementById("analysisStatus");
+    const analysisSearchEl = document.getElementById("analysisSearch");
 
     let state = null;
     let selected = null;
@@ -466,6 +568,9 @@
     let busy = false;
     let resetting = false;
     let thinking = false;
+    let analysisTimer = null;
+    let analysisData = { samples: [], searches: [] };
+    let analysisSelected = -1;
 
     function squareName(rankIndex, fileIndex) {
       return FILES[fileIndex] + String(8 - rankIndex);
@@ -658,6 +763,206 @@
         state.status === "threefold" || state.status === "fifty-move" ? "Draw claimed" : "Claim draw";
       resetBtn.disabled = resetting;
       engineInfoEl.textContent = engineInfoText();
+      syncAnalysisVisibility();
+    }
+
+    function syncAnalysisVisibility() {
+      analysisPanel.hidden = !state || !state.analysis;
+      if (analysisPanel.hidden) stopAnalysisPolling();
+    }
+
+    function stopAnalysisPolling() {
+      if (analysisTimer) clearTimeout(analysisTimer);
+      analysisTimer = null;
+    }
+
+    function scheduleAnalysisRefresh() {
+      stopAnalysisPolling();
+      if (!analysisPanel.open || document.hidden || !state || !state.analysis) return;
+      analysisTimer = setTimeout(refreshAnalysis, 1000);
+    }
+
+    async function refreshAnalysis() {
+      stopAnalysisPolling();
+      if (!analysisPanel.open || document.hidden || !state || !state.analysis) return;
+      const previous = analysisData;
+      const followedLatest = analysisSelected < 0 || analysisSelected >= previous.searches.length - 1;
+      try {
+        analysisData = await request("/api/analysis");
+        if (followedLatest || analysisSelected >= analysisData.searches.length) {
+          analysisSelected = analysisData.searches.length - 1;
+        }
+        const samples = analysisData.samples;
+        const latest = samples[samples.length - 1];
+        const previousSample = samples[samples.length - 2];
+        const updated = latest ? new Date(latest.timeMs).toLocaleTimeString([], { hour12: false }) : "—";
+        let cpuText = "CPU unavailable";
+        if (latest && latest.cpuAvailable !== false) {
+          let percent = 0;
+          if (previousSample && previousSample.cpuAvailable !== false) {
+            const seconds = (latest.timeMs - previousSample.timeMs) / 1000;
+            if (seconds > 0) {
+              percent = Math.max(0, (latest.cpuSeconds - previousSample.cpuSeconds) / seconds * 100);
+            }
+          }
+          cpuText = `CPU ${percent.toFixed(0)}%`;
+        }
+        analysisStatusEl.textContent = `${samples.length} runtime samples · ${cpuText} · updated ${updated} · ${analysisData.searches.length} completed searches`;
+      } catch (error) {
+        analysisStatusEl.textContent = `Analysis unavailable: ${error.message}`;
+      }
+      renderAnalysis();
+      scheduleAnalysisRefresh();
+    }
+
+    function formatDurationMS(value) {
+      if (value < 0.001) return `${(value * 1e6).toFixed(1)} ns`;
+      if (value < 1) return `${(value * 1000).toFixed(1)} µs`;
+      if (value < 1000) return `${value.toFixed(value < 10 ? 2 : 1)} ms`;
+      return `${(value / 1000).toFixed(2)} s`;
+    }
+
+    function formatChartValue(value, kind) {
+      if (kind === "bytes") {
+        if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MiB`;
+        if (value >= 1024) return `${(value / 1024).toFixed(1)} KiB`;
+        return `${Math.round(value)} B`;
+      }
+      if (kind === "cpu") return `${value.toFixed(0)}%`;
+      if (kind === "ms") return formatDurationMS(value);
+      if (kind === "count" || kind === "nps") {
+        return Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
+      }
+      return String(Math.round(value));
+    }
+
+    function appendSVG(svg, name, attributes, text) {
+      const element = document.createElementNS("http://www.w3.org/2000/svg", name);
+      Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
+      if (text !== undefined) element.textContent = text;
+      svg.appendChild(element);
+      return element;
+    }
+
+    function renderLineChart(id, points, kind, xKind) {
+      const svg = document.getElementById(id);
+      svg.replaceChildren();
+      svg.setAttribute("viewBox", "0 0 360 112");
+      if (!points.length) {
+        appendSVG(svg, "text", { x: 180, y: 52, "text-anchor": "middle", class: "empty" }, "No data yet");
+        return;
+      }
+
+      const left = 48, right = 352, top = 8, bottom = 86;
+      const xMin = points[0].x;
+      const xMax = points[points.length - 1].x;
+      // A CPU chart pinned at zero would otherwise auto-scale to 1% and make
+      // the idle line look broken. Keep a stable 0-100% baseline instead.
+      const yMax = Math.max(kind === "cpu" ? 100 : 1, ...points.map(point => point.y));
+      const xRange = Math.max(1, xMax - xMin);
+      const x = value => left + (value - xMin) / xRange * (right - left);
+      const y = value => bottom - value / yMax * (bottom - top);
+
+      for (let i = 0; i < 3; i++) {
+        const value = yMax * i / 2;
+        const py = y(value);
+        appendSVG(svg, "line", { x1: left, y1: py, x2: right, y2: py, class: "grid" });
+        appendSVG(svg, "text", { x: left - 5, y: py + 3, "text-anchor": "end" }, formatChartValue(value, kind));
+      }
+      const path = points.map((point, index) => `${index ? "L" : "M"}${x(point.x).toFixed(2)},${y(point.y).toFixed(2)}`).join(" ");
+      appendSVG(svg, "path", { d: path, class: "series" });
+      const latest = points[points.length - 1];
+      appendSVG(svg, "circle", { cx: x(latest.x), cy: y(latest.y), r: 2.5, class: "latest" });
+      const formatX = value => xKind === "time"
+        ? new Date(value).toLocaleTimeString([], { hour12: false })
+        : `depth ${Math.round(value)}`;
+      appendSVG(svg, "text", { x: left, y: 105, "text-anchor": "start" }, formatX(xMin));
+      appendSVG(svg, "text", { x: right, y: 105, "text-anchor": "end" }, formatX(xMax));
+    }
+
+    function renderAnalysis() {
+      const samples = analysisData.samples || [];
+      const cpu = [];
+      for (let i = 1; i < samples.length; i++) {
+        if (samples[i].cpuAvailable === false || samples[i - 1].cpuAvailable === false) continue;
+        const elapsed = (samples[i].timeMs - samples[i - 1].timeMs) / 1000;
+        const used = samples[i].cpuSeconds - samples[i - 1].cpuSeconds;
+        if (elapsed > 0 && used >= 0) cpu.push({ x: samples[i].timeMs, y: used / elapsed * 100 });
+      }
+      renderLineChart("analysisCPUChart", cpu, "cpu", "time");
+      renderLineChart("analysisHeapChart", samples.map(sample => ({ x: sample.timeMs, y: sample.heapLiveBytes })), "bytes", "time");
+      renderLineChart("analysisGoroutinesChart", samples.map(sample => ({ x: sample.timeMs, y: sample.goroutines })), "count", "time");
+
+      const searches = analysisData.searches || [];
+      analysisSearchEl.replaceChildren();
+      searches.forEach((search, index) => {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = `#${index + 1} · ${search.requestedDepth} ply · ${new Date(search.timeMs).toLocaleTimeString([], { hour12: false })}`;
+        analysisSearchEl.appendChild(option);
+      });
+      analysisSearchEl.disabled = searches.length === 0;
+      const totalsEl = document.getElementById("analysisTotals");
+      const phasesEl = document.getElementById("analysisPhases");
+      phasesEl.replaceChildren();
+      if (analysisSelected < 0 || analysisSelected >= searches.length) {
+        totalsEl.textContent = "No completed searches yet. Iteration charts show cumulative nodes, time, and NPS by depth.";
+        ["analysisNodesChart", "analysisTimeChart", "analysisNPSChart"].forEach(id => renderLineChart(id, [], "count", "depth"));
+        return;
+      }
+
+      analysisSearchEl.value = String(analysisSelected);
+      const search = searches[analysisSelected];
+      const iterations = search.iterations || [];
+      renderLineChart("analysisNodesChart", iterations.map(iteration => ({ x: iteration.depth, y: iteration.nodes })), "count", "depth");
+      renderLineChart("analysisTimeChart", iterations.map(iteration => ({ x: iteration.depth, y: iteration.timeMs })), "ms", "depth");
+      renderLineChart("analysisNPSChart", iterations.map(iteration => ({ x: iteration.depth, y: iteration.nps })), "nps", "depth");
+
+      const metrics = search.metrics;
+      if (!metrics) {
+        totalsEl.textContent = `Requested ${search.requestedDepth} ply · no phase metrics returned`;
+        return;
+      }
+      const metric = value => Number.isFinite(Number(value)) ? Number(value) : 0;
+      const elapsedNS = Math.max(1, metric(metrics.elapsedNs));
+      const phases = [
+        { name: "Pseudo move gen", ns: metric(metrics.moveGenNs), calls: metric(metrics.moveGenCalls), unit: "calls" },
+        { name: "Legality filter", ns: metric(metrics.legalFilterNs), calls: metric(metrics.pseudoMoves), unit: "moves" },
+        { name: "Evaluation", ns: metric(metrics.evaluationNs), calls: metric(metrics.evaluationCalls), unit: "calls" },
+        { name: "Search copy-make", ns: metric(metrics.searchMakeMoveNs), calls: metric(metrics.searchMakeMoveCalls), unit: "calls" },
+      ];
+      const measuredNS = phases.reduce((sum, phase) => sum + phase.ns, 0);
+      const unattributedNS = Math.max(0, elapsedNS - measuredNS);
+      const coverage = Math.min(100, measuredNS / elapsedNS * 100);
+      phases.push({ name: "Unattributed", ns: unattributedNS, calls: 0, unit: "", other: true });
+      totalsEl.textContent = `Requested ${search.requestedDepth} ply · elapsed ${formatDurationMS(elapsedNS / 1e6)} · measured ${coverage.toFixed(0)}% · all copy-make calls ${metric(metrics.makeMoveCalls).toLocaleString()} (${metric(metrics.searchMakeMoveCalls).toLocaleString()} search-edge) · ${metric(metrics.betaCutoffs).toLocaleString()} beta cutoffs`;
+      const maxNS = Math.max(1, ...phases.map(phase => phase.ns));
+      phases.forEach(phase => {
+        const row = document.createElement("div");
+        row.className = "analysis-phase";
+        const label = document.createElement("span");
+        label.textContent = phase.name;
+        const track = document.createElement("div");
+        track.className = "analysis-phase-track";
+        const bar = document.createElement("div");
+        bar.className = "analysis-phase-bar";
+        if (phase.other) bar.classList.add("other");
+        bar.style.width = `${phase.ns / maxNS * 100}%`;
+        track.appendChild(bar);
+        const value = document.createElement("span");
+        value.className = "analysis-phase-value";
+        value.textContent = formatDurationMS(phase.ns / 1e6);
+        row.append(label, track, value);
+        phasesEl.appendChild(row);
+      });
+      const calls = document.createElement("p");
+      calls.className = "hint";
+      calls.textContent = phases.filter(phase => phase.calls > 0).map(phase => {
+        const singular = phase.unit.endsWith("s") ? phase.unit.slice(0, -1) : phase.unit;
+        const average = phase.ns / phase.calls / 1e6;
+        return `${phase.name}: ${phase.calls.toLocaleString()} ${phase.unit}, ${formatDurationMS(average)}/${singular}`;
+      }).join(" · ");
+      phasesEl.appendChild(calls);
     }
 
     function pgnFilename(now) {
@@ -990,6 +1295,18 @@
     resetBtn.addEventListener("click", resetGame);
     exportPgnBtn.addEventListener("click", exportPGN);
     engineBtn.addEventListener("click", toggleEngine);
+    analysisPanel.addEventListener("toggle", () => {
+      if (analysisPanel.open) refreshAnalysis();
+      else stopAnalysisPolling();
+    });
+    analysisSearchEl.addEventListener("change", () => {
+      analysisSelected = Number(analysisSearchEl.value);
+      renderAnalysis();
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) stopAnalysisPolling();
+      else if (analysisPanel.open) refreshAnalysis();
+    });
     depthEl.addEventListener("input", queueDepthChange);
     depthEl.addEventListener("blur", () => {
       if (currentDepth() !== null) return;

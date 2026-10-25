@@ -65,10 +65,11 @@ func (e *Engine) handleGo(args []string) {
 	budget := allocateBudget(params, position.SideToMove(), e.options.moveOverhead)
 
 	limits := chess.SearchLimits{
-		MaxDepth:    params.depth,
-		MaxNodes:    params.nodes,
-		RootMoves:   rootMoves,
-		GameHistory: history,
+		MaxDepth:       params.depth,
+		MaxNodes:       params.nodes,
+		RootMoves:      rootMoves,
+		GameHistory:    history,
+		CollectMetrics: e.options.analysis && metricsSupported,
 	}
 	if budget.ok {
 		now := time.Now()

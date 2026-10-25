@@ -2,6 +2,7 @@ package uci
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strconv"
@@ -146,6 +147,9 @@ func (s *testSession) handshake() {
 	s.expectPrefix("id author ")
 	s.expectPrefix("option name Threads")
 	s.expectPrefix("option name Move Overhead")
+	if metricsSupported {
+		s.expectPrefix("option name Analysis type check default false")
+	}
 	s.expectPrefix("uciok")
 	s.send("isready")
 	s.expectPrefix("readyok")
@@ -183,6 +187,90 @@ func TestGoDepth(t *testing.T) {
 	s.send("position startpos")
 	s.send("go depth 2")
 	s.assertBestmoveLegal(chess.NewStartingPosition().FEN())
+	s.send("quit")
+	s.waitExit()
+}
+
+func TestAnalysisOutput(t *testing.T) {
+	if !metricsSupported {
+		t.Skip("metrics build tag not enabled")
+	}
+	s := newTestSession(t)
+	s.handshake()
+	analysisCount := func(lines []string) int {
+		count := 0
+		for _, line := range lines {
+			if strings.HasPrefix(line, "info string analysis ") {
+				count++
+			}
+		}
+		return count
+	}
+	parseLastAnalysis := func(lines []string) chess.SearchMetrics {
+		s.t.Helper()
+		if len(lines) < 2 || !strings.HasPrefix(lines[len(lines)-1], "bestmove ") {
+			s.t.Fatalf("last output is not bestmove: %v", lines)
+		}
+		line := lines[len(lines)-2]
+		if !strings.HasPrefix(line, "info string analysis ") {
+			s.t.Fatalf("line before bestmove = %q", line)
+		}
+		payload := strings.TrimPrefix(line, "info string analysis ")
+		if strings.Contains(payload, " ") {
+			s.t.Fatalf("analysis JSON is not compact: %q", payload)
+		}
+		var metrics chess.SearchMetrics
+		if err := json.Unmarshal([]byte(payload), &metrics); err != nil {
+			s.t.Fatalf("invalid analysis JSON: %v", err)
+		}
+		return metrics
+	}
+
+	s.send("position startpos")
+	start := len(s.seen)
+	s.send("go depth 2")
+	s.bestmove()
+	if count := analysisCount(s.seen[start:]); count != 0 {
+		t.Fatalf("disabled search emitted %d analysis lines", count)
+	}
+
+	s.send("setoption name Analysis value true")
+	start = len(s.seen)
+	s.send("go depth 2")
+	s.bestmove()
+	lines := s.seen[start:]
+	if count := analysisCount(lines); count != 1 {
+		t.Fatalf("enabled search emitted %d analysis lines: %v", count, lines)
+	}
+	metrics := parseLastAnalysis(lines)
+	if metrics.MoveGenCalls == 0 || metrics.PseudoMoves == 0 || metrics.LegalMoves == 0 || metrics.EvaluationCalls == 0 || metrics.MakeMoveCalls == 0 || metrics.SearchMakeMoveCalls == 0 || metrics.LegalFilterNS == 0 || metrics.SearchMakeMoveNS == 0 {
+		t.Fatalf("incomplete analysis metrics: %+v", metrics)
+	}
+
+	s.send("position fen 7k/6Q1/6K1/8/8/8/8/8 b - - 0 1")
+	start = len(s.seen)
+	s.send("go depth 2")
+	if move := s.bestmove(); move != "0000" {
+		t.Fatalf("terminal bestmove = %s", move)
+	}
+	lines = s.seen[start:]
+	if count := analysisCount(lines); count != 1 {
+		t.Fatalf("terminal search emitted %d analysis lines: %v", count, lines)
+	}
+	metrics = parseLastAnalysis(lines)
+	if metrics.MoveGenCalls != 1 || metrics.PseudoMoves == 0 || metrics.LegalMoves != 0 || metrics.MakeMoveCalls != metrics.PseudoMoves || metrics.SearchMakeMoveCalls != 0 {
+		t.Fatalf("terminal analysis metrics: %+v", metrics)
+	}
+
+	s.send("setoption name Analysis value false")
+	s.send("position startpos")
+	start = len(s.seen)
+	s.send("go depth 1")
+	s.bestmove()
+	if count := analysisCount(s.seen[start:]); count != 0 {
+		t.Fatalf("re-disabled search emitted %d analysis lines", count)
+	}
+
 	s.send("quit")
 	s.waitExit()
 }

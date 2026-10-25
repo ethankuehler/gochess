@@ -411,6 +411,11 @@ func TestPageAndMethods(t *testing.T) {
 		!strings.Contains(string(body), `type="number"`) {
 		t.Error("page does not contain the numeric depth input")
 	}
+	for _, id := range []string{"analysisPanel", "analysisCPUChart", "analysisHeapChart", "analysisGoroutinesChart", "analysisSearch", "analysisNodesChart", "analysisTimeChart", "analysisNPSChart", "analysisPhases", "analysisCPUDownload"} {
+		if !strings.Contains(string(body), `id="`+id+`"`) {
+			t.Errorf("page does not contain %s", id)
+		}
+	}
 	if strings.Contains(string(body), `id="random"`) {
 		t.Error("page still contains the random move button")
 	}
@@ -643,7 +648,7 @@ func TestEngineResetKeepsSettings(t *testing.T) {
 }
 
 func TestResetCancelsSearch(t *testing.T) {
-	game := newGame()
+	game := newGameWithAnalysis(true)
 	t.Cleanup(game.Close)
 	server := httptest.NewServer(newMux(game))
 	t.Cleanup(server.Close)
@@ -715,6 +720,9 @@ func TestResetCancelsSearch(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("engine search did not stop")
+	}
+	if searches := len(game.analysis.snapshot().Searches); searches != 0 {
+		t.Errorf("stale search left %d analysis records", searches)
 	}
 }
 

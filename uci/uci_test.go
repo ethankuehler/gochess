@@ -40,14 +40,24 @@ func TestParseSetOption(t *testing.T) {
 func TestOptions(t *testing.T) {
 	options := defaultOptions()
 	lines := options.lines()
-	if len(lines) != 2 {
-		t.Fatalf("got %d option lines, want 2: %v", len(lines), lines)
+	wantLines := 2
+	if metricsSupported {
+		wantLines = 3
+	}
+	if len(lines) != wantLines {
+		t.Fatalf("got %d option lines, want %d: %v", len(lines), wantLines, lines)
 	}
 	if !strings.Contains(lines[0], "option name Threads type spin default 1 min 1 max 1") {
 		t.Errorf("unexpected Threads line: %s", lines[0])
 	}
 	if !strings.Contains(lines[1], "option name Move Overhead type spin default 50 min 0 max 5000") {
 		t.Errorf("unexpected Move Overhead line: %s", lines[1])
+	}
+	if metricsSupported && lines[2] != "option name Analysis type check default false" {
+		t.Errorf("unexpected Analysis line: %s", lines[2])
+	}
+	if options.analysis {
+		t.Error("Analysis defaults to true")
 	}
 
 	if msg := options.set("Move Overhead", "100", true); msg != "" {
@@ -71,6 +81,19 @@ func TestOptions(t *testing.T) {
 	}
 	if options.threads != 1 {
 		t.Errorf("threads = %d, want 1", options.threads)
+	}
+
+	if msg := options.set("Analysis", "TRUE", true); msg != "" || !options.analysis {
+		t.Errorf("Analysis true message = %q, enabled = %v", msg, options.analysis)
+	}
+	if msg := options.set("Analysis", "yes", true); !strings.Contains(msg, "invalid Analysis value") || !options.analysis {
+		t.Errorf("invalid Analysis message = %q, enabled = %v", msg, options.analysis)
+	}
+	if msg := options.set("Analysis", "false", true); msg != "" || options.analysis {
+		t.Errorf("Analysis false message = %q, enabled = %v", msg, options.analysis)
+	}
+	if msg := options.set("Analysis", "", false); msg != "" || options.analysis {
+		t.Errorf("missing Analysis value message = %q, enabled = %v", msg, options.analysis)
 	}
 
 	if msg := options.set("Hash", "256", true); msg != "" {

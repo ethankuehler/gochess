@@ -48,6 +48,7 @@ type stateResponse struct {
 	Engine         bool         `json:"engine"`
 	EngineDepth    int          `json:"engineDepth"`
 	EngineInfo     *engineInfo  `json:"engineInfo,omitempty"`
+	Analysis       bool         `json:"analysis"`
 }
 
 type game struct {
@@ -63,24 +64,46 @@ type game struct {
 	engine        *uci.Client
 	engineErr     error
 	engineBusy    bool
+	analysis      *analysisService
 }
 
 func newGame() *game {
+	return newGameWithAnalysis(false)
+}
+
+func newGameWithAnalysis(enabled bool) *game {
 	g := &game{
 		positions:   []*chess.Position{chess.NewStartingPosition()},
 		history:     []string{},
 		engineDepth: defaultEngineDepth,
 	}
-	client, err := uci.StartInProcess(log.Writer())
+	if enabled {
+		g.analysis = newAnalysisService()
+	}
+	client, err := startEngineClient(enabled)
 	if err != nil {
-		g.engineErr = fmt.Errorf("start UCI engine: %w", err)
+		g.engineErr = err
 		return g
 	}
 	g.engine = client
 	return g
 }
 
-// Close shuts down the UCI engine session.
+func startEngineClient(analysis bool) (*uci.Client, error) {
+	client, err := uci.StartInProcess(log.Writer())
+	if err != nil {
+		return nil, fmt.Errorf("start UCI engine: %w", err)
+	}
+	if analysis && chess.MetricsEnabled {
+		if err := client.SetOption("Analysis", "true"); err != nil {
+			_ = client.Close()
+			return nil, fmt.Errorf("enable UCI analysis: %w", err)
+		}
+	}
+	return client, nil
+}
+
+// Close shuts down the UCI engine session and optional runtime sampler.
 func (g *game) Close() {
 	g.engineMu.Lock()
 	defer g.engineMu.Unlock()
@@ -92,6 +115,7 @@ func (g *game) Close() {
 	if client != nil {
 		_ = client.Close()
 	}
+	g.analysis.Close()
 }
 
 func (g *game) currentLocked() *chess.Position {
@@ -233,6 +257,7 @@ func (g *game) engineMove() error {
 	if err != nil {
 		return err
 	}
+	g.analysis.recordSearch(result, depth)
 	if result.BestMove == "" {
 		g.engineInfo = nil
 		return nil
@@ -425,6 +450,7 @@ func (g *game) snapshotLocked() stateResponse {
 		Engine:         g.engineEnabled,
 		EngineDepth:    g.engineDepth,
 		EngineInfo:     g.engineInfo,
+		Analysis:       g.analysis != nil,
 	}
 }
 
@@ -478,6 +504,9 @@ func newMux(g *game) *http.ServeMux {
 	mux.HandleFunc("/api/engine/move", g.handleEngineMove)
 	mux.HandleFunc("/api/reset", g.handleReset)
 	mux.HandleFunc("/api/undo", g.handleUndo)
+	if g.analysis != nil {
+		g.analysis.registerRoutes(mux)
+	}
 	return mux
 }
 
@@ -660,16 +689,17 @@ func (g *game) handleReset(w http.ResponseWriter, r *http.Request) {
 	g.engine = nil
 	g.engineBusy = false
 	g.resetBoardLocked()
+	g.analysis.clearSearches()
 	g.mu.Unlock()
 
 	if old != nil {
 		_ = old.Close()
 	}
-	client, err := uci.StartInProcess(log.Writer())
+	client, err := startEngineClient(g.analysis != nil)
 
 	g.mu.Lock()
 	if err != nil {
-		g.engineErr = fmt.Errorf("start UCI engine: %w", err)
+		g.engineErr = err
 	} else {
 		g.engine = client
 		g.engineErr = nil
@@ -695,10 +725,15 @@ func (g *game) handleUndo(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8080", "HTTP listen address")
+	analysis := flag.Bool("analysis", false, "enable runtime metrics, plots, and pprof (loopback only)")
 	flag.Parse()
+	if *analysis && !loopbackListenAddress(*addr) {
+		log.Fatal("runtime analysis requires a loopback listen address")
+	}
 
-	game := newGame()
+	game := newGameWithAnalysis(*analysis)
 	if game.engine == nil {
+		game.Close()
 		log.Fatalf("could not start UCI engine: %v", game.engineErr)
 	}
 	defer game.Close()
