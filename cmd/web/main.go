@@ -268,6 +268,74 @@ func (g *game) applyUCILocked(uci string) error {
 	return nil
 }
 
+// statusLocked returns the game status of the current position.
+func (g *game) statusLocked() string {
+	b := g.currentLocked()
+	moves := b.LegalMoves()
+	if len(moves) == 0 {
+		if b.InCheck() {
+			return "checkmate"
+		}
+		return "stalemate"
+	}
+	if b.IsFiftyMoveDraw() {
+		return "fifty-move"
+	}
+	if b.IsInsufficientMaterial() {
+		return "insufficient-material"
+	}
+	previousKeys := make([]chess.PositionKey, 0, len(g.positions)-1)
+	for _, previous := range g.positions[:len(g.positions)-1] {
+		previousKeys = append(previousKeys, previous.Key())
+	}
+	if b.IsThreefoldRepetition(previousKeys) {
+		return "threefold"
+	}
+	return "playing"
+}
+
+// pgnLocked formats the game as PGN. The game always starts from the stored
+// initial position, so replaying the move list also reconstructs the SAN
+// movetext and the final result.
+func (g *game) pgnLocked(now time.Time) (string, error) {
+	start := g.positions[0]
+	position := start
+	moves := make([]chess.Move, 0, len(g.history))
+	for i, uci := range g.history {
+		next, move, err := position.ApplyUCIMove(uci)
+		if err != nil {
+			return "", fmt.Errorf("replay move %d %q: %w", i+1, uci, err)
+		}
+		moves = append(moves, move)
+		position = next
+	}
+
+	return chess.PGN(start, moves, chess.PGNHeader{
+		Event:  "gochess web game",
+		Site:   "gochess web",
+		Date:   now.Format("2006.01.02"),
+		Round:  "-",
+		White:  "?",
+		Black:  "?",
+		Result: pgnResult(g.statusLocked(), position.SideToMove()),
+	})
+}
+
+// pgnResult converts a game status to a PGN result token.
+func pgnResult(status string, sideToMove chess.Colour) string {
+	switch status {
+	case "checkmate":
+		if sideToMove == chess.White {
+			return "0-1"
+		}
+		return "1-0"
+	case "stalemate", "threefold", "fifty-move", "insufficient-material":
+		return "1/2-1/2"
+	default:
+		return "*"
+	}
+}
+
 func (g *game) snapshotLocked() stateResponse {
 	b := g.currentLocked()
 	moves := b.LegalMoves()
@@ -277,26 +345,7 @@ func (g *game) snapshotLocked() stateResponse {
 	}
 
 	inCheck := b.InCheck()
-	status := "playing"
-	if len(moves) == 0 {
-		if inCheck {
-			status = "checkmate"
-		} else {
-			status = "stalemate"
-		}
-	} else if b.IsFiftyMoveDraw() {
-		status = "fifty-move"
-	} else if b.IsInsufficientMaterial() {
-		status = "insufficient-material"
-	} else {
-		previousKeys := make([]chess.PositionKey, 0, len(g.positions)-1)
-		for _, previous := range g.positions[:len(g.positions)-1] {
-			previousKeys = append(previousKeys, previous.Key())
-		}
-		if b.IsThreefoldRepetition(previousKeys) {
-			status = "threefold"
-		}
-	}
+	status := g.statusLocked()
 
 	turn := "white"
 	if b.SideToMove() == chess.Black {
@@ -364,6 +413,7 @@ func newMux(g *game) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", serveIndex)
 	mux.HandleFunc("/api/state", g.handleState)
+	mux.HandleFunc("/api/pgn", g.handlePGN)
 	mux.HandleFunc("/api/move", g.handleMove)
 	mux.HandleFunc("/api/engine", g.handleEngine)
 	mux.HandleFunc("/api/engine/move", g.handleEngineMove)
@@ -410,6 +460,27 @@ func (g *game) handleState(w http.ResponseWriter, r *http.Request) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	writeJSON(w, http.StatusOK, g.snapshotLocked())
+}
+
+func (g *game) handlePGN(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	now := time.Now()
+	g.mu.Lock()
+	pgn, err := g.pgnLocked(now)
+	g.mu.Unlock()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	filename := "gochess-" + now.Format("20060102-150405") + ".pgn"
+	w.Header().Set("Content-Type", "application/x-chess-pgn; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(pgn))
 }
 
 func (g *game) handleEngine(w http.ResponseWriter, r *http.Request) {

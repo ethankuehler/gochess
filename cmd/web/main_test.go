@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -149,6 +150,108 @@ func TestMoveEndpoint(t *testing.T) {
 	}
 }
 
+func TestPGNExport(t *testing.T) {
+	server := newTestServer(t)
+	for _, move := range []string{"e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6"} {
+		if _, code := postState(t, server, "/api/move", fmt.Sprintf(`{"uci":%q}`, move)); code != http.StatusOK {
+			t.Fatalf("play %s: status %d", move, code)
+		}
+	}
+
+	response, body := doRequest(t, server, http.MethodGet, "/api/pgn", "")
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/pgn = %d: %s", response.StatusCode, body)
+	}
+	if contentType := response.Header.Get("Content-Type"); !strings.Contains(contentType, "pgn") {
+		t.Errorf("Content-Type = %q, want a PGN media type", contentType)
+	}
+	disposition := response.Header.Get("Content-Disposition")
+	if !strings.Contains(disposition, "attachment") || !strings.Contains(disposition, ".pgn") {
+		t.Errorf("Content-Disposition = %q, want an attachment with a .pgn filename", disposition)
+	}
+
+	pgn := string(body)
+	for _, want := range []string{
+		`[Event "gochess web game"]`,
+		`[Site "gochess web"]`,
+		`[Round "-"]`,
+		`[White "?"]`,
+		`[Black "?"]`,
+		`[Result "*"]`,
+		"1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 *",
+	} {
+		if !strings.Contains(pgn, want) {
+			t.Errorf("PGN does not contain %q:\n%s", want, pgn)
+		}
+	}
+	if !regexp.MustCompile(`\[Date "\d{4}\.\d{2}\.\d{2}"\]`).MatchString(pgn) {
+		t.Errorf("PGN has no well-formed Date tag:\n%s", pgn)
+	}
+	if strings.Contains(pgn, `[SetUp "1"]`) {
+		t.Errorf("standard game has a SetUp tag:\n%s", pgn)
+	}
+}
+
+func TestPGNExportCheckmate(t *testing.T) {
+	server := newTestServer(t)
+	for _, move := range []string{"e2e4", "e7e5", "f1c4", "b8c6", "d1h5", "g8f6", "h5f7"} {
+		if _, code := postState(t, server, "/api/move", fmt.Sprintf(`{"uci":%q}`, move)); code != http.StatusOK {
+			t.Fatalf("play %s: status %d", move, code)
+		}
+	}
+
+	_, body := doRequest(t, server, http.MethodGet, "/api/pgn", "")
+	pgn := string(body)
+	if !strings.Contains(pgn, `[Result "1-0"]`) {
+		t.Errorf("PGN does not contain the checkmate result:\n%s", pgn)
+	}
+	if !strings.HasSuffix(pgn, "4. Qxf7# 1-0\n") {
+		t.Errorf("PGN does not end with the mating move and result:\n%s", pgn)
+	}
+}
+
+func TestPGNExportDraw(t *testing.T) {
+	server := newTestServer(t)
+	for _, move := range []string{"g1f3", "g8f6", "f3g1", "f6g8", "g1f3", "g8f6", "f3g1", "f6g8"} {
+		if _, code := postState(t, server, "/api/move", fmt.Sprintf(`{"uci":%q}`, move)); code != http.StatusOK {
+			t.Fatalf("play %s: status %d", move, code)
+		}
+	}
+	if state := getState(t, server); state.Status != "threefold" {
+		t.Fatalf("status = %q, want threefold", state.Status)
+	}
+
+	_, body := doRequest(t, server, http.MethodGet, "/api/pgn", "")
+	pgn := string(body)
+	if !strings.Contains(pgn, `[Result "1/2-1/2"]`) {
+		t.Errorf("PGN does not contain the draw result:\n%s", pgn)
+	}
+	if !strings.HasSuffix(pgn, "1/2-1/2\n") {
+		t.Errorf("PGN does not end with the draw result:\n%s", pgn)
+	}
+}
+
+func TestPGNResult(t *testing.T) {
+	tests := []struct {
+		status string
+		side   chess.Colour
+		want   string
+	}{
+		{"playing", chess.White, "*"},
+		{"checkmate", chess.White, "0-1"},
+		{"checkmate", chess.Black, "1-0"},
+		{"stalemate", chess.White, "1/2-1/2"},
+		{"threefold", chess.Black, "1/2-1/2"},
+		{"fifty-move", chess.White, "1/2-1/2"},
+		{"insufficient-material", chess.Black, "1/2-1/2"},
+	}
+	for _, test := range tests {
+		if got := pgnResult(test.status, test.side); got != test.want {
+			t.Errorf("pgnResult(%q, %v) = %q, want %q", test.status, test.side, got, test.want)
+		}
+	}
+}
+
 func TestResetUndo(t *testing.T) {
 	server := newTestServer(t)
 	start := getState(t, server)
@@ -209,6 +312,10 @@ func TestPageAndMethods(t *testing.T) {
 	if !strings.Contains(string(body), `id="engine"`) {
 		t.Error("page does not contain the engine toggle")
 	}
+	if !strings.Contains(string(body), `id="export-pgn"`) ||
+		!strings.Contains(string(body), "Export PGN") {
+		t.Error("page does not contain the PGN export button")
+	}
 	if !strings.Contains(string(body), `id="depth"`) ||
 		!strings.Contains(string(body), `type="number"`) {
 		t.Error("page does not contain the numeric depth input")
@@ -225,6 +332,11 @@ func TestPageAndMethods(t *testing.T) {
 	response, _ = doRequest(t, server, http.MethodPost, "/api/random", "")
 	if response.StatusCode != http.StatusNotFound {
 		t.Errorf("POST /api/random = %d, want 404", response.StatusCode)
+	}
+
+	response, _ = doRequest(t, server, http.MethodPost, "/api/pgn", "")
+	if response.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("POST /api/pgn = %d, want 405", response.StatusCode)
 	}
 
 	for _, path := range []string{"/api/engine", "/api/engine/move"} {

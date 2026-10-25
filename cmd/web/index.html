@@ -407,6 +407,7 @@
         <button id="auto" class="primary wide" type="button" disabled>Auto play</button>
         <button id="undo" class="ghost" type="button" disabled>Undo</button>
         <button id="reset" class="ghost" type="button">Reset</button>
+        <button id="export-pgn" class="ghost wide" type="button" disabled>Export PGN</button>
       </div>
 
       <div class="engine-row">
@@ -416,7 +417,7 @@
         </label>
       </div>
 
-      <p class="hint">Click one of your pieces, then a highlighted square. Promotions default to a queen. You play White; turn the engine on to play against the search, or use Auto play to watch the engine play both sides. Higher depths take longer — reset stops the search.</p>
+      <p class="hint">Click one of your pieces, then a highlighted square. Promotions default to a queen. You play White; turn the engine on to play against the search, or use Auto play to watch the engine play both sides. Higher depths take longer — reset stops the search. Export PGN downloads the game so far.</p>
       <p id="engineInfo" class="engine-info"></p>
       <p id="error" class="error" role="alert"></p>
 
@@ -450,6 +451,7 @@
     const autoBtn = document.getElementById("auto");
     const undoBtn = document.getElementById("undo");
     const resetBtn = document.getElementById("reset");
+    const exportPgnBtn = document.getElementById("export-pgn");
     const engineBtn = document.getElementById("engine");
     const depthEl = document.getElementById("depth");
     const engineInfoEl = document.getElementById("engineInfo");
@@ -632,8 +634,37 @@
       autoBtn.textContent = auto ? "Stop auto" : "Auto play";
       autoBtn.classList.toggle("active", auto);
       undoBtn.disabled = locked || state.history.length === 0;
+      exportPgnBtn.disabled = locked || state.history.length === 0;
       resetBtn.disabled = resetting;
       engineInfoEl.textContent = engineInfoText();
+    }
+
+    function pgnFilename(now) {
+      const pad = (value) => String(value).padStart(2, "0");
+      return `gochess-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.pgn`;
+    }
+
+    async function exportPGN() {
+      if (!state || state.history.length === 0) return;
+      showError("");
+      try {
+        const response = await fetch("/api/pgn");
+        if (!response.ok) {
+          const message = (await response.text()).trim();
+          throw new Error(message || `Request failed (${response.status})`);
+        }
+        const url = URL.createObjectURL(await response.blob());
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = pgnFilename(new Date());
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (error) {
+        showError(error.message);
+      }
     }
 
     async function request(path, options = {}) {
@@ -911,6 +942,7 @@
     autoBtn.addEventListener("click", toggleAuto);
     undoBtn.addEventListener("click", undoMove);
     resetBtn.addEventListener("click", resetGame);
+    exportPgnBtn.addEventListener("click", exportPGN);
     engineBtn.addEventListener("click", toggleEngine);
     depthEl.addEventListener("input", queueDepthChange);
     depthEl.addEventListener("blur", () => {
