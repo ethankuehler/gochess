@@ -37,6 +37,14 @@ engine:
     resign_enabled: false
     offer_draw_enabled: false
 
+# Chat. lichess-bot sends `hello` with the bot's first move and `goodbye` when
+# the game ends. `{me}` and `{opponent}` expand to the account names; any other
+# `{...}` is removed. An empty string stays silent. Lichess caps a message at
+# 140 characters. Spectator chat is a separate pair of keys and stays off.
+greeting:
+  hello: "Hi {opponent}! I'm {me}, a small chess engine written in Go. Good luck!"
+  goodbye: "gg! Thanks for the game."
+
 abort_time: 30
 move_overhead: 300       # lichess-bot's clock reserve, on top of gochess's 100 ms
 quit_after_all_games_finish: true

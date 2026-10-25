@@ -333,6 +333,118 @@ func TestPromotionMoves(t *testing.T) {
 	})
 }
 
+func TestRayBetween(t *testing.T) {
+	cases := []struct {
+		to      string
+		between []string
+	}{
+		{"h8", []string{"e5", "f6", "g7"}},
+		{"a1", []string{"c3", "b2"}},
+		{"h4", []string{"e4", "f4", "g4"}},
+		{"a4", []string{"c4", "b4"}},
+		{"d8", []string{"d5", "d6", "d7"}},
+		{"d1", []string{"d3", "d2"}},
+		{"g1", []string{"e3", "f2"}},
+		{"a7", []string{"c5", "b6"}},
+	}
+	for _, tc := range cases {
+		t.Run("d4_"+tc.to, func(t *testing.T) {
+			got, ok := rayBetween(mustSquare(t, "d4"), mustSquare(t, tc.to))
+			if !ok {
+				t.Fatal("aligned squares were rejected")
+			}
+			want, err := SquaresToBitBoard(tc.between)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != want {
+				t.Errorf("between =\n%s\nwant =\n%s", got, want)
+			}
+		})
+	}
+	for _, to := range []string{"d4", "e6"} {
+		if _, ok := rayBetween(mustSquare(t, "d4"), mustSquare(t, to)); ok {
+			t.Errorf("d4 to %s unexpectedly produced a ray", to)
+		}
+	}
+}
+
+func TestLegalContextCheckers(t *testing.T) {
+	cases := []struct {
+		name     string
+		fen      string
+		checkers []string
+		target   []string
+	}{
+		{"rook", "4r1k1/8/8/8/8/8/8/4K3 w - - 0 1", []string{"e8"}, []string{"e2", "e3", "e4", "e5", "e6", "e7", "e8"}},
+		{"bishop", "6k1/8/8/8/1b6/8/8/4K3 w - - 0 1", []string{"b4"}, []string{"b4", "c3", "d2"}},
+		{"knight", "6k1/8/8/8/8/5n2/8/4K3 w - - 0 1", []string{"f3"}, []string{"f3"}},
+		{"pawn", "6k1/8/8/8/8/8/3p4/4K3 w - - 0 1", []string{"d2"}, []string{"d2"}},
+		{"double", "4r1k1/8/8/8/1b6/8/8/4K3 w - - 0 1", []string{"b4", "e8"}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := mustFEN(t, tc.fen).newLegalContext()
+			wantCheckers, err := SquaresToBitBoard(tc.checkers)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ctx.checkers != wantCheckers || ctx.checkerCount != len(tc.checkers) {
+				t.Errorf("checkers = %v/%d, want %v/%d", ctx.checkers, ctx.checkerCount, wantCheckers, len(tc.checkers))
+			}
+			if tc.target != nil {
+				wantTarget, err := SquaresToBitBoard(tc.target)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if ctx.checkTarget != wantTarget {
+					t.Errorf("check target =\n%s\nwant =\n%s", ctx.checkTarget, wantTarget)
+				}
+			}
+		})
+	}
+}
+
+func TestLegalContextPins(t *testing.T) {
+	t.Run("one rook blocker is pinned", func(t *testing.T) {
+		ctx := mustFEN(t, "4r1k1/8/8/8/8/8/4R3/4K3 w - - 0 1").newLegalContext()
+		want, err := SquaresToBitBoard([]string{"e2", "e3", "e4", "e5", "e6", "e7", "e8"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := ctx.pinMasks[mustSquare(t, "e2")]; got != want {
+			t.Errorf("pin mask =\n%s\nwant =\n%s", got, want)
+		}
+	})
+	t.Run("one diagonal blocker is pinned", func(t *testing.T) {
+		ctx := mustFEN(t, "k6b/6P1/8/8/8/8/8/K7 w - - 0 1").newLegalContext()
+		want, err := SquaresToBitBoard([]string{"b2", "c3", "d4", "e5", "f6", "g7", "h8"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := ctx.pinMasks[mustSquare(t, "g7")]; got != want {
+			t.Errorf("pin mask = %v, want %v", got, want)
+		}
+	})
+	t.Run("two blockers are not pinned", func(t *testing.T) {
+		ctx := mustFEN(t, "4r1k1/8/8/8/8/4R3/4R3/4K3 w - - 0 1").newLegalContext()
+		if got := ctx.pinMasks[mustSquare(t, "e2")]; got != allSquares {
+			t.Errorf("pin mask with two blockers = %v, want all squares", got)
+		}
+	})
+	t.Run("unpinned piece uses all squares", func(t *testing.T) {
+		ctx := NewStartingPosition().newLegalContext()
+		if ctx.checkerCount != 0 || ctx.checkTarget != allSquares {
+			t.Fatalf("starting context has unexpected check state: %+v", ctx)
+		}
+		for square, mask := range ctx.pinMasks {
+			if mask != allSquares {
+				t.Fatalf("square %s has unexpected pin mask %v", SquareName(Square(square)), mask)
+			}
+		}
+	})
+}
+
 func TestPinnedPieces(t *testing.T) {
 	t.Run("pinned knight has no moves", func(t *testing.T) {
 		b := mustFEN(t, "4r1k1/8/8/8/8/8/4N3/4K3 w - - 0 1")
@@ -368,6 +480,68 @@ func TestPinnedPieces(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestEnPassantKingSafety(t *testing.T) {
+	cases := []struct {
+		name string
+		fen  string
+		move string
+	}{
+		{"white horizontal exposure", "4k3/8/8/K2pP2r/8/8/8/8 w - d6 0 1", "e5d6"},
+		{"black horizontal exposure", "8/8/8/8/k2Pp2R/8/8/4K3 b - d3 0 1", "e4d3"},
+		{"white diagonal exposure", "b6k/8/8/3pP3/8/8/8/7K w - d6 0 1", "e5d6"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			requireNoMoves(t, mustFEN(t, tc.fen).LegalMoves(), tc.move)
+		})
+	}
+}
+
+func TestEnPassantCheckEvasions(t *testing.T) {
+	cases := []struct {
+		name string
+		fen  string
+		move string
+	}{
+		{"capture checking pawn", "4k3/8/8/3pP3/4K3/8/8/8 w - d6 0 1", "e5d6"},
+		{"white blocks sliding check", "4k3/8/r6K/3pP3/8/8/8/8 w - d6 0 1", "e5d6"},
+		{"black blocks sliding check", "8/8/8/8/3Pp3/R6k/8/4K3 b - d3 0 1", "e4d3"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			b := mustFEN(t, tc.fen)
+			if !b.InCheck() {
+				t.Fatal("test position is not in check")
+			}
+			moves := b.LegalMoves()
+			requireMoves(t, moves, tc.move)
+			m, _ := findMove(moves, tc.move)
+			if !m.IsEnPassant() || !m.IsCapture() {
+				t.Errorf("%s is not flagged as an en-passant capture", m)
+			}
+		})
+	}
+}
+
+func TestKingCaptures(t *testing.T) {
+	t.Run("undefended capture is legal", func(t *testing.T) {
+		requireMoves(t, mustFEN(t, "4k3/8/8/3r4/4K3/8/8/8 w - - 0 1").LegalMoves(), "e4d5")
+	})
+	t.Run("defended capture is illegal", func(t *testing.T) {
+		requireNoMoves(t, mustFEN(t, "4k3/8/2p5/3r4/4K3/8/8/8 w - - 0 1").LegalMoves(), "e4d5")
+	})
+}
+
+func TestPinnedPromotion(t *testing.T) {
+	moves := mustFEN(t, "k6b/6P1/8/8/8/8/8/K7 w - - 0 1").LegalMoves()
+	requireMoves(t, moves, "g7h8q", "g7h8r", "g7h8b", "g7h8n")
+	requireNoMoves(t, moves, "g7g8q", "g7g8r", "g7g8b", "g7g8n")
+}
+
+func TestBlackQueensideCastlingWithAttackedB8(t *testing.T) {
+	requireMoves(t, mustFEN(t, "r3k2r/8/8/8/8/8/8/1R2K3 b KQkq - 0 1").LegalMoves(), "e8c8")
 }
 
 func TestMoveFlagsConsistent(t *testing.T) {

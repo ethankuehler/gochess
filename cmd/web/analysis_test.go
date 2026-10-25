@@ -106,7 +106,7 @@ func TestAnalysisEngineSearchAndReset(t *testing.T) {
 		if search.Metrics == nil {
 			t.Fatalf("missing search metrics: %+v", search)
 		}
-		if search.Metrics.MoveGenCalls == 0 || search.Metrics.PseudoMoves == 0 || search.Metrics.EvaluationCalls == 0 || search.Metrics.SearchMakeMoveCalls == 0 || search.Metrics.LegalFilterNS == 0 {
+		if search.Metrics.MoveGenCalls == 0 || search.Metrics.PseudoMoves == 0 || search.Metrics.EvaluationCalls == 0 || search.Metrics.SearchMakeMoveCalls == 0 || search.Metrics.LegalFilterNS < 0 {
 			t.Fatalf("empty search metrics: %+v", search.Metrics)
 		}
 	} else if search.Metrics != nil {

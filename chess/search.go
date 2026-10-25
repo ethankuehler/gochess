@@ -45,12 +45,11 @@ type SearchLimits struct {
 // They do not cover all search work: draw checks, move ordering, PV
 // maintenance, and the info callback are unmeasured.
 //
-// MakeMoveCalls counts every copy-make performed during the search, including
-// the copies legal move generation makes to test king safety.
-// SearchMakeMoveCalls is the subset made directly by the search tree. The time
-// spent on the legality-filter copies is included in LegalFilterNS because
-// separating it from the attack test would require timing every individual
-// copy.
+// PseudoMoves counts directly emitted legal moves plus king and en-passant
+// candidates before rejection. MakeMoveCalls counts every copy-make performed
+// during the search, including king and en-passant validation in legal move
+// generation. SearchMakeMoveCalls is the subset made directly by the search
+// tree. The time spent on special-move validation is included in LegalFilterNS.
 type SearchMetrics struct {
 	ElapsedNS           int64  `json:"elapsedNs"`
 	MoveGenCalls        uint64 `json:"moveGenCalls"`

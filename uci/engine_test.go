@@ -245,7 +245,7 @@ func TestAnalysisOutput(t *testing.T) {
 		t.Fatalf("enabled search emitted %d analysis lines: %v", count, lines)
 	}
 	metrics := parseLastAnalysis(lines)
-	if metrics.MoveGenCalls == 0 || metrics.PseudoMoves == 0 || metrics.LegalMoves == 0 || metrics.EvaluationCalls == 0 || metrics.MakeMoveCalls == 0 || metrics.SearchMakeMoveCalls == 0 || metrics.LegalFilterNS == 0 || metrics.SearchMakeMoveNS == 0 {
+	if metrics.MoveGenCalls == 0 || metrics.PseudoMoves == 0 || metrics.LegalMoves == 0 || metrics.EvaluationCalls == 0 || metrics.MakeMoveCalls == 0 || metrics.SearchMakeMoveCalls == 0 || metrics.LegalFilterNS < 0 || metrics.SearchMakeMoveNS == 0 {
 		t.Fatalf("incomplete analysis metrics: %+v", metrics)
 	}
 

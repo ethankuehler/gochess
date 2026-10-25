@@ -297,7 +297,7 @@ func TestSearchMetricsPreserveSearchResults(t *testing.T) {
 	if metrics.EvaluationCalls == 0 || metrics.MakeMoveCalls == 0 || metrics.SearchMakeMoveCalls == 0 || metrics.BetaCutoffs == 0 {
 		t.Fatalf("missing recursive search counts: %+v", metrics)
 	}
-	if metrics.MakeMoveCalls != metrics.PseudoMoves+metrics.SearchMakeMoveCalls {
+	if metrics.MakeMoveCalls < metrics.SearchMakeMoveCalls || metrics.MakeMoveCalls > metrics.PseudoMoves+metrics.SearchMakeMoveCalls {
 		t.Fatalf("copy-make counts do not add up: %+v", metrics)
 	}
 	if metrics.SearchMakeMoveCalls != measured.Nodes {
@@ -340,7 +340,7 @@ func TestSearchMetricsEarlyReturns(t *testing.T) {
 		RootMoves:      []Move{},
 		CollectMetrics: true,
 	}, nil)
-	if emptyRoot.Metrics == nil || emptyRoot.Metrics.MoveGenCalls != 1 || emptyRoot.Metrics.PseudoMoves != 20 || emptyRoot.Metrics.LegalMoves != 20 || emptyRoot.Metrics.MakeMoveCalls != 20 || emptyRoot.Metrics.SearchMakeMoveCalls != 0 {
+	if emptyRoot.Metrics == nil || emptyRoot.Metrics.MoveGenCalls != 1 || emptyRoot.Metrics.PseudoMoves != 20 || emptyRoot.Metrics.LegalMoves != 20 || emptyRoot.Metrics.MakeMoveCalls != 0 || emptyRoot.Metrics.SearchMakeMoveCalls != 0 {
 		t.Fatalf("empty root metrics = %+v", emptyRoot.Metrics)
 	}
 
@@ -353,7 +353,7 @@ func TestSearchMetricsEarlyReturns(t *testing.T) {
 	if !cancelled.HasMove || cancelled.Depth != 0 || cancelled.Nodes != 0 {
 		t.Fatalf("cancelled result = %+v", cancelled)
 	}
-	if cancelled.Metrics.MoveGenCalls != 1 || cancelled.Metrics.PseudoMoves != 20 || cancelled.Metrics.LegalMoves != 20 || cancelled.Metrics.MakeMoveCalls != 20 || cancelled.Metrics.SearchMakeMoveCalls != 0 || cancelled.Metrics.EvaluationCalls != 0 {
+	if cancelled.Metrics.MoveGenCalls != 1 || cancelled.Metrics.PseudoMoves != 20 || cancelled.Metrics.LegalMoves != 20 || cancelled.Metrics.MakeMoveCalls != 0 || cancelled.Metrics.SearchMakeMoveCalls != 0 || cancelled.Metrics.EvaluationCalls != 0 {
 		t.Fatalf("cancelled metrics = %+v", cancelled.Metrics)
 	}
 }
