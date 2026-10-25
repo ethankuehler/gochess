@@ -52,6 +52,11 @@ deepening alpha-beta search, and a UCI front end.
   a persistent external UCI client used as both opponent and perft oracle. It
   uses the embedded attack tables, so it does not depend on the working
   directory.
+- `cmd/arena/main.go` — rating harness. Plays gochess against Stockfish with
+  fixed-time or fixed-node limits, a paired opening book (`data/openings.csv`),
+  draw adjudication, JSON output, and a bootstrap Elo estimate over opening
+  pairs. It runs games sequentially and reads `data/openings.csv` from disk, so
+  run it from the repo root.
 - `cmd/uci/main.go` — the UCI executable. `go build -o gochess ./cmd/uci`
   produces a self-contained binary; `gochess bench [depth]` runs the benchmark
   and exits, and `gochess -version` prints the version. Normal startup runs the
@@ -165,6 +170,8 @@ go run ./cmd/perft -depth 4 -divide
 go run ./cmd/perft -depth 4 -compare -fen "<FEN>"
 go run ./cmd/perft -suite data/perft.csv
 go run ./cmd/match -stockfish stockfish -games 4 -depth 4
+go run ./cmd/arena -pairs 20 -movetime 250ms -sf-elo 1320
+go run ./cmd/arena -check-book
 go run ./cmd/search -depth 4
 go run ./cmd/search -fen "<FEN>" -depth 5
 go run ./cmd/search -fen "<FEN>" -moves "e2e4 e7e5" -depth 5
@@ -475,9 +482,12 @@ Things to be careful with:
   (when `STOCKFISH_BIN` is set) a short two-game match that exercises the
   external UCI client, per-position perft validation, legal-move checks, and
   draw awareness. CI runs the Stockfish match test after installing Stockfish.
+- `cmd/arena` tests cover Elo conversion, the pair bootstrap, score conversion,
+  and book loading, validation, and transposition dropping.
 - `uci/client_test.go` covers `StartInProcess`, `SetPosition` (including an
-  invalid FEN and recovery), `GoDepth`, PV legality, terminal positions,
-  `NewGame`, idempotent `Close`, and `parseInfo` for cp/mate/nodes/time/pv.
+  invalid FEN and recovery), `GoDepth`, `GoMovetime`, `GoNodes`, `SetOption`,
+  PV legality, terminal positions, `NewGame`, idempotent `Close`, and
+  `parseInfo` for cp/mate/nodes/time/pv.
 - `cmd/uci` tests build the binary and run it from an empty temporary directory,
   which verifies embedded data and working-directory independence. They also
   exercise `bench` and `-version` as separate processes.

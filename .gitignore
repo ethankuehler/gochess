@@ -10,3 +10,5 @@ CODE_REVIEW.md
 .gomodcache/
 .gopath/
 dist/
+/arena
+/results/

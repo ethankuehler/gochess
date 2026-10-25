@@ -3,6 +3,7 @@ package uci
 import (
 	"io"
 	"testing"
+	"time"
 
 	"github.com/ethankuehler/gochess/chess"
 )
@@ -161,5 +162,38 @@ func TestParseInfo(t *testing.T) {
 	parseInfo([]string{"info", "string", "depth", "100", "score", "cp", "999"}, &result)
 	if result.Depth != 4 || result.Score != -34 {
 		t.Errorf("info string mutated the result: %+v", result)
+	}
+}
+
+func TestClientSetOptionAndLimits(t *testing.T) {
+	client := startTestClient(t)
+	if err := client.SetOption("Move Overhead", "0"); err != nil {
+		t.Fatalf("SetOption: %v", err)
+	}
+	position := chess.NewStartingPosition()
+	if err := client.SetPosition(position.FEN()); err != nil {
+		t.Fatalf("SetPosition: %v", err)
+	}
+
+	result, err := client.GoMovetime(60 * time.Millisecond)
+	if err != nil {
+		t.Fatalf("GoMovetime: %v", err)
+	}
+	if result.BestMove == "" {
+		t.Fatal("GoMovetime returned no best move")
+	}
+	if result.Nodes == 0 {
+		t.Error("GoMovetime nodes = 0")
+	}
+
+	result, err = client.GoNodes(5000)
+	if err != nil {
+		t.Fatalf("GoNodes: %v", err)
+	}
+	if result.BestMove == "" {
+		t.Fatal("GoNodes returned no best move")
+	}
+	if result.Nodes == 0 || result.Nodes > 50_000 {
+		t.Errorf("GoNodes nodes = %d, want a bounded positive count", result.Nodes)
 	}
 }

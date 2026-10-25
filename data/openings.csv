@@ -1,0 +1,41 @@
+name,moves
+ruy-lopez,e2e4 e7e5 g1f3 b8c6 f1b5 a7a6
+ruy-lopez-berlin,e2e4 e7e5 g1f3 b8c6 f1b5 g8f6
+italian,e2e4 e7e5 g1f3 b8c6 f1c4 f8c5
+italian-giuoco-piano,e2e4 e7e5 g1f3 b8c6 f1c4 f8c5 c2c3 g8f6
+scotch,e2e4 e7e5 g1f3 b8c6 d2d4 e5d4
+petrov,e2e4 e7e5 g1f3 g8f6
+philidor,e2e4 e7e5 g1f3 d7d6
+sicilian-najdorf,e2e4 c7c5 g1f3 d7d6 d2d4 c5d4 f3d4 g8f6
+sicilian-classical,e2e4 c7c5 g1f3 b8c6 d2d4 c5d4 f3d4 g8f6
+sicilian-taimanov,e2e4 c7c5 g1f3 e7e6 d2d4 c5d4 f3d4
+sicilian-closed,e2e4 c7c5 b1c3 b8c6 g1f3 g8f6
+french,e2e4 e7e6 d2d4 d7d5 b1c3 g8f6
+caro-kann,e2e4 c7c6 d2d4 d7d5 b1c3 d5e4
+scandinavian,e2e4 d7d5 e4d5 d8d5 b1c3 d5a5
+pirc,e2e4 d7d6 d2d4 g8f6 b1c3 g7g6
+alekhine,e2e4 g8f6 e4e5 f6d5 d2d4 d7d6
+queens-gambit-declined,d2d4 d7d5 c2c4 e7e6 b1c3 g8f6
+slav,d2d4 d7d5 c2c4 c7c6 b1c3 g8f6
+queens-gambit-accepted,d2d4 d7d5 c2c4 d5c4 g1f3 g8f6
+kings-indian,d2d4 g8f6 c2c4 g7g6 b1c3 f8g7
+nimzo-indian,d2d4 g8f6 c2c4 e7e6 b1c3 f8b4
+queens-indian,d2d4 g8f6 c2c4 e7e6 g1f3 b7b6
+benoni,d2d4 g8f6 c2c4 c7c5 d4d5 e7e6
+dutch,d2d4 f7f5 g2g3 g8f6 f1g2 e7e6
+london,d2d4 d7d5 c1f4 g8f6 e2e3 c7c5
+vienna-quiet,e2e4 e7e5 b1c3 g8f6 g1f3 b8c6
+english-symmetrical,c2c4 c7c5 b1c3 b8c6 g1f3 g8f6
+english-four-knights,c2c4 g8f6 b1c3 e7e6 g1f3 d7d5
+reti,g1f3 d7d5 d2d4 g8f6 c2c4 e7e6
+reti-kia,g1f3 g8f6 c2c4 e7e6 b1c3 d7d5
+nimzo-larsen,b2b3 e7e5 c1b2 b8c6 e2e3 g8f6
+bird,f2f4 d7d5 g1f3 g8f6 e2e3 e7e6
+kings-gambit,e2e4 e7e5 f2f4 e5f4 g1f3 g7g5
+vienna,e2e4 e7e5 b1c3 g8f6 f2f4 d7d5
+bishops-opening,e2e4 e7e5 f1c4 g8f6 d2d3 f8c5
+blackmar-diemer,d2d4 d7d5 e2e4 d5e4 b1c3 g8f6
+trompowsky,d2d4 g8f6 c1g5 e7e6 e2e4 h7h6
+catalan,d2d4 g8f6 c2c4 e7e6 g2g3 d7d5 f1g2
+gruenfeld,d2d4 g8f6 c2c4 g7g6 b1c3 d7d5
+benko-gambit,d2d4 g8f6 c2c4 c7c5 d4d5 b7b5

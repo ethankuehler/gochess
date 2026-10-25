@@ -122,6 +122,19 @@ func (c *Client) NewGame() error {
 	return c.ready()
 }
 
+// SetOption sends a UCI option and waits for readyok. An empty value omits the
+// "value" field, which is how button options such as "Clear Hash" are sent.
+func (c *Client) SetOption(name, value string) error {
+	command := "setoption name " + name
+	if value != "" {
+		command += " value " + value
+	}
+	if err := c.send(command); err != nil {
+		return fmt.Errorf("send setoption: %w", err)
+	}
+	return c.ready()
+}
+
 // SetPosition sets the current FEN, optionally followed by the moves that led
 // to it. Passing the move list lets the engine see the game history it needs
 // for threefold-repetition detection; a bare FEN has no history. It waits for
@@ -144,7 +157,29 @@ func (c *Client) GoDepth(depth int) (EngineResult, error) {
 	if depth < 1 {
 		depth = 1
 	}
-	if err := c.send(fmt.Sprintf("go depth %d", depth)); err != nil {
+	return c.goCommand(fmt.Sprintf("go depth %d", depth))
+}
+
+// GoMovetime runs a search bounded by wall-clock time. A zero or negative
+// budget is treated as one millisecond.
+func (c *Client) GoMovetime(budget time.Duration) (EngineResult, error) {
+	ms := budget.Milliseconds()
+	if ms < 1 {
+		ms = 1
+	}
+	return c.goCommand(fmt.Sprintf("go movetime %d", ms))
+}
+
+// GoNodes runs a search bounded by a node count.
+func (c *Client) GoNodes(nodes uint64) (EngineResult, error) {
+	if nodes < 1 {
+		nodes = 1
+	}
+	return c.goCommand(fmt.Sprintf("go nodes %d", nodes))
+}
+
+func (c *Client) goCommand(command string) (EngineResult, error) {
+	if err := c.send(command); err != nil {
 		return EngineResult{}, fmt.Errorf("send go: %w", err)
 	}
 
