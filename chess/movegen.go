@@ -80,7 +80,7 @@ func appendTargets(moves []Move, from Square, targets, enemy BitBoard) []Move {
 		if enemy&(BitBoard(1)<<to) != 0 {
 			flags = captureFlag
 		}
-		moves = append(moves, Move{from: from, to: to, flags: flags})
+		moves = append(moves, newMove(from, to, flags))
 	}
 	return moves
 }
@@ -89,11 +89,7 @@ func appendTargets(moves []Move, from Square, targets, enemy BitBoard) []Move {
 func appendPromotions(moves []Move, from, to Square, extraFlags uint16) []Move {
 	promotions := [...]Piece{Queen, Rook, Bishop, Knight}
 	for _, promotion := range promotions {
-		moves = append(moves, Move{
-			from:  from,
-			to:    to,
-			flags: extraFlags | promotionFlag | uint16(promotion),
-		})
+		moves = append(moves, newMove(from, to, extraFlags|promotionFlag|uint16(promotion)))
 	}
 	return moves
 }
@@ -144,7 +140,7 @@ func (b *Position) addPawnMoves(moves []Move, us Colour, enemy, occ BitBoard) []
 			if double {
 				flags = doublePushFlag
 			}
-			moves = append(moves, Move{from: from, to: to, flags: flags})
+			moves = append(moves, newMove(from, to, flags))
 		}
 
 		for captures := attackTable[from] & enemy; captures != 0; captures &= captures - 1 {
@@ -153,17 +149,13 @@ func (b *Position) addPawnMoves(moves []Move, us Colour, enemy, occ BitBoard) []
 				moves = appendPromotions(moves, from, to, captureFlag)
 				continue
 			}
-			moves = append(moves, Move{from: from, to: to, flags: captureFlag})
+			moves = append(moves, newMove(from, to, captureFlag))
 		}
 
 		if b.enPassantSquare != 0 {
 			if targets := attackTable[from] & b.enPassantSquare; targets != 0 {
 				to := Square(bits.TrailingZeros64(uint64(targets)))
-				moves = append(moves, Move{
-					from:  from,
-					to:    to,
-					flags: captureFlag | enPassantFlag,
-				})
+				moves = append(moves, newMove(from, to, captureFlag|enPassantFlag))
 			}
 		}
 	}
@@ -252,14 +244,14 @@ func (b *Position) addCastlingMoves(moves []Move, us Colour, occ BitBoard) []Mov
 		if us == Black {
 			to = g8
 		}
-		moves = append(moves, Move{from: from, to: to, flags: castlingFlag})
+		moves = append(moves, newMove(from, to, castlingFlag))
 	}
 	if b.canCastle(us, false, occ) {
 		to := c1
 		if us == Black {
 			to = c8
 		}
-		moves = append(moves, Move{from: from, to: to, flags: castlingFlag})
+		moves = append(moves, newMove(from, to, castlingFlag))
 	}
 	return moves
 }

@@ -82,6 +82,7 @@ func (b *Position) makeMoveForLegality(m Move) Position {
 
 func (b *Position) makeMoveInternal(m Move, updateKey bool) Position {
 	next := *b
+	from, to := Square(m.from), Square(m.to)
 	us := b.sideToMove()
 	them := us.Opposite()
 
@@ -94,8 +95,8 @@ func (b *Position) makeMoveInternal(m Move, updateKey bool) Position {
 		themOffset = blackPieceOffset
 	}
 
-	fromMask := BitBoard(1) << m.from
-	toMask := BitBoard(1) << m.to
+	fromMask := BitBoard(1) << from
+	toMask := BitBoard(1) << to
 
 	// Start from the old key and remove the state that is about to change.
 	key := uint64(0)
@@ -114,7 +115,7 @@ func (b *Position) makeMoveInternal(m Move, updateKey bool) Position {
 			next.occupancy[us] &^= fromMask
 			moving = piece
 			if updateKey {
-				key ^= zobristPieces[int(piece)+int(offset)][m.from]
+				key ^= zobristPieces[int(piece)+int(offset)][from]
 			}
 			break
 		}
@@ -125,9 +126,9 @@ func (b *Position) makeMoveInternal(m Move, updateKey bool) Position {
 
 	// Remove the captured piece, or the pawn captured en passant.
 	if m.IsEnPassant() {
-		captured := Square(int(m.to) - 8)
+		captured := to - 8
 		if us == Black {
-			captured = Square(int(m.to) + 8)
+			captured = to + 8
 		}
 		capturedMask := BitBoard(1) << captured
 		if updateKey && next.pieceBitboards[Pawn+themOffset]&capturedMask != 0 {
@@ -139,7 +140,7 @@ func (b *Position) makeMoveInternal(m Move, updateKey bool) Position {
 		next.occupancy[them] &^= toMask
 		for piece := Pawn; piece <= King; piece++ {
 			if updateKey && next.pieceBitboards[piece+themOffset]&toMask != 0 {
-				key ^= zobristPieces[int(piece)+int(themOffset)][m.to]
+				key ^= zobristPieces[int(piece)+int(themOffset)][to]
 			}
 			next.pieceBitboards[piece+themOffset] &^= toMask
 		}
@@ -154,13 +155,13 @@ func (b *Position) makeMoveInternal(m Move, updateKey bool) Position {
 		next.pieceBitboards[promotion+offset] |= toMask
 		next.occupancy[us] |= toMask
 		if updateKey {
-			key ^= zobristPieces[int(promotion)+int(offset)][m.to]
+			key ^= zobristPieces[int(promotion)+int(offset)][to]
 		}
 	} else {
 		next.pieceBitboards[moving+offset] |= toMask
 		next.occupancy[us] |= toMask
 		if updateKey {
-			key ^= zobristPieces[int(moving)+int(offset)][m.to]
+			key ^= zobristPieces[int(moving)+int(offset)][to]
 		}
 	}
 
@@ -168,13 +169,13 @@ func (b *Position) makeMoveInternal(m Move, updateKey bool) Position {
 	if m.IsCastling() {
 		var rookFrom, rookTo Square
 		switch {
-		case us == White && m.to == g1:
+		case us == White && to == g1:
 			rookFrom, rookTo = h1, f1
-		case us == White && m.to == c1:
+		case us == White && to == c1:
 			rookFrom, rookTo = a1, d1
-		case us == Black && m.to == g8:
+		case us == Black && to == g8:
 			rookFrom, rookTo = h8, f8
-		case us == Black && m.to == c8:
+		case us == Black && to == c8:
 			rookFrom, rookTo = a8, d8
 		default:
 			panic("makeMove: invalid castling move")
@@ -191,12 +192,12 @@ func (b *Position) makeMoveInternal(m Move, updateKey bool) Position {
 	}
 
 	if updateKey {
-		next.flags &^= castlingRightsToClear(m.from) | castlingRightsToClear(m.to)
+		next.flags &^= castlingRightsToClear(from) | castlingRightsToClear(to)
 
 		next.enPassantSquare = 0
 		next.epHash = 0
 		if m.IsDoublePush() {
-			next.enPassantSquare = BitBoard(1) << Square((int(m.from)+int(m.to))/2)
+			next.enPassantSquare = BitBoard(1) << ((from + to) / 2)
 			next.epHash = next.computeEnPassantKey()
 		}
 

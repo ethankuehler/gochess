@@ -2,6 +2,7 @@ package chess
 
 import (
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -116,5 +117,36 @@ func TestParseFileRank(t *testing.T) {
 				t.Errorf("ParseFileRank(%q) succeeded, want an error", alg)
 			}
 		})
+	}
+}
+
+func TestMoveSize(t *testing.T) {
+	typ := reflect.TypeOf(Move{})
+	if got := typ.Size(); got != 4 {
+		t.Fatalf("Move size = %d, want 4", got)
+	}
+	if got := typ.Align(); got != 2 {
+		t.Fatalf("Move alignment = %d, want 2", got)
+	}
+}
+
+func TestMoveRoundTrip(t *testing.T) {
+	for from := Square(0); from < squareCount; from++ {
+		for to := Square(0); to < squareCount; to++ {
+			m := newMove(from, to, captureFlag|promotionFlag|uint16(Queen))
+			if m.From() != from || m.To() != to {
+				t.Fatalf("newMove(%d, %d): From/To = %d/%d", from, to, m.From(), m.To())
+			}
+			if !m.IsCapture() {
+				t.Fatalf("newMove(%d, %d): capture flag lost", from, to)
+			}
+			if p, ok := m.Promotion(); !ok || p != Queen {
+				t.Fatalf("newMove(%d, %d): Promotion = %v, %v", from, to, p, ok)
+			}
+			want := SquareName(from) + SquareName(to) + "q"
+			if got := m.String(); got != want {
+				t.Fatalf("newMove(%d, %d).String() = %q, want %q", from, to, got, want)
+			}
+		}
 	}
 }

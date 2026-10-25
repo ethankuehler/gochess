@@ -20,7 +20,7 @@ func mustTestMove(t *testing.T, uci string, extraFlags uint16) Move {
 	if err != nil {
 		t.Fatalf("ParseUCIMove(%q): %v", uci, err)
 	}
-	return Move{from: m.from, to: m.to, flags: m.flags | extraFlags}
+	return newMove(m.From(), m.To(), m.flags|extraFlags)
 }
 
 // mustSquare parses an algebraic square or fails the test.
@@ -43,9 +43,9 @@ func TestMoveFlags(t *testing.T) {
 		want  bool
 	}{
 		{"plain", base, Move.IsCapture, false},
-		{"capture", Move{from: mustSquare(t, "e4"), to: mustSquare(t, "d5"), flags: captureFlag}, Move.IsCapture, true},
-		{"en passant", Move{from: mustSquare(t, "e5"), to: mustSquare(t, "d6"), flags: captureFlag | enPassantFlag}, Move.IsEnPassant, true},
-		{"castling", Move{from: e1, to: g1, flags: castlingFlag}, Move.IsCastling, true},
+		{"capture", newMove(mustSquare(t, "e4"), mustSquare(t, "d5"), captureFlag), Move.IsCapture, true},
+		{"en passant", newMove(mustSquare(t, "e5"), mustSquare(t, "d6"), captureFlag|enPassantFlag), Move.IsEnPassant, true},
+		{"castling", newMove(e1, g1, castlingFlag), Move.IsCastling, true},
 		{"double push", mustTestMove(t, "e2e4", doublePushFlag), Move.IsDoublePush, true},
 	}
 

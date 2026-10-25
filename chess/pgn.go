@@ -33,15 +33,16 @@ func (b *Position) SAN(m Move) (string, error) {
 // san formats a legal move. b must be the position before legal and legal must
 // be one of b.LegalMoves.
 func (b *Position) san(legal Move) string {
+	from, to := Square(legal.from), Square(legal.to)
 	if legal.IsCastling() {
 		san := "O-O"
-		if legal.to < legal.from {
+		if to < from {
 			san = "O-O-O"
 		}
 		return san + b.sanSuffix(legal)
 	}
 
-	_, piece, ok := b.PieceAt(legal.from)
+	_, piece, ok := b.PieceAt(from)
 	if !ok {
 		panic("san: legal move from an empty square")
 	}
@@ -49,10 +50,10 @@ func (b *Position) san(legal Move) string {
 	var san strings.Builder
 	if piece == Pawn {
 		if legal.IsCapture() {
-			san.WriteRune(fileNames[FileRankFromSquare(legal.from).File()])
+			san.WriteRune(fileNames[FileRankFromSquare(from).File()])
 			san.WriteByte('x')
 		}
-		san.WriteString(SquareName(legal.to))
+		san.WriteString(SquareName(to))
 		if promotion, ok := legal.Promotion(); ok {
 			san.WriteByte('=')
 			san.WriteString(strings.ToUpper(pieceSymbols[promotion]))
@@ -63,7 +64,7 @@ func (b *Position) san(legal Move) string {
 		if legal.IsCapture() {
 			san.WriteByte('x')
 		}
-		san.WriteString(SquareName(legal.to))
+		san.WriteString(SquareName(to))
 	}
 	san.WriteString(b.sanSuffix(legal))
 	return san.String()
@@ -88,7 +89,7 @@ func (b *Position) sanDisambiguation(m Move, piece Piece) string {
 	disambiguate := false
 	sameFile := false
 	sameRank := false
-	from := FileRankFromSquare(m.from)
+	from := FileRankFromSquare(Square(m.from))
 
 	for _, other := range b.LegalMoves() {
 		if other.from == m.from && other.to == m.to {
@@ -97,13 +98,13 @@ func (b *Position) sanDisambiguation(m Move, piece Piece) string {
 		if other.to != m.to {
 			continue
 		}
-		_, otherPiece, ok := b.PieceAt(other.from)
+		_, otherPiece, ok := b.PieceAt(Square(other.from))
 		if !ok || otherPiece != piece {
 			continue
 		}
 
 		disambiguate = true
-		otherFrom := FileRankFromSquare(other.from)
+		otherFrom := FileRankFromSquare(Square(other.from))
 		if otherFrom.file == from.file {
 			sameFile = true
 		}
@@ -120,7 +121,7 @@ func (b *Position) sanDisambiguation(m Move, piece Piece) string {
 	case !sameRank:
 		return string(rune('1' + from.rank))
 	default:
-		return SquareName(m.from)
+		return SquareName(Square(m.from))
 	}
 }
 
