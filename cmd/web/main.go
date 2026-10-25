@@ -35,17 +35,19 @@ type engineInfo struct {
 }
 
 type stateResponse struct {
-	FEN         string       `json:"fen"`
-	Board       [8][8]string `json:"board"`
-	Turn        string       `json:"turn"`
-	LastMove    string       `json:"lastMove,omitempty"`
-	History     []string     `json:"history"`
-	LegalMoves  []string     `json:"legalMoves"`
-	InCheck     bool         `json:"inCheck"`
-	Status      string       `json:"status"`
-	Engine      bool         `json:"engine"`
-	EngineDepth int          `json:"engineDepth"`
-	EngineInfo  *engineInfo  `json:"engineInfo,omitempty"`
+	FEN            string       `json:"fen"`
+	Board          [8][8]string `json:"board"`
+	Turn           string       `json:"turn"`
+	LastMove       string       `json:"lastMove,omitempty"`
+	History        []string     `json:"history"`
+	LegalMoves     []string     `json:"legalMoves"`
+	InCheck        bool         `json:"inCheck"`
+	Status         string       `json:"status"`
+	ThreefoldClaim bool         `json:"threefoldClaim"`
+	FiftyMoveClaim bool         `json:"fiftyMoveClaim"`
+	Engine         bool         `json:"engine"`
+	EngineDepth    int          `json:"engineDepth"`
+	EngineInfo     *engineInfo  `json:"engineInfo,omitempty"`
 }
 
 type game struct {
@@ -54,6 +56,7 @@ type game struct {
 	positions     []*chess.Position
 	history       []string
 	lastMove      string
+	drawClaim     string // "threefold" or "fifty-move" once claimed
 	engineEnabled bool
 	engineDepth   int
 	engineInfo    *engineInfo
@@ -105,6 +108,7 @@ func (g *game) resetBoardLocked() {
 	g.positions = []*chess.Position{chess.NewStartingPosition()}
 	g.history = []string{}
 	g.lastMove = ""
+	g.drawClaim = ""
 	g.engineInfo = nil
 }
 
@@ -114,6 +118,7 @@ func (g *game) undoOneLocked() {
 	}
 	g.positions = g.positions[:len(g.positions)-1]
 	g.history = g.history[:len(g.history)-1]
+	g.drawClaim = ""
 	if len(g.history) == 0 {
 		g.lastMove = ""
 	} else {
@@ -163,6 +168,8 @@ var (
 	errEngineDisabled    = errors.New("engine is disabled")
 	errEngineBusy        = errors.New("engine is already searching")
 	errEngineUnavailable = errors.New("UCI engine is unavailable")
+	errGameOver          = errors.New("game is over")
+	errNoDrawClaim       = errors.New("no draw claim available")
 )
 
 // engineMove asks the UCI engine for the side to move's move and applies it.
@@ -186,6 +193,10 @@ func (g *game) engineMove() error {
 			return err
 		}
 		return errEngineUnavailable
+	}
+	if g.statusLocked() != "playing" {
+		g.mu.Unlock()
+		return errGameOver
 	}
 	b := g.currentLocked()
 	depth := g.engineDepth
@@ -268,7 +279,47 @@ func (g *game) applyUCILocked(uci string) error {
 	return nil
 }
 
-// statusLocked returns the game status of the current position.
+// historyKeysLocked returns the repetition keys of every earlier position,
+// oldest first.
+func (g *game) historyKeysLocked() []chess.PositionKey {
+	keys := make([]chess.PositionKey, 0, len(g.positions)-1)
+	for _, previous := range g.positions[:len(g.positions)-1] {
+		keys = append(keys, previous.Key())
+	}
+	return keys
+}
+
+// claimableLocked reports whether the side to move can claim a draw under the
+// threefold-repetition or fifty-move rule. A claimable draw does not end the
+// game by itself.
+func (g *game) claimableLocked() (threefold, fiftyMove bool) {
+	b := g.currentLocked()
+	history := g.historyKeysLocked()
+	return b.IsThreefoldRepetition(history), b.IsFiftyMoveDraw()
+}
+
+// claimDrawLocked records a draw claim by the side to move. It returns an error
+// when the game is already over or no claim is available.
+func (g *game) claimDrawLocked() error {
+	if g.statusLocked() != "playing" {
+		return errGameOver
+	}
+	threefold, fiftyMove := g.claimableLocked()
+	switch {
+	case threefold:
+		g.drawClaim = "threefold"
+	case fiftyMove:
+		g.drawClaim = "fifty-move"
+	default:
+		return errNoDrawClaim
+	}
+	return nil
+}
+
+// statusLocked returns the game status of the current position. Threefold
+// repetition and the fifty-move rule are claimable and are reported here only
+// after a claim; fivefold repetition, the seventy-five-move rule, and
+// insufficient material end the game automatically.
 func (g *game) statusLocked() string {
 	b := g.currentLocked()
 	moves := b.LegalMoves()
@@ -278,18 +329,18 @@ func (g *game) statusLocked() string {
 		}
 		return "stalemate"
 	}
-	if b.IsFiftyMoveDraw() {
-		return "fifty-move"
-	}
 	if b.IsInsufficientMaterial() {
 		return "insufficient-material"
 	}
-	previousKeys := make([]chess.PositionKey, 0, len(g.positions)-1)
-	for _, previous := range g.positions[:len(g.positions)-1] {
-		previousKeys = append(previousKeys, previous.Key())
+	history := g.historyKeysLocked()
+	if b.IsFivefoldRepetition(history) {
+		return "fivefold"
 	}
-	if b.IsThreefoldRepetition(previousKeys) {
-		return "threefold"
+	if b.IsSeventyFiveMoveDraw() {
+		return "seventy-five-move"
+	}
+	if g.drawClaim != "" {
+		return g.drawClaim
 	}
 	return "playing"
 }
@@ -321,7 +372,8 @@ func (g *game) pgnLocked(now time.Time) (string, error) {
 	})
 }
 
-// pgnResult converts a game status to a PGN result token.
+// pgnResult converts a game status to a PGN result token. Claimable draws only
+// produce a result after the claim has been recorded.
 func pgnResult(status string, sideToMove chess.Colour) string {
 	switch status {
 	case "checkmate":
@@ -329,7 +381,7 @@ func pgnResult(status string, sideToMove chess.Colour) string {
 			return "0-1"
 		}
 		return "1-0"
-	case "stalemate", "threefold", "fifty-move", "insufficient-material":
+	case "stalemate", "threefold", "fifty-move", "fivefold", "seventy-five-move", "insufficient-material":
 		return "1/2-1/2"
 	default:
 		return "*"
@@ -346,6 +398,10 @@ func (g *game) snapshotLocked() stateResponse {
 
 	inCheck := b.InCheck()
 	status := g.statusLocked()
+	threefoldClaim, fiftyMoveClaim := false, false
+	if status == "playing" {
+		threefoldClaim, fiftyMoveClaim = g.claimableLocked()
+	}
 
 	turn := "white"
 	if b.SideToMove() == chess.Black {
@@ -356,17 +412,19 @@ func (g *game) snapshotLocked() stateResponse {
 	copy(history, g.history)
 
 	return stateResponse{
-		FEN:         b.FEN(),
-		Board:       boardOf(b),
-		Turn:        turn,
-		LastMove:    g.lastMove,
-		History:     history,
-		LegalMoves:  legal,
-		InCheck:     inCheck,
-		Status:      status,
-		Engine:      g.engineEnabled,
-		EngineDepth: g.engineDepth,
-		EngineInfo:  g.engineInfo,
+		FEN:            b.FEN(),
+		Board:          boardOf(b),
+		Turn:           turn,
+		LastMove:       g.lastMove,
+		History:        history,
+		LegalMoves:     legal,
+		InCheck:        inCheck,
+		Status:         status,
+		ThreefoldClaim: threefoldClaim,
+		FiftyMoveClaim: fiftyMoveClaim,
+		Engine:         g.engineEnabled,
+		EngineDepth:    g.engineDepth,
+		EngineInfo:     g.engineInfo,
 	}
 }
 
@@ -415,6 +473,7 @@ func newMux(g *game) *http.ServeMux {
 	mux.HandleFunc("/api/state", g.handleState)
 	mux.HandleFunc("/api/pgn", g.handlePGN)
 	mux.HandleFunc("/api/move", g.handleMove)
+	mux.HandleFunc("/api/claim-draw", g.handleClaimDraw)
 	mux.HandleFunc("/api/engine", g.handleEngine)
 	mux.HandleFunc("/api/engine/move", g.handleEngineMove)
 	mux.HandleFunc("/api/reset", g.handleReset)
@@ -514,7 +573,7 @@ func (g *game) handleEngineMove(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := g.engineMove(); err != nil {
 		status := http.StatusInternalServerError
-		if errors.Is(err, errEngineDisabled) || errors.Is(err, errEngineBusy) {
+		if errors.Is(err, errEngineDisabled) || errors.Is(err, errEngineBusy) || errors.Is(err, errGameOver) {
 			status = http.StatusConflict
 		}
 		http.Error(w, err.Error(), status)
@@ -550,12 +609,36 @@ func (g *game) handleMove(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "engine is searching", http.StatusConflict)
 		return
 	}
+	if g.statusLocked() != "playing" {
+		http.Error(w, "game is over", http.StatusConflict)
+		return
+	}
 	if g.engineTurnLocked() {
 		http.Error(w, "it is the engine's turn", http.StatusConflict)
 		return
 	}
 	if err := g.applyUCILocked(request.UCI); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, g.snapshotLocked())
+}
+
+// handleClaimDraw records the side to move's claim of a threefold-repetition or
+// fifty-move draw. Claimable draws do not end the game until this endpoint is
+// called; automatic draws are handled by statusLocked.
+func (g *game) handleClaimDraw(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.engineBusy {
+		http.Error(w, "engine is searching", http.StatusConflict)
+		return
+	}
+	if err := g.claimDrawLocked(); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
 	writeJSON(w, http.StatusOK, g.snapshotLocked())

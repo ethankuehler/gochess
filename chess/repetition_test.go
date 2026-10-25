@@ -139,6 +139,39 @@ func TestIsThreefoldRepetition(t *testing.T) {
 	}
 }
 
+func TestIsFivefoldRepetition(t *testing.T) {
+	// Three four-ply cycles make the starting position the fourth occurrence;
+	// a fourth cycle makes it the fifth, which is an automatic draw.
+	position, history := playUCI(t, mustFEN(t, "4k3/8/8/8/8/8/8/R3K3 w - - 0 1"),
+		"e1d1", "e8d8", "d1e1", "d8e8",
+		"e1d1", "e8d8", "d1e1", "d8e8",
+		"e1d1", "e8d8", "d1e1", "d8e8")
+	if position.IsFivefoldRepetition(history) {
+		t.Fatal("position was called a fivefold repetition after only four occurrences")
+	}
+
+	position, history = playUCI(t, mustFEN(t, "4k3/8/8/8/8/8/8/R3K3 w - - 0 1"),
+		"e1d1", "e8d8", "d1e1", "d8e8",
+		"e1d1", "e8d8", "d1e1", "d8e8",
+		"e1d1", "e8d8", "d1e1", "d8e8",
+		"e1d1", "e8d8", "d1e1", "d8e8")
+	if !position.IsFivefoldRepetition(history) {
+		t.Fatal("position was not called a fivefold repetition after five occurrences")
+	}
+	if got := position.RepetitionCount(history); got != 4 {
+		t.Fatalf("RepetitionCount = %d, want 4 earlier occurrences", got)
+	}
+}
+
+func TestIsSeventyFiveMoveDraw(t *testing.T) {
+	if position := mustFEN(t, "4k3/8/8/8/8/8/8/R3K3 w - - 149 1"); position.IsSeventyFiveMoveDraw() {
+		t.Fatal("fifteen-move-short position was called a seventy-five-move draw")
+	}
+	if position := mustFEN(t, "4k3/8/8/8/8/8/8/R3K3 w - - 150 1"); !position.IsSeventyFiveMoveDraw() {
+		t.Fatal("150-ply position was not called a seventy-five-move draw")
+	}
+}
+
 func TestSearchDrawsAtRoot(t *testing.T) {
 	// White is up a rook, so ordinary evaluation is clearly positive.
 	position, history := playUCI(t, mustFEN(t, "4k3/8/8/8/8/8/8/R3K3 w - - 0 1"),

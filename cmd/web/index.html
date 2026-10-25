@@ -407,6 +407,7 @@
         <button id="auto" class="primary wide" type="button" disabled>Auto play</button>
         <button id="undo" class="ghost" type="button" disabled>Undo</button>
         <button id="reset" class="ghost" type="button">Reset</button>
+        <button id="claim-draw" class="ghost wide" type="button" disabled>Claim draw</button>
         <button id="export-pgn" class="ghost wide" type="button" disabled>Export PGN</button>
       </div>
 
@@ -417,7 +418,7 @@
         </label>
       </div>
 
-      <p class="hint">Click one of your pieces, then a highlighted square. Promotions default to a queen. You play White; turn the engine on to play against the search, or use Auto play to watch the engine play both sides. Higher depths take longer — reset stops the search. Export PGN downloads the game so far.</p>
+      <p class="hint">Click one of your pieces, then a highlighted square. Promotions default to a queen. You play White; turn the engine on to play against the search, or use Auto play to watch the engine play both sides. Higher depths take longer — reset stops the search. Export PGN downloads the game so far. Threefold repetition and the fifty-move rule are claimable draws: use Claim draw in human play; Auto play claims them automatically. Fivefold repetition, the seventy-five-move rule, and insufficient material end the game automatically.</p>
       <p id="engineInfo" class="engine-info"></p>
       <p id="error" class="error" role="alert"></p>
 
@@ -452,6 +453,7 @@
     const undoBtn = document.getElementById("undo");
     const resetBtn = document.getElementById("reset");
     const exportPgnBtn = document.getElementById("export-pgn");
+    const claimDrawBtn = document.getElementById("claim-draw");
     const engineBtn = document.getElementById("engine");
     const depthEl = document.getElementById("depth");
     const engineInfoEl = document.getElementById("engineInfo");
@@ -497,6 +499,12 @@
       return null;
     }
 
+    function canClaimDraw() {
+      if (!state || state.status !== "playing" || auto) return false;
+      if (state.engine && state.turn !== "white") return false;
+      return state.threefoldClaim || state.fiftyMoveClaim;
+    }
+
     function statusText() {
       if (!state) return "Loading…";
       if (thinking) return "Engine thinking…";
@@ -512,8 +520,17 @@
       if (state.status === "fifty-move") {
         return "Draw — fifty-move rule";
       }
+      if (state.status === "fivefold") {
+        return "Draw — fivefold repetition";
+      }
+      if (state.status === "seventy-five-move") {
+        return "Draw — seventy-five-move rule";
+      }
       if (state.status === "insufficient-material") {
         return "Draw — insufficient material";
+      }
+      if (canClaimDraw()) {
+        return "Game in progress — draw claim available";
       }
       return state.inCheck ? "Check!" : "Game in progress";
     }
@@ -635,6 +652,10 @@
       autoBtn.classList.toggle("active", auto);
       undoBtn.disabled = locked || state.history.length === 0;
       exportPgnBtn.disabled = locked || state.history.length === 0;
+      const claimAvailable = canClaimDraw();
+      claimDrawBtn.disabled = locked || thinking || !claimAvailable;
+      claimDrawBtn.textContent =
+        state.status === "threefold" || state.status === "fifty-move" ? "Draw claimed" : "Claim draw";
       resetBtn.disabled = resetting;
       engineInfoEl.textContent = engineInfoText();
     }
@@ -748,6 +769,23 @@
       await maybeEngineMove();
     }
 
+    async function claimDraw(force = false) {
+      if (busy) return;
+      if (force !== true && !canClaimDraw()) return;
+      busy = true;
+      selected = null;
+      showError("");
+      render();
+      try {
+        state = await request("/api/claim-draw", { method: "POST" });
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        busy = false;
+        render();
+      }
+    }
+
     async function maybeEngineMove() {
       if (busy || thinking) return false;
       if (!state || !state.engine || state.status !== "playing") return false;
@@ -856,6 +894,13 @@
         stopAuto();
         return;
       }
+      if (state.threefoldClaim || state.fiftyMoveClaim) {
+        // Engine-vs-engine has no one to press Claim draw, so adjudicate the
+        // claimable draw on the engines' behalf.
+        await claimDraw(true);
+        stopAuto();
+        return;
+      }
       if (!(await maybeEngineMove())) {
         stopAuto();
         return;
@@ -941,6 +986,7 @@
 
     autoBtn.addEventListener("click", toggleAuto);
     undoBtn.addEventListener("click", undoMove);
+    claimDrawBtn.addEventListener("click", claimDraw);
     resetBtn.addEventListener("click", resetGame);
     exportPgnBtn.addEventListener("click", exportPGN);
     engineBtn.addEventListener("click", toggleEngine);

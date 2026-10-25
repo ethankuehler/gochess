@@ -63,14 +63,20 @@ deepening alpha-beta search, and a UCI front end.
   UCI command loop on stdin/stdout.
 - `cmd/web/main.go` and `cmd/web/index.html` — HTTP server and embedded board
   UI. The server owns one in-memory game and exposes `/api/state`,
-  `/api/pgn`, `/api/move`, `/api/engine`, `/api/engine/move`, `/api/reset`,
-  and `/api/undo`. `/api/pgn` downloads the game as PGN with the Seven Tag
-  Roster, SAN movetext, and the current result. Engine mode plays Black
-  against a human White; auto play asks the engine to move for both sides.
-  Each engine move sends `position fen ... moves ...` and `go depth N` to an
-  in-process `uci.Client` and applies the returned `bestmove`. The panel has
-  an engine toggle and a numeric depth input with no upper limit. `newGame`
-  starts the client; `game.Close` shuts it down, and tests must close the game.
+  `/api/pgn`, `/api/move`, `/api/claim-draw`, `/api/engine`,
+  `/api/engine/move`, `/api/reset`, and `/api/undo`. `/api/pgn` downloads the
+  game as PGN with the Seven Tag Roster, SAN movetext, and the current result.
+  Threefold repetition and the fifty-move rule are claimable: they are
+  advertised through `threefoldClaim`/`fiftyMoveClaim` and do not end the game
+  until `POST /api/claim-draw`. Auto play calls that endpoint automatically,
+  because neither engine side can press the button; human play uses the
+  **Claim draw** button. Fivefold repetition, the seventy-five-move rule, and
+  insufficient material end the game automatically. Engine mode plays Black
+  against a human White; auto play asks the engine to move for both sides. Each
+  engine move sends `position fen ... moves ...` and `go depth N` to an
+  in-process `uci.Client` and applies the returned `bestmove`. The panel has an
+  engine toggle and a numeric depth input with no upper limit. `newGame` starts
+  the client; `game.Close` shuts it down, and tests must close the game.
 - `uci/` — the UCI protocol layer (`package uci`):
   - `engine.go` — `Engine`, `Run`, command loop, handshake, `isready`,
     `setoption`, `ucinewgame`, `stop`, `quit`, EOF handling, and the
@@ -125,7 +131,8 @@ deepening alpha-beta search, and a UCI front end.
   - `makemove.go` — copy-make `makeMove`, castling-rights updates, en passant,
     promotions, clocks, and the incremental Zobrist key.
   - `repetition.go` — `PositionKey`, Zobrist keys, `Position.Key`, and the
-    fifty-move, threefold-repetition, and insufficient-material helpers.
+    fifty-move, seventy-five-move, threefold/fivefold-repetition, and
+    insufficient-material helpers.
   - `perft.go` — `Perft`, `PerftDivide`, and `PerftResult`.
   - `eval.go` — material values and the precomputed piece-square table
     (centrality, king safety, pawn advancement), plus `Position.Evaluate`.
@@ -321,11 +328,15 @@ Evaluation and search:
   the engine fields so the page can drive the reply loop. Each engine move
   sends the initial FEN plus the full move list when it matches the stored
   positions, so the engine can see repetition history, and applies the returned
-  move with `ApplyUCIMove`. `GET /api/state` reports `threefold`,
-  `fifty-move`, and `insufficient-material` statuses. `GET /api/pgn` replays
-  the stored moves through `chess.PGN` and returns an attachment whose result
-  is derived from the current status. Close the game in tests and on HTTP
-  shutdown to stop the engine goroutines.
+  move with `ApplyUCIMove`. `GET /api/state` reports `threefoldClaim` and
+  `fiftyMoveClaim` when a draw is claimable; those draws leave `status` as
+  `playing` until `POST /api/claim-draw` records the claim. The page's auto
+  play loop calls the claim endpoint as soon as a claim is available; human
+  play uses the **Claim draw** button. Fivefold repetition, the
+  seventy-five-move rule, and insufficient material are terminal automatically.
+  `GET /api/pgn` replays the stored moves through `chess.PGN` and returns an
+  attachment whose result is derived from the current status. Close the game in
+  tests and on HTTP shutdown to stop the engine goroutines.
 
 UCI protocol:
 
@@ -472,9 +483,10 @@ Things to be careful with:
 - `chess/ucimove_test.go` covers double pushes, captures, en passant, castling,
   all four promotions, promotion captures, illegal/malformed moves, and
   `FindLegalMove` with flagless notation. `chess/repetition_test.go` covers key
-  equality and incremental maintenance, fifty-move, threefold, and
-  insufficient-material draws at the root, repetition/fifty-move detection
-  along the search path, and checkmate precedence.
+  equality and incremental maintenance, fifty-move, seventy-five-move,
+  threefold/fivefold, and insufficient-material draws at the root,
+  repetition/fifty-move detection along the search path, and checkmate
+  precedence.
   `chess/data_fs_test.go` covers `BuildAllAttacksFromFS(data.FS)`, missing
   embedded files, and `LoadMagicEntriesFS`. `chess/search_limits_test.go`
   covers iterative deepening, info callbacks, PV legality, soft deadlines, node
@@ -508,14 +520,16 @@ Things to be careful with:
 - `TestPerftAgainstStockfish` compares a deterministic random game with
   Stockfish at every position. It skips unless `STOCKFISH_BIN` is set; CI
   installs Stockfish and runs it in a dedicated step.
-- `cmd/web` tests exercise the state, move, reset, undo, and PGN endpoints
-  with `httptest`, plus engine settings/depth validation, UCI engine replies
-  for either colour, the human-move guard, engine-aware undo, reset preserving
-  the engine settings and cancelling a running search, the numeric depth input,
-  and threefold/fifty-move/insufficient-material draw statuses. The PGN tests
-  cover download headers, SAN movetext, and the checkmate result. Each test
-  server starts a `uci.Client` and closes it in cleanup. Its `TestMain` builds
-  the attack tables from `data.FS`, so the web tests do not depend on the
+- `cmd/web` tests exercise the state, move, claim-draw, reset, undo, and PGN
+  endpoints with `httptest`, plus engine settings/depth validation, UCI engine
+  replies for either colour, the human-move guard, engine-aware undo, reset
+  preserving the engine settings and cancelling a running search, the numeric
+  depth input, claimable threefold/fifty-move draws, claiming and continuing
+  after a threefold, fivefold/seventy-five-move automatic draws, and
+  insufficient-material statuses. The PGN tests cover download headers, SAN
+  movetext, unfinished and claimed draw results, and the checkmate result. Each
+  test server starts a `uci.Client` and closes it in cleanup. Its `TestMain`
+  builds the attack tables from `data.FS`, so the web tests do not depend on the
   working directory.
 - Benchmarks cover `RookAttack`, `BishopAttack`, `ParseUCIMove`, `ParseFEN`,
   `Perft`, `Evaluate`, and `Search` depth 4.

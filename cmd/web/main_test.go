@@ -217,17 +217,102 @@ func TestPGNExportDraw(t *testing.T) {
 			t.Fatalf("play %s: status %d", move, code)
 		}
 	}
-	if state := getState(t, server); state.Status != "threefold" {
-		t.Fatalf("status = %q, want threefold", state.Status)
+	state := getState(t, server)
+	if state.Status != "playing" {
+		t.Fatalf("status before claim = %q, want playing", state.Status)
+	}
+	if !state.ThreefoldClaim {
+		t.Fatal("threefold claim is not available")
 	}
 
+	// No result is recorded until a draw is claimed.
 	_, body := doRequest(t, server, http.MethodGet, "/api/pgn", "")
 	pgn := string(body)
+	if !strings.Contains(pgn, `[Result "*"]`) {
+		t.Errorf("PGN has a result before a claim:\n%s", pgn)
+	}
+	if !strings.HasSuffix(pgn, "*\n") {
+		t.Errorf("PGN does not end with an unfinished result:\n%s", pgn)
+	}
+
+	state, code := postState(t, server, "/api/claim-draw", "")
+	if code != http.StatusOK {
+		t.Fatalf("POST /api/claim-draw = %d, want 200", code)
+	}
+	if state.Status != "threefold" {
+		t.Fatalf("status after claim = %q, want threefold", state.Status)
+	}
+	if state.ThreefoldClaim || state.FiftyMoveClaim {
+		t.Error("claim is still advertised after it was made")
+	}
+
+	_, body = doRequest(t, server, http.MethodGet, "/api/pgn", "")
+	pgn = string(body)
 	if !strings.Contains(pgn, `[Result "1/2-1/2"]`) {
 		t.Errorf("PGN does not contain the draw result:\n%s", pgn)
 	}
 	if !strings.HasSuffix(pgn, "1/2-1/2\n") {
 		t.Errorf("PGN does not end with the draw result:\n%s", pgn)
+	}
+}
+
+func TestClaimDraw(t *testing.T) {
+	server := newTestServer(t)
+	for _, move := range []string{"g1f3", "g8f6", "f3g1", "f6g8", "g1f3", "g8f6", "f3g1", "f6g8"} {
+		if _, code := postState(t, server, "/api/move", fmt.Sprintf(`{"uci":%q}`, move)); code != http.StatusOK {
+			t.Fatalf("play %s: status %d", move, code)
+		}
+	}
+	if state := getState(t, server); !state.ThreefoldClaim {
+		t.Fatal("threefold claim is not available")
+	}
+
+	if _, code := postState(t, server, "/api/claim-draw", ""); code != http.StatusOK {
+		t.Fatalf("first claim = %d, want 200", code)
+	}
+	if _, code := postState(t, server, "/api/claim-draw", ""); code != http.StatusConflict {
+		t.Errorf("second claim = %d, want 409", code)
+	}
+	if _, code := postState(t, server, "/api/move", `{"uci":"a2a3"}`); code != http.StatusConflict {
+		t.Errorf("move after claim = %d, want 409", code)
+	}
+
+	state, code := postState(t, server, "/api/undo", "")
+	if code != http.StatusOK {
+		t.Fatalf("undo after claim = %d, want 200", code)
+	}
+	if state.Status != "playing" {
+		t.Fatalf("status after undo = %q, want playing", state.Status)
+	}
+}
+
+func TestClaimDrawUnavailable(t *testing.T) {
+	server := newTestServer(t)
+	if _, code := postState(t, server, "/api/claim-draw", ""); code != http.StatusConflict {
+		t.Errorf("claim at start = %d, want 409", code)
+	}
+}
+
+func TestThreefoldGameContinues(t *testing.T) {
+	server := newTestServer(t)
+	for _, move := range []string{"g1f3", "g8f6", "f3g1", "f6g8", "g1f3", "g8f6", "f3g1", "f6g8"} {
+		if _, code := postState(t, server, "/api/move", fmt.Sprintf(`{"uci":%q}`, move)); code != http.StatusOK {
+			t.Fatalf("play %s: status %d", move, code)
+		}
+	}
+
+	state := getState(t, server)
+	if state.Status != "playing" || !state.ThreefoldClaim {
+		t.Fatalf("status = %q, claim = %v, want playing with a claim available", state.Status, state.ThreefoldClaim)
+	}
+
+	// A claimable draw does not prevent either side from playing on.
+	state, code := postState(t, server, "/api/move", `{"uci":"a2a3"}`)
+	if code != http.StatusOK {
+		t.Fatalf("move after threefold = %d, want 200", code)
+	}
+	if state.Status != "playing" {
+		t.Errorf("status after moving on = %q, want playing", state.Status)
 	}
 }
 
@@ -243,6 +328,8 @@ func TestPGNResult(t *testing.T) {
 		{"stalemate", chess.White, "1/2-1/2"},
 		{"threefold", chess.Black, "1/2-1/2"},
 		{"fifty-move", chess.White, "1/2-1/2"},
+		{"fivefold", chess.White, "1/2-1/2"},
+		{"seventy-five-move", chess.Black, "1/2-1/2"},
 		{"insufficient-material", chess.Black, "1/2-1/2"},
 	}
 	for _, test := range tests {
@@ -316,6 +403,10 @@ func TestPageAndMethods(t *testing.T) {
 		!strings.Contains(string(body), "Export PGN") {
 		t.Error("page does not contain the PGN export button")
 	}
+	if !strings.Contains(string(body), `id="claim-draw"`) ||
+		!strings.Contains(string(body), "Claim draw") {
+		t.Error("page does not contain the draw claim button")
+	}
 	if !strings.Contains(string(body), `id="depth"`) ||
 		!strings.Contains(string(body), `type="number"`) {
 		t.Error("page does not contain the numeric depth input")
@@ -339,7 +430,7 @@ func TestPageAndMethods(t *testing.T) {
 		t.Errorf("POST /api/pgn = %d, want 405", response.StatusCode)
 	}
 
-	for _, path := range []string{"/api/engine", "/api/engine/move"} {
+	for _, path := range []string{"/api/engine", "/api/engine/move", "/api/claim-draw"} {
 		response, _ = doRequest(t, server, http.MethodGet, path, "")
 		if response.StatusCode != http.StatusMethodNotAllowed {
 			t.Errorf("GET %s = %d, want 405", path, response.StatusCode)
@@ -659,7 +750,7 @@ func TestEngineInfoReportsMate(t *testing.T) {
 	}
 }
 
-func TestSnapshotReportsThreefoldRepetition(t *testing.T) {
+func TestSnapshotReportsClaimableThreefold(t *testing.T) {
 	start, err := chess.ParseFEN("4k3/8/8/8/8/8/8/R3K3 w - - 0 1")
 	if err != nil {
 		t.Fatalf("ParseFEN: %v", err)
@@ -680,15 +771,21 @@ func TestSnapshotReportsThreefoldRepetition(t *testing.T) {
 	}
 
 	state := g.snapshotLocked()
-	if state.Status != "threefold" {
-		t.Fatalf("status = %q, want threefold", state.Status)
+	if state.Status != "playing" {
+		t.Fatalf("status = %q, want playing (threefold is claimable)", state.Status)
+	}
+	if !state.ThreefoldClaim {
+		t.Error("threefold claim is not available")
+	}
+	if state.FiftyMoveClaim {
+		t.Error("fifty-move claim is available")
 	}
 	if len(state.LegalMoves) == 0 {
-		t.Error("drawn position reported no legal moves")
+		t.Error("claimable position reported no legal moves")
 	}
 }
 
-func TestSnapshotReportsFiftyMoveDraw(t *testing.T) {
+func TestSnapshotReportsClaimableFiftyMove(t *testing.T) {
 	position, err := chess.ParseFEN("4k3/8/8/8/8/8/8/R3K3 w - - 100 1")
 	if err != nil {
 		t.Fatalf("ParseFEN: %v", err)
@@ -700,9 +797,83 @@ func TestSnapshotReportsFiftyMoveDraw(t *testing.T) {
 	g.history = nil
 
 	state := g.snapshotLocked()
-	if state.Status != "fifty-move" {
-		t.Fatalf("status = %q, want fifty-move", state.Status)
+	if state.Status != "playing" {
+		t.Fatalf("status = %q, want playing (fifty-move is claimable)", state.Status)
 	}
+	if !state.FiftyMoveClaim {
+		t.Error("fifty-move claim is not available")
+	}
+	if state.ThreefoldClaim {
+		t.Error("threefold claim is available")
+	}
+}
+
+func TestClaimFiftyMoveDraw(t *testing.T) {
+	position, err := chess.ParseFEN("4k3/8/8/8/8/8/8/R3K3 w - - 100 1")
+	if err != nil {
+		t.Fatalf("ParseFEN: %v", err)
+	}
+
+	g := newGame()
+	t.Cleanup(g.Close)
+	g.positions = []*chess.Position{position}
+	g.history = nil
+
+	if err := g.claimDrawLocked(); err != nil {
+		t.Fatalf("claimDrawLocked: %v", err)
+	}
+	if status := g.statusLocked(); status != "fifty-move" {
+		t.Errorf("status after claim = %q, want fifty-move", status)
+	}
+}
+
+func TestSnapshotReportsAutomaticDraws(t *testing.T) {
+	t.Run("fivefold", func(t *testing.T) {
+		start, err := chess.ParseFEN("4k3/8/8/8/8/8/8/R3K3 w - - 0 1")
+		if err != nil {
+			t.Fatalf("ParseFEN: %v", err)
+		}
+
+		g := newGame()
+		t.Cleanup(g.Close)
+		g.positions = []*chess.Position{start}
+		g.history = nil
+		for _, move := range []string{
+			"e1d1", "e8d8", "d1e1", "d8e8",
+			"e1d1", "e8d8", "d1e1", "d8e8",
+			"e1d1", "e8d8", "d1e1", "d8e8",
+			"e1d1", "e8d8", "d1e1", "d8e8",
+		} {
+			if err := g.applyUCILocked(move); err != nil {
+				t.Fatalf("applyUCILocked(%q): %v", move, err)
+			}
+		}
+
+		state := g.snapshotLocked()
+		if state.Status != "fivefold" {
+			t.Fatalf("status = %q, want fivefold", state.Status)
+		}
+		if state.ThreefoldClaim || state.FiftyMoveClaim {
+			t.Error("automatic draw still advertises a claim")
+		}
+	})
+
+	t.Run("seventy-five-move", func(t *testing.T) {
+		position, err := chess.ParseFEN("4k3/8/8/8/8/8/8/R3K3 w - - 150 1")
+		if err != nil {
+			t.Fatalf("ParseFEN: %v", err)
+		}
+
+		g := newGame()
+		t.Cleanup(g.Close)
+		g.positions = []*chess.Position{position}
+		g.history = nil
+
+		state := g.snapshotLocked()
+		if state.Status != "seventy-five-move" {
+			t.Fatalf("status = %q, want seventy-five-move", state.Status)
+		}
+	})
 }
 
 func TestEngineMoveUsesRepetitionHistory(t *testing.T) {

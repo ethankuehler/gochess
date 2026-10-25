@@ -16,6 +16,11 @@ func (b *Position) Key() PositionKey { return PositionKey(b.key) }
 // which makes the fifty-move rule claimable by the side to move.
 func (b *Position) IsFiftyMoveDraw() bool { return b.halfmoveClock >= 100 }
 
+// IsSeventyFiveMoveDraw reports whether the halfmove clock has reached 150
+// plies. Unlike the fifty-move rule, the seventy-five-move rule is an
+// automatic draw and does not require a claim.
+func (b *Position) IsSeventyFiveMoveDraw() bool { return b.halfmoveClock >= 150 }
+
 // IsInsufficientMaterial reports whether neither side can possibly deliver
 // checkmate with the material on the board. It implements the standard simple
 // dead-position test: no pawns, rooks, or queens, at most one minor piece, or
@@ -68,9 +73,17 @@ func (b *Position) RepetitionCount(history []PositionKey) int {
 
 // IsThreefoldRepetition reports whether the position has already occurred twice
 // in history, making the current occurrence the third. The repeat does not have
-// to be consecutive.
+// to be consecutive. A threefold repetition is claimable, not automatic; see
+// IsFivefoldRepetition for the automatic version.
 func (b *Position) IsThreefoldRepetition(history []PositionKey) bool {
 	return b.RepetitionCount(history) >= 2
+}
+
+// IsFivefoldRepetition reports whether the position has already occurred four
+// times in history, making the current occurrence the fifth. Fivefold
+// repetition is an automatic draw and does not require a claim.
+func (b *Position) IsFivefoldRepetition(history []PositionKey) bool {
+	return b.RepetitionCount(history) >= 4
 }
 
 // computeKey hashes the position from scratch. It is used when a position is
