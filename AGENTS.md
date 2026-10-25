@@ -61,22 +61,31 @@ deepening alpha-beta search, and a UCI front end.
   produces a self-contained binary; `gochess bench [depth]` runs the benchmark
   and exits, and `gochess -version` prints the version. Normal startup runs the
   UCI command loop on stdin/stdout.
-- `cmd/web/main.go` and `cmd/web/index.html` — HTTP server and embedded board
-  UI. The server owns one in-memory game and exposes `/api/state`,
-  `/api/pgn`, `/api/move`, `/api/claim-draw`, `/api/engine`,
-  `/api/engine/move`, `/api/reset`, and `/api/undo`. `/api/pgn` downloads the
-  game as PGN with the Seven Tag Roster, SAN movetext, and the current result.
-  Threefold repetition and the fifty-move rule are claimable: they are
-  advertised through `threefoldClaim`/`fiftyMoveClaim` and do not end the game
-  until `POST /api/claim-draw`. Auto play calls that endpoint automatically,
-  because neither engine side can press the button; human play uses the
-  **Claim draw** button. Fivefold repetition, the seventy-five-move rule, and
-  insufficient material end the game automatically. Engine mode plays Black
-  against a human White; auto play asks the engine to move for both sides. Each
-  engine move sends `position fen ... moves ...` and `go depth N` to an
-  in-process `uci.Client` and applies the returned `bestmove`. The panel has an
-  engine toggle and a numeric depth input with no upper limit. `newGame` starts
-  the client; `game.Close` shuts it down, and tests must close the game.
+- `cmd/web/main.go`, `cmd/web/analysis.go`, `cmd/web/cpu_unix.go`,
+  `cmd/web/cpu_other.go`, and `cmd/web/index.html` — HTTP
+  server, optional runtime analysis, and embedded board UI. The server owns one
+  in-memory game and exposes `/api/state`, `/api/pgn`, `/api/move`,
+  `/api/claim-draw`, `/api/engine`, `/api/engine/move`, `/api/reset`, and
+  `/api/undo`. `/api/pgn` downloads the game as PGN with the Seven Tag Roster,
+  SAN movetext, and the current result. Threefold repetition and the fifty-move
+  rule are claimable: they are advertised through
+  `threefoldClaim`/`fiftyMoveClaim` and do not end the game until
+  `POST /api/claim-draw`. Auto play calls that endpoint automatically, because
+  neither engine side can press the button; human play uses the **Claim draw**
+  button. Fivefold repetition, the seventy-five-move rule, and insufficient
+  material end the game automatically. Engine mode plays Black against a human
+  White; auto play asks the engine to move for both sides. Each engine move sends
+  `position fen ... moves ...` and `go depth N` to an in-process `uci.Client`
+  and applies the returned `bestmove`. The panel has an engine toggle and a
+  numeric depth input with no upper limit. `newGame` starts the client;
+  `game.Close` shuts it down, and tests must close the game. With `-analysis`,
+  `newGameWithAnalysis` also enables UCI metrics when built with `-tags metrics`,
+  samples runtime data, and registers `/api/analysis` plus `/debug/pprof/`;
+  ordinary mode registers none of those routes. The analysis service retains 300 runtime samples and 64
+  searches, and `game.Close` stops its sampler. Process CPU time comes from
+  `getrusage` on Unix (the runtime CPU-class metrics are zero on macOS) and from
+  `/cpu/classes` elsewhere; samples mark CPU unavailable if neither source
+  works.
 - `uci/` — the UCI protocol layer (`package uci`):
   - `engine.go` — `Engine`, `Run`, command loop, handshake, `isready`,
     `setoption`, `ucinewgame`, `stop`, `quit`, EOF handling, and the
@@ -91,8 +100,10 @@ deepening alpha-beta search, and a UCI front end.
     `StartInProcess`, `SetPosition`, `GoDepth`, `NewGame`, and `Close`. A
     dedicated reader goroutine drains engine output so a command write cannot
     deadlock against an `info string` response.
-  - `options.go` — the two advertised options (`Threads` fixed at 1 and
-    `Move Overhead`) plus tolerant `setoption` parsing for ignored options.
+  - `options.go` — the advertised options (`Threads` fixed at 1 and
+    `Move Overhead`; `Analysis` only in a `metrics` build) plus tolerant
+    `setoption` parsing for ignored options.
+  - `metrics_on.go`, `metrics_off.go` — compile-time `metricsSupported` flag.
   - `output.go` — mutex-protected, flushed stdout writer.
   - `bench.go` — fixed-position deterministic benchmark.
   - `version.go` — engine name, author, and `Version` (overridable with
@@ -103,7 +114,8 @@ deepening alpha-beta search, and a UCI front end.
     `UnicodeString`), `Occupancy`, `PieceBitboard`.
   - `const.go` — `Square`, `FileRank`, `Piece`, and `Colour` enums, position
     flag bits, named squares, file masks, and piece/board notation tables.
-  - `move.go` — `Move` (from/to `Square` plus flags), `ParseUCIMove`, the
+  - `move.go` — `Move` (two `uint8` squares plus a `uint16` flag word),
+    `ParseUCIMove`, the
     `From`/`To`/`Promotion` accessors, move-flag accessors
     (`IsCapture`, `IsEnPassant`, `IsCastling`, `IsDoublePush`), and
     algebraic-notation helpers (`SquareName`, `ParseFileRank`, `ParseSquare`,
@@ -128,6 +140,8 @@ deepening alpha-beta search, and a UCI front end.
   - `movegen.go` — attack detection (`isSquareAttacked`), pseudo-legal
     generation, castling checks, king-safety filtering, `LegalMoves`, and
     `InCheck`.
+  - `movegen_metrics.go` — instrumented legal generation behind
+    `//go:build metrics`.
   - `makemove.go` — copy-make `makeMove`, castling-rights updates, en passant,
     promotions, clocks, and the incremental Zobrist key.
   - `repetition.go` — `PositionKey`, Zobrist keys, `Position.Key`, and the
@@ -140,6 +154,9 @@ deepening alpha-beta search, and a UCI front end.
     fixed-depth `Search`, iterative-deepening `SearchWithLimits`, capture-first
     move ordering, PV tracking, seldepth, cancellation/deadline/node limits,
     and `ScoreToMate`.
+  - `search_metrics_on.go` / `search_metrics_off.go` — compile-time metrics
+    wrappers; the off build calls the position methods directly. `MetricsEnabled`
+    reports which build is active.
   - `bench_test.go` — benchmarks for attack lookups, parsers, perft,
     evaluation, and search.
 - `data/` — generated/test data:
@@ -163,6 +180,16 @@ deepening alpha-beta search, and a UCI front end.
 - `generate_attack_tables.py` — Python 3 script that regenerates the CSV
   attack tables in `data/`. Requires `pandas`. Run from the repo root
   (`python3 generate_attack_tables.py`); it writes to `data/*.csv`.
+- `tools/lichess/` — optional Lichess Bot API integration. `setup.sh` clones the
+  third-party `lichess-bot` bridge into `tools/lichess/lichess-bot/`, creates a
+  Python virtualenv, installs its dependencies, builds `./gochess`, and validates
+  `config.yml`. `run.sh` loads the gitignored `tools/lichess/.env` (or an
+  exported token), optionally upgrades the account to a bot, and then runs the
+  bridge. The bridge plays rated standard games against other bots and accepts
+  casual human challenges, reserving one of two slots for humans; no token is
+  stored in the repo, and neither script is part of the Go build, tests, or CI.
+  The generated `lichess-bot/`, `venv/`, `games/`, `.env`, and logs are
+  gitignored.
 - `.github/workflows/ci.yml` — GitHub Actions CI (format, build, vet, race
   tests).
 - `.vscode/launch.json` — VS Code debug config for `main.go`.
@@ -171,10 +198,12 @@ deepening alpha-beta search, and a UCI front end.
 
 ```sh
 go build ./...            # build everything
-go build -o gochess ./cmd/uci  # self-contained UCI engine
+go build -o gochess ./cmd/uci  # self-contained UCI engine, no search metrics
+go build -tags metrics -o gochess-metrics ./cmd/uci  # instrumented build
 go run .                  # run the demo binary (must run from repo root)
 go run ./cmd/uci          # run the UCI engine on stdin/stdout
 go run ./cmd/web          # local board UI; Engine uses the in-process UCI client
+go run ./cmd/web -analysis # opt-in runtime plots and pprof (loopback only)
 go run ./cmd/genmagics    # regenerate data/*_magics.csv (from repo root)
 go run ./cmd/perft -depth 5
 go run ./cmd/perft -moves -fen "<FEN>"
@@ -191,8 +220,10 @@ go run ./cmd/search -fen "<FEN>" -eval
 ./gochess bench           # deterministic bench; prints "<nodes> nodes <nps> nps"
 ./gochess bench 6         # optional depth
 ./gochess -version
-go test ./...             # run all tests
+go test ./...             # default build; metrics tests skip
+go test -tags metrics ./... # run the metrics-enabled tests
 go test -race ./...       # run tests under the race detector
+go test -tags metrics -race ./... # race tests with metrics enabled
 PERFT_DEEP=1 go test ./chess -run '^TestPerft$' -v
 STOCKFISH_BIN=stockfish go test ./chess -run TestPerftAgainstStockfish
 STOCKFISH_BIN=stockfish go test ./cmd/match -run TestMatchAgainstStockfish
@@ -212,8 +243,8 @@ to the repo root — preserve that pattern if you add tests that touch `data/`.
 add it to the `//go:embed` list in `data/assets.go` and to the FS loader.
 
 CI runs on pushes to `main` and on pull requests: `gofmt` check, `go build`,
-`go vet`, `go test -race ./...`, the Stockfish perft differential test, and a
-short Stockfish match test. The compiled `gochess` binary, `gochess-uci`,
+`go vet`, `go test -race ./...`, `go test -tags metrics -race ./...`, the
+Stockfish perft differential test, and a short Stockfish match test. The compiled `gochess` binary, `gochess-uci`,
 `.vscode/`, the local Go caches (`.gocache/`, `.gomodcache/`, `.gopath/`), and
 local planning notes in `plans/` are gitignored.
 
@@ -233,6 +264,10 @@ Bitboard representation:
   castling rights (`whiteKingsideCastling`, `whiteQueensideCastling`,
   `blackKingsideCastling`, `blackQueensideCastling`). En passant is a
   single-square `BitBoard` (`enPassantSquare`), not an index.
+- `Position.occupancy` caches white and black occupancy, and `Position.epHash`
+  caches the en passant contribution to the Zobrist key. Constructors call
+  `refreshOccupancy` and `computeEnPassantKey`; `makeMove` updates both
+  incrementally.
 - Piece attack tables are `[]BitBoard` of length 64 indexed by `Square`,
   populated from the CSVs by `BuildKnightAttacks` / `BuildKingAttacks` /
   `BuildPawnMoves` / `BuildPawnAttacks` (or all at once via
@@ -243,9 +278,12 @@ Bitboard representation:
   magic search; setting `SaveMagicsToDisk` rewrites the CSVs after a search
   (normally done via `go run ./cmd/genmagics`). Queens reuse the rook and
   bishop lookups via `QueenAttack`.
-- `Move` stores a `from`/`to` `Square` plus flags. The low three bits hold the
-  promotion `Piece`; bit 3 is `promotionFlag`, bit 4 `captureFlag`, bit 5
-  `doublePushFlag`, bit 6 `enPassantFlag`, and bit 7 `castlingFlag`. Generated
+- `Move` is a 4-byte struct: two `uint8` square indices (0–63) plus a `uint16`
+  flag word. `From`/`To` return `Square`; the internal
+  `newMove(from, to Square, flags uint16)` is the only constructor and the only
+  place that narrows. The low three bits hold the promotion `Piece`; bit 3 is
+  `promotionFlag`, bit 4 `captureFlag`, bit 5 `doublePushFlag`, bit 6
+  `enPassantFlag`, and bit 7 `castlingFlag`; bits 8–15 are reserved. Generated
   moves carry the flags; `ParseUCIMove` is notation-only. Use
   `Position.FindLegalMove` or `Position.ApplyUCIMove` to turn notation into the
   flagged generated move before calling `ApplyMove`/`makeMove`.
@@ -253,12 +291,16 @@ Bitboard representation:
   rights for any move from or to e1/a1/h1/e8/a8/h8, clears the en passant
   square unless the move is a double push, updates the halfmove/fullmove
   clocks, moves the rook when castling, and updates the incremental Zobrist
-  key. `Position.key` is the repetition key: piece placement, side to move,
-  castling rights, and a capturable en passant target, but not the clocks.
-- `LegalMoves` generates pseudo-legal moves, applies each one to a copy, and
-  rejects moves that leave the mover's king attacked. Castling additionally
-  checks that the king is not in check and that its transit squares are safe
-  with the king removed from its origin.
+  key plus the occupancy and en passant caches. `Position.key` is the
+  repetition key: piece placement, side to move, castling rights, and a
+  capturable en passant target, but not the clocks. `makeMoveForLegality`
+  performs only the board and occupancy updates needed for king-safety
+  filtering; its key, clocks, rights, and en passant target are stale, so it
+  must not be used as a game position.
+- `LegalMoves` generates pseudo-legal moves, applies each one with
+  `makeMoveForLegality`, and rejects moves that leave the mover's king attacked.
+  Castling additionally checks that the king is not in check and that its
+  transit squares are safe with the king removed from its origin.
 - `Perft` and `PerftDivide` require `BuildAllAttacks`; `TestMain` builds the
   tables once, and `cmd/perft` builds them at startup. `Perft(0)` is 1.
 - `Position.ApplyMove` validates a generated `Move` and returns a new
@@ -287,9 +329,24 @@ Evaluation and search:
   negamax alpha-beta. `SearchLimits` has `MaxDepth` (0 means no explicit cap, up
   to `maxPly`), `MaxNodes`, `Deadline` (hard wall clock), `SoftDeadline` (stop
   between iterations), `RootMoves` (nil means all legal moves; a non-nil empty
-  list means no root moves), and `GameHistory` (position keys before the root,
-  oldest first). It checks cancellation and the hard deadline every 256 nodes
-  and at every root move, so `stop` stays responsive.
+  list means no root moves), `GameHistory` (position keys before the root,
+  oldest first), and `CollectMetrics` (default false). It checks cancellation
+  and the hard deadline every 256 nodes and at every root move, so `stop` stays
+  responsive.
+- Optional `SearchResult.Metrics` contains per-search counters and disjoint,
+  inclusive wall-clock timings for pseudo-legal generation, legality filtering
+  (copy-make plus attack test), evaluation, and search-edge copy-make.
+  `MakeMoveCalls` counts every copy-make, including the copies legal generation
+  makes to filter moves; `SearchMakeMoveCalls` is the search-tree subset.
+  Metrics are compiled in only with `-tags metrics`; `MetricsEnabled` reports
+  which build is active. The default build has no timer, counter, or wrapper
+  dispatch overhead: `CollectMetrics` is ignored and `SearchResult.Metrics` is
+  nil. In a metrics build, `CollectMetrics` false takes a nil-check wrapper path
+  and still costs a few percent. Draw checks, check detection, move ordering, PV
+  maintenance, timer overhead, and the info callback are not timed, so the phase
+  sum is a lower bound; `ElapsedNS` minus the phases is the unmeasured remainder.
+  Metrics add roughly 20–60% overhead depending on the position and search size,
+  so use the default build for strength and NPS comparisons.
 - `SearchWithLimits` returns the last completed iteration's `BestMove`, `Score`,
   `PV`, and `Depth`. If it stops before any iteration completes it returns the
   first legal move with `Depth == 0`; a terminal position returns
@@ -336,7 +393,13 @@ Evaluation and search:
   seventy-five-move rule, and insufficient material are terminal automatically.
   `GET /api/pgn` replays the stored moves through `chess.PGN` and returns an
   attachment whose result is derived from the current status. Close the game in
-  tests and on HTTP shutdown to stop the engine goroutines.
+  tests and on HTTP shutdown to stop the engine goroutines and optional analysis
+  sampler. Analysis mode records only completed, non-stale client results;
+  reset clears search history but retains process samples. `GET /api/state`
+  exposes only the `analysis` discovery boolean, while `GET /api/analysis`
+  returns bounded runtime/search snapshots. The collapsed browser panel polls
+  only while open and visible and renders independently of the board. CPU/trace
+  captures are bounded to 1–60 seconds and analysis requires a loopback address.
 
 UCI protocol:
 
@@ -374,11 +437,13 @@ UCI protocol:
 - Checkmate and stalemate use `bestmove 0000`; checkmate is `info score mate 0`
   and stalemate is `info score cp 0`. Scores are side-to-move relative, and mate
   distances are in moves via `ScoreToMate`.
-- Only `Threads` (1..1) and `Move Overhead` are advertised. `Hash`,
-  `Clear Hash`, `Ponder`, `MultiPV`, and `UCI_Chess960` are accepted/ignored
-  where harmless but are not advertised because they are not implemented. There
-  is no transposition table, pondering, MultiPV, Chess960, tablebase, or opening
-  book support.
+- `Threads` (1..1) and `Move Overhead` are always advertised. A metrics build
+  also advertises `Analysis` (check, default false); it adds one compact
+  `info string analysis <json>` before the final `bestmove`, and the client
+  retains per-iteration depth/seldepth/nodes/time/NPS and the final metrics. `Hash`, `Clear Hash`, `Ponder`, `MultiPV`, and
+  `UCI_Chess960` are accepted/ignored where harmless but are not advertised
+  because they are not implemented. There is no transposition table, pondering,
+  MultiPV, Chess960, tablebase, or opening book support.
 - `bench` uses a fixed position list, fixed depth, one thread, and no clock; its
   final stdout line is `<nodes> nodes <nps> nps`. `./gochess bench` exits after
   printing; the UCI `bench` command returns to the command loop.
@@ -418,6 +483,8 @@ Things to be careful with:
   Knight, Bishop, Rook, Queen, King, then the black pieces). That order is
   load-bearing across FEN parsing, board printing, and promotion encoding;
   don't reorder it without updating every table.
+- `Move.from`/`Move.to` are `uint8`; never assign a `Square` directly. Build
+  moves with `newMove`, or convert explicitly after checking the 0–63 range.
 - `tryMagic` uses a zero table slot as "not yet written"; that sentinel is
   safe only because rook/bishop attack sets are never empty. Keep that
   invariant in mind before reusing the pattern elsewhere.
@@ -470,7 +537,8 @@ Things to be careful with:
   `BuildAllAttacks`, and rejection of malformed magic CSVs.
 - Move-generation coverage includes move flags, make-move FEN transitions,
   attack detection (including back-rank pawn attacks), castling, en passant,
-  promotions, pins, double check, and legal-move invariants. Perft is
+  promotions, pins, double check, legal-move invariants, and parity between the
+  instrumented and normal legal-generation paths. Perft is
   data-driven from `data/perft.csv`; the fast rows run by default and the deep
   rows run with `PERFT_DEEP=1`.
 - Evaluation coverage includes the starting position (0), exact deltas for
@@ -490,15 +558,15 @@ Things to be careful with:
   `chess/data_fs_test.go` covers `BuildAllAttacksFromFS(data.FS)`, missing
   embedded files, and `LoadMagicEntriesFS`. `chess/search_limits_test.go`
   covers iterative deepening, info callbacks, PV legality, soft deadlines, node
-  limits, cancellation/fallback, `RootMoves`, terminal positions, and
-  non-mutation. `chess/pgn_test.go` covers SAN for pawn moves, captures, en
-  passant, castling, promotions, check/checkmate, and every disambiguation
-  form, plus PGN tags, defaults, escaping, wrapping, black-to-move starts, and
-  errors.
+  limits, cancellation/fallback, `RootMoves`, terminal positions, optional
+  metrics, and non-mutation. `chess/pgn_test.go` covers SAN for pawn moves,
+  captures, en passant, castling, promotions, check/checkmate, and every
+  disambiguation form, plus PGN tags, defaults, escaping, wrapping,
+  black-to-move starts, and errors.
 - `uci` tests use in-process `io.Pipe` sessions: handshake, `isready` during a
   search, `position` with FEN/moves, clocks, `stop`, `quit`, EOF, `searchmoves`,
   node limits, terminal `bestmove 0000`, invalid FEN/move handling, options,
-  debug echo, and stdout purity. Unit tests cover `setoption`, `go`, FEN
+  analysis JSON, and stdout purity. Unit tests cover `setoption`, `go`, FEN
   padding, time allocation, and bench determinism.
 - `cmd/match` tests cover draw-reason adjudication, perft diff reporting, and
   (when `STOCKFISH_BIN` is set) a short two-game match that exercises the
@@ -508,8 +576,9 @@ Things to be careful with:
   and book loading, validation, and transposition dropping.
 - `uci/client_test.go` covers `StartInProcess`, `SetPosition` (including an
   invalid FEN and recovery), `GoDepth`, `GoMovetime`, `GoNodes`, `SetOption`,
-  PV legality, terminal positions, `NewGame`, idempotent `Close`, and
-  `parseInfo` for cp/mate/nodes/time/pv.
+  PV legality, terminal positions, `NewGame`, idempotent `Close`, analysis
+  iteration retention/deduplication, and `parseInfo` for
+  cp/mate/nodes/nps/seldepth/time/pv.
 - `cmd/uci` tests build the binary and run it from an empty temporary directory,
   which verifies embedded data and working-directory independence. They also
   exercise `bench` and `-version` as separate processes.
@@ -528,23 +597,33 @@ Things to be careful with:
   after a threefold, fivefold/seventy-five-move automatic draws, and
   insufficient-material statuses. The PGN tests cover download headers, SAN
   movetext, unfinished and claimed draw results, and the checkmate result. Each
-  test server starts a `uci.Client` and closes it in cleanup. Its `TestMain`
-  builds the attack tables from `data.FS`, so the web tests do not depend on the
-  working directory.
+  test server starts a `uci.Client` and closes it in cleanup. Analysis tests
+  cover disabled routes, real search records and reset, bounded runtime/search
+  retention, snapshot copying, profile conflicts/duration limits, loopback
+  validation, and idempotent sampler shutdown. The web `TestMain` builds the
+  attack tables from `data.FS`, so the web tests do not depend on the working
+  directory.
 - Benchmarks cover `RookAttack`, `BishopAttack`, `ParseUCIMove`, `ParseFEN`,
-  `Perft`, `Evaluate`, and `Search` depth 4.
+  `Perft`, `Evaluate`, and `Search` depth 4 with and without search metrics.
 
 ## Security considerations
 
-- No network code, no external services, no secrets, no third-party Go
-  modules — the attack surface is essentially nil.
+- The Go code has no network code, no external services, no secrets, and no
+  third-party Go modules — its attack surface is essentially nil.
+- `tools/lichess/` is optional shell/Python tooling, not part of the Go build,
+  tests, or CI. It uses the network, installs third-party Python packages, and
+  reads `$LICHESS_BOT_TOKEN` or the gitignored `tools/lichess/.env`; neither the
+  token nor `.env` may be committed or written into `config.yml`. The
+  `lichess-bot` checkout is third-party code; update it deliberately.
 - `cmd/perft -compare` and `cmd/match` execute a local Stockfish binary; they
   do not access the network.
 - `cmd/web` binds to `127.0.0.1:8080` by default, keeps a single in-memory
   game, and has no authentication. It is a local demo, not a public server.
   Engine depth has no upper limit; a long search is cancelled by resetting the
   game. Engine moves go through an in-process `uci.Client`; no engine binary is
-  spawned and no network access is performed.
+  spawned and no network access is performed. `-analysis` exposes runtime data
+  and pprof only on loopback addresses and is off by default; do not register
+  those handlers in ordinary mode or on the global default mux.
 - `cmd/search` is a local, single-position CLI. It reads only its flags and the
   local `data/` attack tables and performs no network access.
 - `cmd/uci` is a local stdin/stdout engine. It performs no network access, has
