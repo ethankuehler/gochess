@@ -83,7 +83,30 @@ type legalContext struct {
 	checkers     BitBoard
 	checkerCount int
 	checkTarget  BitBoard
-	pinMasks     [squareCount]BitBoard
+	pinned       BitBoard
+	pinCount     int
+	pinEntries   [8]pinnedPiece
+}
+
+// pinnedPiece records the ray a pinned piece may move along.
+type pinnedPiece struct {
+	square Square
+	mask   BitBoard
+}
+
+// pinMask returns the squares a piece on from may move to without exposing the
+// king. Unpinned pieces may move anywhere; only pinned pieces pay for a lookup.
+// A king has at most eight rays, so at most eight pieces can be pinned.
+func (ctx *legalContext) pinMask(from Square) BitBoard {
+	if ctx.pinned&(BitBoard(1)<<from) == 0 {
+		return allSquares
+	}
+	for i := 0; i < ctx.pinCount; i++ {
+		if ctx.pinEntries[i].square == from {
+			return ctx.pinEntries[i].mask
+		}
+	}
+	return allSquares
 }
 
 func rayBetween(from, to Square) (BitBoard, bool) {
@@ -136,9 +159,6 @@ func (b *Position) newLegalContext() legalContext {
 	ctx.enemy = b.Occupancy(ctx.them)
 	ctx.occupancy = ctx.own | ctx.enemy
 	ctx.king = b.kingSquare(ctx.us)
-	for square := range ctx.pinMasks {
-		ctx.pinMasks[square] = allSquares
-	}
 
 	themOffset := Piece(0)
 	if ctx.us == White {
@@ -170,7 +190,9 @@ func (b *Position) newLegalContext() legalContext {
 		pinned := between & ctx.own
 		if pinned != 0 && pinned&(pinned-1) == 0 {
 			pinnedSquare := Square(bits.TrailingZeros64(uint64(pinned)))
-			ctx.pinMasks[pinnedSquare] = between | (BitBoard(1) << pinner)
+			ctx.pinEntries[ctx.pinCount] = pinnedPiece{square: pinnedSquare, mask: between | (BitBoard(1) << pinner)}
+			ctx.pinCount++
+			ctx.pinned |= pinned
 		}
 	}
 
@@ -218,65 +240,6 @@ func isPromotionRank(colour Colour, square Square) bool {
 		return rank == 7
 	}
 	return rank == 0
-}
-
-// addPawnMoves appends all pseudo-legal pawn moves for us.
-func (b *Position) addPawnMoves(moves []Move, us Colour, enemy, occ BitBoard) []Move {
-	offset := Piece(0)
-	if us == Black {
-		offset = blackPieceOffset
-	}
-	pawns := b.pieceBitboards[Pawn+offset]
-
-	var pushTable, attackTable []BitBoard
-	if us == White {
-		pushTable, attackTable = whitePawnMoves, whitePawnAttacks
-	} else {
-		pushTable, attackTable = blackPawnMoves, blackPawnAttacks
-	}
-
-	for pawns != 0 {
-		from := Square(bits.TrailingZeros64(uint64(pawns)))
-		pawns &= pawns - 1
-
-		for pushes := pushTable[from] &^ occ; pushes != 0; pushes &= pushes - 1 {
-			to := Square(bits.TrailingZeros64(uint64(pushes)))
-			double := (us == White && to == from+16) || (us == Black && to == from-16)
-			if double {
-				middle := Square((int(from) + int(to)) / 2)
-				if occ&(BitBoard(1)<<middle) != 0 {
-					continue
-				}
-			}
-			if isPromotionRank(us, to) {
-				moves = appendPromotions(moves, from, to, 0)
-				continue
-			}
-			var flags uint16
-			if double {
-				flags = doublePushFlag
-			}
-			moves = append(moves, newMove(from, to, flags))
-		}
-
-		for captures := attackTable[from] & enemy; captures != 0; captures &= captures - 1 {
-			to := Square(bits.TrailingZeros64(uint64(captures)))
-			if isPromotionRank(us, to) {
-				moves = appendPromotions(moves, from, to, captureFlag)
-				continue
-			}
-			moves = append(moves, newMove(from, to, captureFlag))
-		}
-
-		if b.enPassantSquare != 0 {
-			if targets := attackTable[from] & b.enPassantSquare; targets != 0 {
-				to := Square(bits.TrailingZeros64(uint64(targets)))
-				moves = append(moves, newMove(from, to, captureFlag|enPassantFlag))
-			}
-		}
-	}
-
-	return moves
 }
 
 // canCastle reports whether colour may castle on the given side from the
@@ -372,46 +335,6 @@ func (b *Position) addCastlingMoves(moves []Move, us Colour, occ BitBoard) []Mov
 	return moves
 }
 
-// pseudoLegalMoves appends all moves for the side to move before king-safety
-// filtering.
-func (b *Position) pseudoLegalMoves(moves []Move) []Move {
-	us := b.sideToMove()
-	them := us.Opposite()
-	own := b.Occupancy(us)
-	enemy := b.Occupancy(them)
-	occ := own | enemy
-
-	offset := Piece(0)
-	if us == Black {
-		offset = blackPieceOffset
-	}
-
-	moves = b.addPawnMoves(moves, us, enemy, occ)
-
-	for pieces := b.pieceBitboards[Knight+offset]; pieces != 0; pieces &= pieces - 1 {
-		from := Square(bits.TrailingZeros64(uint64(pieces)))
-		moves = appendTargets(moves, from, knightAttacks[from]&^own, enemy)
-	}
-	for pieces := b.pieceBitboards[Bishop+offset]; pieces != 0; pieces &= pieces - 1 {
-		from := Square(bits.TrailingZeros64(uint64(pieces)))
-		moves = appendTargets(moves, from, BishopAttack(from, occ)&^own, enemy)
-	}
-	for pieces := b.pieceBitboards[Rook+offset]; pieces != 0; pieces &= pieces - 1 {
-		from := Square(bits.TrailingZeros64(uint64(pieces)))
-		moves = appendTargets(moves, from, RookAttack(from, occ)&^own, enemy)
-	}
-	for pieces := b.pieceBitboards[Queen+offset]; pieces != 0; pieces &= pieces - 1 {
-		from := Square(bits.TrailingZeros64(uint64(pieces)))
-		moves = appendTargets(moves, from, QueenAttack(from, occ)&^own, enemy)
-	}
-	for pieces := b.pieceBitboards[King+offset]; pieces != 0; pieces &= pieces - 1 {
-		from := Square(bits.TrailingZeros64(uint64(pieces)))
-		moves = appendTargets(moves, from, kingAttacks[from]&^own, enemy)
-	}
-
-	return b.addCastlingMoves(moves, us, occ)
-}
-
 func (b *Position) addStrictlyLegalKingMoves(moves []Move, ctx *legalContext) []Move {
 	targets := kingAttacks[ctx.king] &^ ctx.own
 	for targets != 0 {
@@ -437,7 +360,7 @@ func pawnMoveTables(colour Colour) (pushTable, attackTable []BitBoard) {
 }
 
 func strictlyLegalOrdinaryPawnMoves(moves []Move, ctx *legalContext, from Square, pushTable, attackTable []BitBoard) []Move {
-	allowed := ctx.checkTarget & ctx.pinMasks[from]
+	allowed := ctx.checkTarget & ctx.pinMask(from)
 	for pushes := pushTable[from] &^ ctx.occupancy & allowed; pushes != 0; pushes &= pushes - 1 {
 		to := Square(bits.TrailingZeros64(uint64(pushes)))
 		double := (ctx.us == White && to == from+16) || (ctx.us == Black && to == from-16)
@@ -489,22 +412,22 @@ func (b *Position) strictlyLegalPawnMoves(moves []Move, ctx *legalContext, offse
 func (b *Position) strictlyLegalPieceMoves(moves []Move, ctx *legalContext, offset Piece) []Move {
 	for pieces := b.pieceBitboards[Knight+offset]; pieces != 0; pieces &= pieces - 1 {
 		from := Square(bits.TrailingZeros64(uint64(pieces)))
-		targets := knightAttacks[from] &^ ctx.own & ctx.checkTarget & ctx.pinMasks[from]
+		targets := knightAttacks[from] &^ ctx.own & ctx.checkTarget & ctx.pinMask(from)
 		moves = appendTargets(moves, from, targets, ctx.enemy)
 	}
 	for pieces := b.pieceBitboards[Bishop+offset]; pieces != 0; pieces &= pieces - 1 {
 		from := Square(bits.TrailingZeros64(uint64(pieces)))
-		targets := BishopAttack(from, ctx.occupancy) &^ ctx.own & ctx.checkTarget & ctx.pinMasks[from]
+		targets := BishopAttack(from, ctx.occupancy) &^ ctx.own & ctx.checkTarget & ctx.pinMask(from)
 		moves = appendTargets(moves, from, targets, ctx.enemy)
 	}
 	for pieces := b.pieceBitboards[Rook+offset]; pieces != 0; pieces &= pieces - 1 {
 		from := Square(bits.TrailingZeros64(uint64(pieces)))
-		targets := RookAttack(from, ctx.occupancy) &^ ctx.own & ctx.checkTarget & ctx.pinMasks[from]
+		targets := RookAttack(from, ctx.occupancy) &^ ctx.own & ctx.checkTarget & ctx.pinMask(from)
 		moves = appendTargets(moves, from, targets, ctx.enemy)
 	}
 	for pieces := b.pieceBitboards[Queen+offset]; pieces != 0; pieces &= pieces - 1 {
 		from := Square(bits.TrailingZeros64(uint64(pieces)))
-		targets := QueenAttack(from, ctx.occupancy) &^ ctx.own & ctx.checkTarget & ctx.pinMasks[from]
+		targets := QueenAttack(from, ctx.occupancy) &^ ctx.own & ctx.checkTarget & ctx.pinMask(from)
 		moves = appendTargets(moves, from, targets, ctx.enemy)
 	}
 	return moves
@@ -537,7 +460,8 @@ func (b *Position) legalMoves(moves []Move) []Move {
 // must have been built with BuildAllAttacks or the individual builders.
 func (b *Position) LegalMoves() []Move {
 	ensureAttackTables()
-	return b.legalMoves(make([]Move, 0, 64))
+	var buf [256]Move
+	return append([]Move(nil), b.legalMoves(buf[:0])...)
 }
 
 // InCheck reports whether the side to move's king is attacked.
@@ -550,7 +474,9 @@ func (b *Position) InCheck() bool {
 // ApplyMove applies a legal move and returns the resulting position. It
 // returns an error if m is not one of the moves returned by LegalMoves.
 func (b *Position) ApplyMove(m Move) (*Position, error) {
-	for _, legal := range b.LegalMoves() {
+	ensureAttackTables()
+	var buf [256]Move
+	for _, legal := range b.legalMoves(buf[:0]) {
 		if legal == m {
 			next := b.makeMove(m)
 			return &next, nil

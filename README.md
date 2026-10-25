@@ -68,10 +68,11 @@ CGO_ENABLED=0 go build -trimpath \
 - **Attack tables** — knight, king, and pawn tables plus magic bitboards for
   rooks and bishops live in `data/*.csv`, embedded with `//go:embed`. Tables are
   built at startup, so lookups are just array indexing.
-- **Move generation** — pseudo-legal moves are generated with the tables, then
-  copy-make (`makeMove` returns a new position) filters out moves that leave the
-  king attacked. Castling, en passant, and promotions are handled with explicit
-  move flags.
+- **Move generation** — checkers, absolute pins, and castling-transit safety are
+  computed once per position, then ordinary moves are emitted directly through
+  the check and pin masks. King and en-passant candidates are validated with
+  copy-make (`makeMove` returns a new position) and an attack test. Castling,
+  en passant, and promotions are handled with explicit move flags.
 - **Evaluation** — material plus a hand-tuned piece-square table (centrality,
   pawn advancement, king safety). Scores are centipawns from White's view;
   search flips to the side-to-move convention.
@@ -121,11 +122,11 @@ Open **Runtime analysis** in the side panel during engine play or auto play. The
 page plots process CPU utilization, live heap, goroutines, and per-iteration
 search nodes, time, and NPS. CPU utilization is process user+system time and is
 marked unavailable if the platform cannot supply it. It also shows inclusive
-wall-clock timings and call
-counts for pseudo-legal generation, legality filtering (copy-make plus attack
-test), evaluation, and search-edge copy-make. Every copy-make call is counted,
-including the copies made while filtering; their time is reported with the
-legality filter because timing each individual copy would add too much overhead.
+wall-clock timings and call counts for legal move generation, special-move
+legality filtering (copy-make plus attack test), evaluation, and search-edge
+copy-make. Every copy-make call is counted, including the copies made while
+filtering; their time is reported with the legality filter because timing each
+individual copy would add too much overhead.
 The bars are disjoint but incomplete: the panel reports the measured share and
 an unattributed remainder covering draw checks, ordering, PV maintenance,
 callbacks, and the timing instrumentation itself. `elapsedNs` is search-loop time, not the UCI `time` field. The server

@@ -412,7 +412,7 @@ func TestLegalContextPins(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := ctx.pinMasks[mustSquare(t, "e2")]; got != want {
+		if got := ctx.pinMask(mustSquare(t, "e2")); got != want {
 			t.Errorf("pin mask =\n%s\nwant =\n%s", got, want)
 		}
 	})
@@ -422,13 +422,13 @@ func TestLegalContextPins(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := ctx.pinMasks[mustSquare(t, "g7")]; got != want {
+		if got := ctx.pinMask(mustSquare(t, "g7")); got != want {
 			t.Errorf("pin mask = %v, want %v", got, want)
 		}
 	})
 	t.Run("two blockers are not pinned", func(t *testing.T) {
 		ctx := mustFEN(t, "4r1k1/8/8/8/8/4R3/4R3/4K3 w - - 0 1").newLegalContext()
-		if got := ctx.pinMasks[mustSquare(t, "e2")]; got != allSquares {
+		if got := ctx.pinMask(mustSquare(t, "e2")); got != allSquares {
 			t.Errorf("pin mask with two blockers = %v, want all squares", got)
 		}
 	})
@@ -437,9 +437,9 @@ func TestLegalContextPins(t *testing.T) {
 		if ctx.checkerCount != 0 || ctx.checkTarget != allSquares {
 			t.Fatalf("starting context has unexpected check state: %+v", ctx)
 		}
-		for square, mask := range ctx.pinMasks {
-			if mask != allSquares {
-				t.Fatalf("square %s has unexpected pin mask %v", SquareName(Square(square)), mask)
+		for square := Square(0); square < squareCount; square++ {
+			if mask := ctx.pinMask(square); mask != allSquares {
+				t.Fatalf("square %s has unexpected pin mask %v", SquareName(square), mask)
 			}
 		}
 	})

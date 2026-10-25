@@ -22,7 +22,11 @@ func (b *Position) Perft(depth int) uint64 {
 	return b.perft(depth)
 }
 
-func (b *Position) perft(depth int) uint64 {
+// perft takes Position by value. With a pointer receiver, taking the address of
+// the copy-make child at each internal node makes it escape, so perft
+// heap-allocates one Position per node; the value receiver keeps it on the
+// stack and makes the whole walk allocation-free.
+func (b Position) perft(depth int) uint64 {
 	if depth == 0 {
 		return 1
 	}

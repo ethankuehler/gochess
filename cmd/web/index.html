@@ -926,8 +926,8 @@
       const metric = value => Number.isFinite(Number(value)) ? Number(value) : 0;
       const elapsedNS = Math.max(1, metric(metrics.elapsedNs));
       const phases = [
-        { name: "Pseudo move gen", ns: metric(metrics.moveGenNs), calls: metric(metrics.moveGenCalls), unit: "calls" },
-        { name: "Legality filter", ns: metric(metrics.legalFilterNs), calls: metric(metrics.pseudoMoves), unit: "moves" },
+        { name: "Move generation", ns: metric(metrics.moveGenNs), calls: metric(metrics.moveGenCalls), unit: "calls" },
+        { name: "Special-move filter", ns: metric(metrics.legalFilterNs), calls: Math.max(0, metric(metrics.makeMoveCalls) - metric(metrics.searchMakeMoveCalls)), unit: "calls" },
         { name: "Evaluation", ns: metric(metrics.evaluationNs), calls: metric(metrics.evaluationCalls), unit: "calls" },
         { name: "Search copy-make", ns: metric(metrics.searchMakeMoveNs), calls: metric(metrics.searchMakeMoveCalls), unit: "calls" },
       ];

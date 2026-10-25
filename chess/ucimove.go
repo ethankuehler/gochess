@@ -10,8 +10,10 @@ import "fmt"
 // Promotion is part of the notation and must match. A move that is not legal
 // returns false.
 func (b *Position) FindLegalMove(candidate Move) (Move, bool) {
+	ensureAttackTables()
+	var buf [256]Move
 	candidatePromotion, candidateHasPromotion := candidate.Promotion()
-	for _, legal := range b.LegalMoves() {
+	for _, legal := range b.legalMoves(buf[:0]) {
 		if legal.from != candidate.from || legal.to != candidate.to {
 			continue
 		}
