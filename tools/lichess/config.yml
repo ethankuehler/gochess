@@ -1,0 +1,88 @@
+# gochess as a Lichess bot.
+#
+# This file contains no secret. Export the OAuth token before starting:
+#
+#   export LICHESS_BOT_TOKEN="lip_..."
+#
+# Create a token with the bot:play scope at
+# https://lichess.org/account/oauth/token/create?scopes[]=bot:play
+#
+# The paths below assume run.sh starts lichess-bot from
+# tools/lichess/lichess-bot, so ../../.. is the repository root.
+token: ""
+url: "https://lichess.org/"
+
+engine:
+  dir: "../../.."
+  name: "gochess"
+  protocol: "uci"
+  ponder: false          # gochess has no pondering
+  working_dir: ""
+  debug: false
+  uci_options:
+    # Only list options gochess advertises. python-chess rejects unknown UCI
+    # options, so Hash/SyzygyPath/UCI_ShowWDL from the stock config must stay out.
+    Threads: 1
+    Move Overhead: 100
+    go_commands:
+      # ~4.9s per move after Move Overhead. Recent 3+2 games ended around 2:00
+      # left at 3.5s, so this spends roughly a minute more over a 40-move game
+      # and still leaves about a minute, with more nodes per move.
+      movetime: 5000
+  draw_or_resign:
+    # gochess's evaluation is too rough to resign or offer draws on.
+    resign_enabled: false
+    offer_draw_enabled: false
+
+abort_time: 30
+move_overhead: 300       # lichess-bot's clock reserve, on top of gochess's 100 ms
+quit_after_all_games_finish: true
+pgn_directory: "../games"
+pgn_file_grouping: "game"
+
+challenge:
+  # Two slots: one reserved for casual human challenges, one for rated bot
+  # matchmaking. Humans can find the bot at https://lichess.org/@/gochess6767.
+  concurrency: 2
+  games_reserved_for_humans: 1
+  accept_bot: true
+  only_bot: false
+  preference: "human"
+  variants:
+    - standard
+  time_controls:
+    - blitz
+    - rapid
+  modes:
+    # Lichess only offers humans casual challenges against bots; rated stays
+    # enabled so bot-vs-bot matchmaking can still affect the rating.
+    - casual
+    - rated
+  min_base: 180          # 3 minutes
+  max_base: 600          # 10 minutes, to keep games moving
+  max_increment: 5
+  # Require an increment. Clock-based allocation spends a lot early, and a
+  # no-increment game is where a long endgame can flag. Human challenges need
+  # at least +2 too; the bot's profile can say so.
+  min_increment: 2
+  # Follow the bot's rating instead of a fixed band. New bots start at 3000,
+  # so this begins at 2000-4000 and follows the rating down as it loses.
+  rating_difference: 1000
+  max_simultaneous_games_per_user: 1
+
+matchmaking:
+  allow_matchmaking: true
+  allow_during_games: false
+  # Lichess caps bot-vs-bot games at 100/day. This one-minute idle timeout will
+  # use that allowance; lichess-bot prints a warning about it during setup.
+  challenge_timeout: 1   # minutes idle before challenging another bot
+  challenge_variant: "standard"
+  challenge_mode: "rated"
+  challenge_initial_time:
+    - 180                # 3+2
+    - 300                # 5+2
+  challenge_increment:
+    - 2
+  # Same self-adjusting band as incoming challenges.
+  opponent_rating_difference: 1000
+  rating_preference: "none"
