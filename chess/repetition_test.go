@@ -292,6 +292,22 @@ func TestSearchAvoidsRepetitionWhenAhead(t *testing.T) {
 	}
 }
 
+func TestSearchAvoidsTwofoldRepetitionWithTT(t *testing.T) {
+	// This is the position from a real game where the engine shuffled with
+	// Bh7+ Kh8 Be4+ Kg8, allowing Black to claim a threefold draw. Rxf2 wins the
+	// knight and keeps the winning position. The transposition table must not
+	// hide the in-search twofold repetition.
+	position := mustFEN(t, "5rk1/p4pp1/3p4/2p5/2P1B3/1PN2P2/PK1P1n1R/6r1 w - - 2 28")
+
+	result := position.Search(8)
+	if !result.HasMove {
+		t.Fatal("search returned no move")
+	}
+	if got := result.BestMove.String(); got != "h2f2" {
+		t.Fatalf("best move = %s, want h2f2 to avoid the repetition", got)
+	}
+}
+
 func TestIsInsufficientMaterial(t *testing.T) {
 	cases := []struct {
 		name string

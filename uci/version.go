@@ -11,7 +11,7 @@ const Author = "Ethan Kuehler"
 
 // Version is the engine version. It can be overridden at build time with
 // -ldflags "-X github.com/ethankuehler/gochess/uci.Version=..."
-var Version = "0.1.0"
+var Version = "0.2.0"
 
 // VersionString returns the human-readable engine name and version.
 func VersionString() string {

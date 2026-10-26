@@ -58,7 +58,7 @@ For a release build with a version stamp:
 
 ```sh
 CGO_ENABLED=0 go build -trimpath \
-  -ldflags "-s -w -X github.com/ethankuehler/gochess/uci.Version=0.1.0" \
+  -ldflags "-s -w -X github.com/ethankuehler/gochess/uci.Version=0.2.0" \
   -o gochess ./cmd/uci
 ```
 
@@ -76,13 +76,15 @@ CGO_ENABLED=0 go build -trimpath \
   copy-make (`makeMove` returns a new position) and an attack test. Castling,
   en passant, and promotions are handled with explicit move flags.
 - **Evaluation** — material plus a hand-tuned piece-square table (centrality,
-  pawn advancement, king safety). Scores are centipawns from White's view;
-  search flips to the side-to-move convention.
+  pawn advancement, king safety), adjusted for hanging pieces and pieces
+  attacked by a cheaper piece. Scores are centipawns from White's view; search
+  flips to the side-to-move convention.
 - **Search** — iterative-deepening negamax alpha-beta with capture-first move
-  ordering, PV tracking, mate-distance scoring, and cancellation by deadline,
-  node count, or stop. A Zobrist-keyed transposition table caches results,
-  supplies a hash move for ordering, and is reused across moves in a UCI game;
-  `Hash` and `Clear Hash` control it. There is no pondering or opening book.
+  ordering, PV tracking, mate-distance scoring, repetition-aware scoring, and
+  cancellation by deadline, node count, or stop. A Zobrist-keyed transposition
+  table caches results, supplies a hash move for ordering, and is reused across
+  moves in a UCI game; `Hash` and `Clear Hash` control it. There is no pondering
+  or opening book.
 - **UCI layer** — `uci.Run` is the engine side, a separate goroutine owns each
   search, and `uci.Client` drives an in-process engine. `cmd/uci` is the
   standalone binary; `cmd/web` is the browser demo.
@@ -95,6 +97,7 @@ CGO_ENABLED=0 go build -trimpath \
 | `go run ./cmd/search -depth 5` | Fixed-depth search; prints best move, score, nodes, transposition-table probes/hits/cutoffs, time, and nps. Add `-fen "<FEN>"`, `-moves "e2e4 e7e5 ..."`, or `-eval` for a static score. |
 | `go run ./cmd/perft -depth 5` | Move-generation node count with time and nps. Flags: `-fen`, `-moves`, `-divide`, `-suite data/perft.csv`, `-deep`, `-compare [-stockfish path]`. |
 | `go run ./cmd/match -stockfish stockfish -games 4 -depth 4` | Play gochess against Stockfish. Every position is compared with Stockfish's perft, every move is checked for legality, and checkmate, stalemate, fifty-move, threefold, and insufficient-material results are adjudicated. Fails on any rule mismatch. Flags: `-fen`, `-moves`, `-random-plies`, `-seed`, `-validate-depth`, `-max-moves`, `-verbose`. |
+| `go run ./cmd/arena versions -openings 20 -depth 5` | Compare the working-tree build against a git ref at a fixed depth. Randomly samples opening lines, plays both colours, and reports W/D/L, Elo difference, implied rating, NPS, search time, and depth metrics. Flags: `-engine`, `-baseline`, `-baseline-ref`, `-book`, `-openings`, `-seed`, `-depth`, `-anchor-elo`, `-max-plies`, `-json`, `-verbose`. |
 | `go run ./cmd/genmagics` | Regenerate `data/rook_magics.csv` and `data/bishop_magics.csv`. |
 | `python3 generate_attack_tables.py` | Regenerate the knight/king/pawn CSVs; requires `pandas`. |
 | `go run .` | Scratch demo that prints a board. |
@@ -180,6 +183,35 @@ go run ./cmd/perft -depth 6
 go run ./cmd/perft -depth 4 -divide
 go run ./cmd/perft -suite data/perft.csv          # -deep to include slow rows
 ```
+
+## Comparing engine versions
+
+`cmd/arena versions` is a fixed-depth regression harness. It builds the current
+working tree and a baseline from `HEAD` (or another git ref), picks a seeded
+random sample of opening lines, and plays every line twice with the colours
+swapped:
+
+```sh
+go run ./cmd/arena versions -openings 20 -depth 5 -json results/versions.json
+```
+
+The candidate is built from the working tree; the baseline is built from
+`-baseline-ref` (default `HEAD`; use `origin/main` for the last pushed commit).
+Use `-engine` and `-baseline` to run pre-built binaries instead. The default
+book is `data/openings.csv`; `-openings` is the number of random lines to
+sample, `-seed` makes the sample reproducible, and `-depth` is the fixed search
+depth for both sides.
+
+The report includes the match score and a bootstrap Elo difference over opening
+pairs. `-anchor-elo` (default `1640`, the baseline build's last recorded Lichess
+rating) adds that difference to the anchor to produce an implied rating. Update
+the anchor when the baseline changes, or pass `-anchor-elo 0` to report only the
+Elo difference. This is an anchor-based regression estimate, not a new Lichess
+measurement. Per-engine metrics cover nodes, NPS, total search time, average and
+maximum depth, average time per move, p50/p95 move time, and nodes per move;
+the report also includes colour splits, draw rate, and endings. Fixed-depth
+matches are for comparing versions of *this* engine; use the default
+Stockfish mode for rating work against external engines.
 
 ## Playing on Lichess
 

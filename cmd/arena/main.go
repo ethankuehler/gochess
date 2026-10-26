@@ -1,7 +1,9 @@
 // Command arena plays gochess against Stockfish or another UCI opponent and
 // reports an Elo estimate. It is deliberately separate from cmd/match: match is
 // a rules verifier, while arena is a rating harness with time controls, an
-// opening book, paired colours, and a bootstrap confidence interval.
+// opening book, paired colours, and a bootstrap confidence interval. The
+// "versions" subcommand compares two local gochess builds at fixed depth from a
+// random opening sample.
 package main
 
 import (
@@ -45,6 +47,10 @@ func main() {
 }
 
 func run(args []string, out, errOut io.Writer) error {
+	if len(args) > 0 && args[0] == "versions" {
+		return runVersions(args[1:], out, errOut)
+	}
+
 	flags := flag.NewFlagSet("arena", flag.ContinueOnError)
 	flags.SetOutput(errOut)
 
@@ -107,18 +113,18 @@ func run(args []string, out, errOut io.Writer) error {
 		*pairs = len(book)
 	}
 
-	var options []sfOption
+	var options []engineOption
 	if *sfElo > 0 {
 		options = append(options,
-			sfOption{name: "UCI_LimitStrength", value: "true"},
-			sfOption{name: "UCI_Elo", value: strconv.Itoa(*sfElo)},
+			engineOption{name: "UCI_LimitStrength", value: "true"},
+			engineOption{name: "UCI_Elo", value: strconv.Itoa(*sfElo)},
 		)
 	}
 	if *sfSkill >= 0 {
-		options = append(options, sfOption{name: "Skill Level", value: strconv.Itoa(*sfSkill)})
+		options = append(options, engineOption{name: "Skill Level", value: strconv.Itoa(*sfSkill)})
 	}
 
-	sf, err := startSF(*stockfishPath, options, errOut)
+	sf, err := startEngine(*stockfishPath, options, errOut)
 	if err != nil {
 		return err
 	}

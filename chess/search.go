@@ -244,7 +244,10 @@ func (b *Position) SearchWithLimits(ctx context.Context, limits SearchLimits, in
 				break
 			}
 			child := s.makeMove(b, m)
-			score := -s.negamax(child, depth-1, -beta, -alpha, 1)
+			score := 0
+			if !s.repeatsEarlier(child.key, int(child.halfmoveClock), 0) {
+				score = -s.negamax(child, depth-1, -beta, -alpha, 1)
+			}
 			if s.stopped {
 				aborted = true
 				break
@@ -345,6 +348,30 @@ type searcher struct {
 
 	pvTable  [maxPly + 1][maxPly + 1]Move
 	pvLength [maxPly + 1]int
+}
+
+// repeatsEarlier reports whether key has already occurred once in the last
+// halfmoveClock positions of the game history and search path. A move into such
+// a position is scored as a draw: the opponent can usually repeat it a third
+// time, and treating the repetition as a draw keeps a winning side from
+// shuffling instead of converting. The current node's key is at
+// pathBase+ply; the child that would be reached by the candidate move belongs at
+// pathBase+ply+1 and has not been written yet.
+func (s *searcher) repeatsEarlier(key uint64, halfmoveClock, ply int) bool {
+	if halfmoveClock <= 0 {
+		return false
+	}
+	index := s.pathBase + ply + 1
+	available := index
+	if halfmoveClock < available {
+		available = halfmoveClock
+	}
+	for offset := 1; offset <= available; offset++ {
+		if s.keys[index-offset] == key {
+			return true
+		}
+	}
+	return false
 }
 
 // repetitionDraw reports whether key has already occurred twice in the last
@@ -496,7 +523,10 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 	var bestMove Move
 	for _, m := range orderMoves(moves, ordered[:0], hashMove) {
 		child := s.makeMove(&b, m)
-		score := -s.negamax(child, depth-1, -beta, -alpha, ply+1)
+		score := 0
+		if !s.repeatsEarlier(child.key, int(child.halfmoveClock), ply) {
+			score = -s.negamax(child, depth-1, -beta, -alpha, ply+1)
+		}
 		if s.stopped {
 			return 0
 		}

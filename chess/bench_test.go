@@ -65,6 +65,7 @@ func BenchmarkPerftStartPosition(b *testing.B) {
 }
 
 func BenchmarkEvaluate(b *testing.B) {
+	BuildAllAttacks()
 	position, err := ParseFEN(benchmarkFEN)
 	if err != nil {
 		b.Fatal(err)

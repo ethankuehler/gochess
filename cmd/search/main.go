@@ -50,9 +50,11 @@ func run(args []string, out, errOut io.Writer) error {
 		return fmt.Errorf("parse FEN: %w", err)
 	}
 
+	// Evaluation and move application both need the attack tables.
+	chess.BuildAllAttacks()
+
 	history := make([]chess.PositionKey, 0, len(strings.Fields(*moves)))
 	if *moves != "" {
-		chess.BuildAllAttacks()
 		for _, uci := range strings.Fields(*moves) {
 			history = append(history, position.Key())
 			next, _, err := position.ApplyUCIMove(uci)
@@ -76,8 +78,6 @@ func run(args []string, out, errOut io.Writer) error {
 	if *depth < 1 {
 		return fmt.Errorf("depth must be at least 1")
 	}
-
-	chess.BuildAllAttacks()
 
 	start := time.Now()
 	result := position.SearchWithLimits(context.Background(), chess.SearchLimits{

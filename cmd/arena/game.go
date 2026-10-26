@@ -28,7 +28,7 @@ type gameRecord struct {
 
 // playGame plays one game from a book line. The colours are assigned by the
 // caller; everything after the book is decided by the two engines.
-func playGame(cfg gameConfig, line opening, ourWhite bool, our *uci.Client, sf *sfClient, out io.Writer) (gameRecord, error) {
+func playGame(cfg gameConfig, line opening, ourWhite bool, our *uci.Client, sf *uciEngine, out io.Writer) (gameRecord, error) {
 	startFEN := chess.NewStartingPosition().FEN()
 	board := chess.NewStartingPosition()
 
@@ -110,20 +110,22 @@ func playGame(cfg gameConfig, line opening, ourWhite bool, our *uci.Client, sf *
 				return rec, err
 			}
 			start := time.Now()
+			var res engineSearchResult
 			var err error
 			if cfg.sfNodes > 0 {
-				move, score, err = sf.goNodes(cfg.sfNodes)
+				res, err = sf.goNodes(cfg.sfNodes)
 			} else {
 				budget := cfg.sfMovetime
 				if budget <= 0 {
 					budget = cfg.movetime
 				}
-				move, score, err = sf.goMovetime(budget)
+				res, err = sf.goMovetime(budget)
 			}
 			elapsed = time.Since(start)
 			if err != nil {
 				return rec, err
 			}
+			move, score = res.BestMove, res.Score
 		}
 
 		if move == "" {

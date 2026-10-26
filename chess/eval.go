@@ -48,6 +48,23 @@ var kingSafety = [64]int{
 // the mirrored rank, so a black pawn on rank 2 receives pawnAdvance[6].
 var pawnAdvance = [8]int{0, 0, 5, 10, 20, 40, 80, 0}
 
+// attackPenalty is the centipawn penalty for a piece that is under threat: it
+// is hanging (attacked and undefended) or a cheaper material class attacks it.
+// The values are roughly ten percent of material value; the king is priced
+// separately because an attacked king is a check rather than a capture threat.
+// Evaluate is a zero-sum White-relative score, so the bonus for threatening an
+// enemy piece is the same term seen from the other side. The weights stay well
+// below the piece's value because the attack map ignores pins and a static test
+// cannot resolve who wins a capture sequence.
+var attackPenalty = [6]int{
+	Pawn:   10,
+	Knight: 30,
+	Bishop: 30,
+	Rook:   50,
+	Queen:  80,
+	King:   50,
+}
+
 // pieceSquareValues holds material plus every positional term for each piece
 // and colour. Entries for black pieces are already negated, so Evaluate is a
 // single sum over the twelve bitboards.
@@ -78,9 +95,13 @@ func pieceSquareScore(piece Piece, square Square) int {
 }
 
 // Evaluate returns the static score in centipawns from White's point of view.
-// A positive score favours White. Evaluate needs no attack tables and does not
-// mutate the position.
+// A positive score favours White. It sums the piece-square table, then adjusts
+// for attacks on the pieces: a hanging piece, or a piece attacked by a cheaper
+// piece, costs attackPenalty[piece]. A king is charged whenever it is attacked,
+// because that is check. Evaluate requires the attack tables (BuildAllAttacks)
+// and does not mutate the position.
 func (b *Position) Evaluate() int {
+	ensureAttackTables()
 	score := 0
 	for index, board := range b.pieceBitboards {
 		for board != 0 {
@@ -88,6 +109,93 @@ func (b *Position) Evaluate() int {
 			board &= board - 1
 			score += pieceSquareValues[index][square]
 		}
+	}
+	whiteAttacks := b.attackInfo(White)
+	blackAttacks := b.attackInfo(Black)
+	score -= b.attackedPieceScore(blackAttacks, whiteAttacks.all, White)
+	score += b.attackedPieceScore(whiteAttacks, blackAttacks.all, Black)
+	return score
+}
+
+// attackMaps describes the squares a colour attacks, with the pawn, minor, and
+// rook parts broken out so the evaluator can compare attacker and target value
+// classes. Queen and king attacks are part of all but are not cheaper attackers
+// for any piece. Attacks from pinned pieces are included, matching the FIDE
+// definition used by isSquareAttacked.
+type attackMaps struct {
+	all   BitBoard
+	pawn  BitBoard
+	minor BitBoard
+	rook  BitBoard
+}
+
+// attackInfo returns colour's attack map with the current occupancy.
+func (b *Position) attackInfo(colour Colour) attackMaps {
+	offset := Piece(0)
+	if colour == Black {
+		offset = blackPieceOffset
+	}
+
+	var info attackMaps
+	pawns := b.pieceBitboards[Pawn+offset]
+	if colour == White {
+		info.pawn = ((pawns << 7) &^ fileHMask) | ((pawns << 9) &^ fileAMask)
+	} else {
+		info.pawn = ((pawns >> 7) &^ fileAMask) | ((pawns >> 9) &^ fileHMask)
+	}
+	info.all = info.pawn
+	info.all |= kingAttacks[b.kingSquare(colour)]
+
+	for knights := b.pieceBitboards[Knight+offset]; knights != 0; knights &= knights - 1 {
+		square := Square(bits.TrailingZeros64(uint64(knights)))
+		info.minor |= knightAttacks[square]
+	}
+
+	occupancy := b.Occupancy(Both)
+	for bishops := b.pieceBitboards[Bishop+offset]; bishops != 0; bishops &= bishops - 1 {
+		square := Square(bits.TrailingZeros64(uint64(bishops)))
+		info.minor |= BishopAttack(square, occupancy)
+	}
+	info.all |= info.minor
+
+	for rooks := b.pieceBitboards[Rook+offset]; rooks != 0; rooks &= rooks - 1 {
+		square := Square(bits.TrailingZeros64(uint64(rooks)))
+		info.rook |= RookAttack(square, occupancy)
+	}
+	info.all |= info.rook
+
+	for queens := b.pieceBitboards[Queen+offset]; queens != 0; queens &= queens - 1 {
+		square := Square(bits.TrailingZeros64(uint64(queens)))
+		info.all |= BishopAttack(square, occupancy) | RookAttack(square, occupancy)
+	}
+	return info
+}
+
+// attackedPieceScore returns the total penalty for colour's pieces that the
+// opponent attacks. A piece is counted when it is undefended, or when a piece
+// from a cheaper material class attacks it even if it is defended. Defending
+// against an equal or more valuable attacker is left to the search, which can
+// resolve the trade. A king is counted whenever it is attacked, because a check
+// cannot be answered by defending the king's square.
+func (b *Position) attackedPieceScore(enemy attackMaps, defended BitBoard, colour Colour) int {
+	offset := Piece(0)
+	if colour == Black {
+		offset = blackPieceOffset
+	}
+
+	free := enemy.all &^ defended
+	danger := [6]BitBoard{
+		Pawn:   free,
+		Knight: free | enemy.pawn,
+		Bishop: free | enemy.pawn,
+		Rook:   free | enemy.pawn | enemy.minor,
+		Queen:  free | enemy.pawn | enemy.minor | enemy.rook,
+		King:   enemy.all,
+	}
+	score := 0
+	for piece := Pawn; piece <= King; piece++ {
+		count := bits.OnesCount64(uint64(danger[piece] & b.pieceBitboards[piece+offset]))
+		score += attackPenalty[piece] * count
 	}
 	return score
 }
