@@ -58,7 +58,7 @@ For a release build with a version stamp:
 
 ```sh
 CGO_ENABLED=0 go build -trimpath \
-  -ldflags "-s -w -X github.com/ethankuehler/gochess/uci.Version=0.2.0" \
+  -ldflags "-s -w -X github.com/ethankuehler/gochess/uci.Version=0.3.0" \
   -o gochess ./cmd/uci
 ```
 
@@ -81,10 +81,12 @@ CGO_ENABLED=0 go build -trimpath \
   flips to the side-to-move convention.
 - **Search** — iterative-deepening negamax alpha-beta with capture-first move
   ordering, PV tracking, mate-distance scoring, repetition-aware scoring, and
-  cancellation by deadline, node count, or stop. A Zobrist-keyed transposition
-  table caches results, supplies a hash move for ordering, and is reused across
-  moves in a UCI game; `Hash` and `Clear Hash` control it. There is no pondering
-  or opening book.
+  cancellation by deadline, node count, or stop. Depth-zero leaves are resolved
+  by a quiescence search over captures, en passant, and promotions, with all
+  legal evasions searched when in check and MVV-LVA capture ordering. A
+  Zobrist-keyed transposition table caches main-search results, supplies a hash
+  move for ordering, and is reused across moves in a UCI game; `Hash` and
+  `Clear Hash` control it. There is no pondering or opening book.
 - **UCI layer** — `uci.Run` is the engine side, a separate goroutine owns each
   search, and `uci.Client` drives an in-process engine. `cmd/uci` is the
   standalone binary; `cmd/web` is the browser demo.
@@ -97,7 +99,7 @@ CGO_ENABLED=0 go build -trimpath \
 | `go run ./cmd/search -depth 5` | Fixed-depth search; prints best move, score, nodes, transposition-table probes/hits/cutoffs, time, and nps. Add `-fen "<FEN>"`, `-moves "e2e4 e7e5 ..."`, or `-eval` for a static score. |
 | `go run ./cmd/perft -depth 5` | Move-generation node count with time and nps. Flags: `-fen`, `-moves`, `-divide`, `-suite data/perft.csv`, `-deep`, `-compare [-stockfish path]`. |
 | `go run ./cmd/match -stockfish stockfish -games 4 -depth 4` | Play gochess against Stockfish. Every position is compared with Stockfish's perft, every move is checked for legality, and checkmate, stalemate, fifty-move, threefold, and insufficient-material results are adjudicated. Fails on any rule mismatch. Flags: `-fen`, `-moves`, `-random-plies`, `-seed`, `-validate-depth`, `-max-moves`, `-verbose`. |
-| `go run ./cmd/arena versions -openings 20 -depth 5` | Compare the working-tree build against a git ref at a fixed depth. Randomly samples opening lines, plays both colours, and reports W/D/L, Elo difference, implied rating, NPS, search time, and depth metrics. Flags: `-engine`, `-baseline`, `-baseline-ref`, `-book`, `-openings`, `-seed`, `-depth`, `-anchor-elo`, `-max-plies`, `-json`, `-verbose`. |
+| `go run ./cmd/arena versions -openings 20 -depth 5` | Compare the working-tree build against a git ref at a fixed limit: `-depth`, `-movetime` per move, or `-nodes` per move (mutually exclusive). Randomly samples opening lines, plays both colours, and reports W/D/L, Elo difference, implied rating, NPS, search time, and depth metrics. Flags: `-engine`, `-baseline`, `-baseline-ref`, `-book`, `-openings`, `-seed`, `-depth`, `-movetime`, `-nodes`, `-anchor-elo`, `-max-plies`, `-json`, `-verbose`. |
 | `go run ./cmd/genmagics` | Regenerate `data/rook_magics.csv` and `data/bishop_magics.csv`. |
 | `python3 generate_attack_tables.py` | Regenerate the knight/king/pawn CSVs; requires `pandas`. |
 | `go run .` | Scratch demo that prints a board. |
@@ -295,11 +297,14 @@ tools/lichess/  optional Lichess Bot API bridge (Python, not in the Go build)
 
 ## Known limitations
 
-No pondering, MultiPV, Chess960, tablebases, or opening book. The transposition
+No pondering, MultiPV, Chess960, tablebases, or opening book. Quiescence
+search covers captures, en passant, and promotions only: it has no quiet checks,
+delta pruning, or SEE, and it does not extend the principal variation.
+Stalemate exactly at the quiescence horizon is not detected. The transposition
 table is single-threaded and keyed by the Zobrist position key, which excludes
 the halfmove clock; table use is disabled near the fifty-move rule to avoid
-reusing a score found in a different clock regime. Threefold repetition and the
-fifty-move rule are detected during search when the caller supplies game history
-(the UCI move list and the web demo both do); insufficient material is detected
-as well. The engine can find short mates and win free material, but it is not
-strong yet.
+reusing a score found in a different clock regime. Quiescence does not use the
+table. Threefold repetition and the fifty-move rule are detected during search
+when the caller supplies game history (the UCI move list and the web demo both
+do); insufficient material is detected as well. The engine can find short mates
+and win free material, but it is not strong yet.

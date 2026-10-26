@@ -30,7 +30,7 @@ const (
 // searcher deepens until the deadline, the node limit, or cancellation.
 type SearchLimits struct {
 	MaxDepth       int
-	MaxNodes       uint64
+	MaxNodes       uint64              // counts negamax and quiescence nodes; zero means none
 	Deadline       time.Time           // hard wall-clock deadline; zero means none
 	SoftDeadline   time.Time           // stop between iterations after this time; zero means none
 	RootMoves      []Move              // nil means every legal move; non-nil restricts the root
@@ -45,11 +45,14 @@ type SearchLimits struct {
 // They do not cover all search work: draw checks, move ordering, PV
 // maintenance, and the info callback are unmeasured.
 //
-// PseudoMoves counts directly emitted legal moves plus king and en-passant
-// candidates before rejection. MakeMoveCalls counts every copy-make performed
-// during the search, including king and en-passant validation in legal move
-// generation. SearchMakeMoveCalls is the subset made directly by the search
-// tree. The time spent on special-move validation is included in LegalFilterNS.
+// The counters and timings include quiescence work at depth-zero nodes: legal
+// generation, evaluation, copy-make, and beta cutoffs are all included in the
+// same fields. PseudoMoves counts directly emitted legal moves plus king and
+// en-passant candidates before rejection. MakeMoveCalls counts every copy-make
+// performed during the search, including king and en-passant validation in
+// legal move generation. SearchMakeMoveCalls is the subset made directly by the
+// search tree, including quiescence nodes. The time spent on special-move
+// validation is included in LegalFilterNS.
 type SearchMetrics struct {
 	ElapsedNS           int64  `json:"elapsedNs"`
 	MoveGenCalls        uint64 `json:"moveGenCalls"`
@@ -83,8 +86,8 @@ type SearchResult struct {
 	HasMove    bool           // false for checkmate and stalemate
 	Draw       bool           // root is already a fifty-move, threefold, or insufficient-material draw
 	Depth      int            // deepest completed iteration, in plies
-	SelDepth   int            // deepest ply reached
-	Nodes      uint64         // negamax nodes visited, excluding the root
+	SelDepth   int            // deepest ply reached, including quiescence
+	Nodes      uint64         // negamax and quiescence nodes visited, excluding the root
 	PV         []Move         // principal variation from the last completed iteration
 	TT         TTStats        // transposition-table activity for this search
 	Metrics    *SearchMetrics // nil unless CollectMetrics is true and MetricsEnabled
@@ -93,6 +96,11 @@ type SearchResult struct {
 // Search returns the best move for the side to move at the given depth in plies.
 // It panics if depth is less than 1. The attack tables must have been built with
 // BuildAllAttacks or the individual builders.
+//
+// Leaves are resolved by a quiescence search over captures, en passant, and
+// promotions, so captures just past the nominal horizon still affect the score.
+// Depth remains the deepest completed iterative-deepening iteration and does not
+// include quiescence plies.
 //
 // Search allocates a fresh transposition table for each call, so repeated calls
 // are deterministic. Shallower searches skip the allocation: at one or two
@@ -111,9 +119,11 @@ func (b *Position) Search(depth int) SearchResult {
 
 // SearchWithLimits performs iterative-deepening alpha-beta search subject to
 // limits. It reports every completed iteration through info, which may be nil.
-// Cancellation through ctx, the deadline, and the node limit are all checked
-// during the search; a stopped search returns the best move and PV from the
-// last completed iteration, or a legal fallback move if no iteration completed.
+// Depth-zero leaves are resolved by quiesce, so the node limit, deadlines, and
+// cancellation all include quiescence work. Cancellation through ctx, the
+// deadline, and the node limit are checked during the search; a stopped search
+// returns the best move and PV from the last completed iteration, or a legal
+// fallback move if no iteration completed.
 //
 // The attack tables must have been built with BuildAllAttacks,
 // BuildAllAttacksFromFS, or the individual builders.
@@ -441,10 +451,14 @@ func (s *searcher) shouldStop() bool {
 
 // negamax returns the score of the position for the side to move. ply is the
 // distance from the root and is used to prefer shorter mates and to index the
-// PV table. Position is passed by value: it is small, and the value parameter
-// keeps the copy-make child on the stack instead of forcing a heap allocation
-// per node.
+// PV table. Depth-zero nodes are resolved by quiesce, which counts its own node,
+// so tick is reached only for depth-positive nodes. Position is passed by value:
+// it is small, and the value parameter keeps the copy-make child on the stack
+// instead of forcing a heap allocation per node.
 func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
+	if depth == 0 {
+		return s.quiesce(b, alpha, beta, ply)
+	}
 	if s.tick() {
 		return 0
 	}
@@ -453,23 +467,6 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 	}
 	if ply < len(s.pvLength) {
 		s.pvLength[ply] = 0
-	}
-
-	if depth == 0 {
-		// Checkmate at the horizon still has to be detected, otherwise a
-		// depth-1 search would miss mate in one. It also takes precedence over
-		// a draw claim, because checkmate ends the game immediately. The move
-		// buffer is scoped here so the common quiet-leaf case does not zero it.
-		if b.InCheck() {
-			var buf [256]Move
-			if len(s.legalMoves(&b, buf[:0])) == 0 {
-				return -mateScore + ply
-			}
-		}
-		if b.IsFiftyMoveDraw() || b.IsInsufficientMaterial() || s.repetitionDraw(b.key, int(b.halfmoveClock), ply) {
-			return 0
-		}
-		return s.evaluate(&b)
 	}
 
 	alphaOrig := alpha

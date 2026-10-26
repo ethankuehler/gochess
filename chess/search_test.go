@@ -63,14 +63,29 @@ func TestSearchWinsFreeQueen(t *testing.T) {
 func TestSearchAvoidsPoisonedPawn(t *testing.T) {
 	position := mustFEN(t, poisonedPawnFEN)
 
+	// Quiescence sees Kxe3 after Qxe3+, so even the depth-1 search must avoid
+	// the poisoned pawn capture.
 	shallow := position.Search(1)
-	if got := shallow.BestMove.String(); got != "e1e3" {
-		t.Fatalf("depth 1 best move = %s, want e1e3", got)
+	if got := shallow.BestMove.String(); got == "e1e3" {
+		t.Fatalf("depth 1 plays the poisoned pawn capture e1e3")
 	}
 
 	deep := position.Search(2)
 	if deep.BestMove.String() == "e1e3" {
 		t.Fatalf("depth 2 still plays the poisoned pawn capture e1e3")
+	}
+}
+
+func TestSearchResolvesCaptureChainAtLeaf(t *testing.T) {
+	// Rxd5 loses a rook to cxd5, a recapture one ply beyond a depth-1 horizon.
+	position := mustFEN(t, "4k3/8/2p5/3p4/8/3R4/8/4K3 w - - 0 1")
+
+	result := position.Search(1)
+	if !result.HasMove {
+		t.Fatal("search returned no move")
+	}
+	if got := result.BestMove.String(); got == "d3d5" {
+		t.Fatalf("depth 1 played the losing capture d3d5")
 	}
 }
 
@@ -108,6 +123,28 @@ func TestSearchDoesNotMutatePosition(t *testing.T) {
 
 	if after := position.FEN(); after != before {
 		t.Fatalf("search mutated the position: before %q, after %q", before, after)
+	}
+}
+
+func TestSearchColourSymmetry(t *testing.T) {
+	fixtures := []string{
+		NewStartingPosition().FEN(),
+		poisonedPawnFEN,
+		freeQueenFEN,
+		"4k3/8/8/3p4/8/2P5/8/4K3 w - - 0 1",
+	}
+
+	for _, fen := range fixtures {
+		original := mustFEN(t, fen)
+		mirrored := mustFEN(t, mirrorFEN(t, fen))
+		for depth := 1; depth <= 2; depth++ {
+			got := original.Search(depth).Score
+			want := mirrored.Search(depth).Score
+			if got != want {
+				t.Errorf("depth %d on %q: original = %d, mirrored = %d (mirrored FEN %q)",
+					depth, fen, got, want, mirrored.FEN())
+			}
+		}
 	}
 }
 
@@ -192,40 +229,59 @@ func TestOrderMoves(t *testing.T) {
 }
 
 func TestAlphaBetaMatchesMinimax(t *testing.T) {
-	fixtures := []string{
-		NewStartingPosition().FEN(),
-		kiwipeteFEN,
-		poisonedPawnFEN,
-		"8/8/8/4k3/8/8/3Q4/4K3 w - - 0 1",
+	// The reference is full-width and the reference qsearch has no pruning, so
+	// dense positions are limited to shallow depths. The value here is score
+	// equivalence between alpha-beta and plain minimax, not coverage volume;
+	// dense middlegame scores are covered by the direct qsearch tests and by
+	// legality, determinism, and symmetry checks on the production search.
+	fixtures := []struct {
+		name     string
+		fen      string
+		maxDepth int
+	}{
+		{"start", NewStartingPosition().FEN(), 2},
+		{"poisoned-pawn", poisonedPawnFEN, 3},
+		{"queen-vs-king", "8/8/8/4k3/8/8/3Q4/4K3 w - - 0 1", 3},
+		{"free-queen", freeQueenFEN, 3},
+		{"pawn-capture", "4k3/8/8/3p4/8/2P5/8/4K3 w - - 0 1", 3},
+		{"defended-pawn", defendedPawnFEN, 3},
+		{"en-passant", enPassantQSFEN, 3},
+		{"check-evasion", inCheckRookFEN, 3},
 	}
 
-	for _, fen := range fixtures {
-		position := mustFEN(t, fen)
-		for depth := 1; depth <= 3; depth++ {
-			want := referenceMinimax(position, depth, 0)
-			got := position.Search(depth).Score
-			if got != want {
-				t.Errorf("depth %d on %q: alpha-beta score = %d, minimax = %d", depth, fen, got, want)
+	for _, tc := range fixtures {
+		t.Run(tc.name, func(t *testing.T) {
+			position := mustFEN(t, tc.fen)
+			for depth := 1; depth <= tc.maxDepth; depth++ {
+				want := referenceMinimax(position, depth, 0)
+				got := position.Search(depth).Score
+				if got != want {
+					t.Errorf("depth %d on %q: alpha-beta score = %d, minimax = %d", depth, tc.fen, got, want)
+				}
 			}
-		}
+		})
 	}
 }
 
-// referenceMinimax is a full-width minimax with the same evaluation and terminal
-// rules as Search. It exists only to validate alpha-beta pruning in tests.
+// referenceMinimax is a full-width minimax with the same evaluation, terminal,
+// draw, and repetition rules as Search. It exists only to validate alpha-beta
+// pruning and the leaf integration in tests. Depth zero delegates to the
+// full-width referenceQuiesce in qsearch_test.go; both share one key path so
+// repetition is detected in the same places as production. It has no
+// transposition table and no pruning.
 func referenceMinimax(b *Position, depth, ply int) int {
-	if b.halfmoveClock >= 100 {
-		return 0
+	return referenceMinimaxAt(&searcher{}, b, depth, ply)
+}
+
+func referenceMinimaxAt(s *searcher, b *Position, depth, ply int) int {
+	if depth == 0 {
+		return referenceQuiesceAt(s, b, ply)
+	}
+	if index := s.pathBase + ply; index < len(s.keys) {
+		s.keys[index] = b.key
 	}
 
 	var buf [256]Move
-	if depth == 0 {
-		if b.InCheck() && len(b.legalMoves(buf[:0])) == 0 {
-			return -mateScore + ply
-		}
-		return b.evaluateForSideToMove()
-	}
-
 	moves := b.legalMoves(buf[:0])
 	if len(moves) == 0 {
 		if b.InCheck() {
@@ -233,11 +289,18 @@ func referenceMinimax(b *Position, depth, ply int) int {
 		}
 		return 0
 	}
+	if b.IsFiftyMoveDraw() || b.IsInsufficientMaterial() ||
+		s.repetitionDraw(b.key, int(b.halfmoveClock), ply) {
+		return 0
+	}
 
 	best := -infinity
 	for _, m := range moves {
 		child := b.makeMove(m)
-		score := -referenceMinimax(&child, depth-1, ply+1)
+		score := 0
+		if !s.repeatsEarlier(child.key, int(child.halfmoveClock), ply) {
+			score = -referenceMinimaxAt(s, &child, depth-1, ply+1)
+		}
 		if score > best {
 			best = score
 		}

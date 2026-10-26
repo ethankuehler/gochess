@@ -2,8 +2,8 @@
 // reports an Elo estimate. It is deliberately separate from cmd/match: match is
 // a rules verifier, while arena is a rating harness with time controls, an
 // opening book, paired colours, and a bootstrap confidence interval. The
-// "versions" subcommand compares two local gochess builds at fixed depth from a
-// random opening sample.
+// "versions" subcommand compares two local gochess builds at a fixed depth, time
+// per move, or node count per move from a random opening sample.
 package main
 
 import (

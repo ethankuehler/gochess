@@ -23,10 +23,11 @@ import (
 )
 
 // Command arena versions pits two gochess builds against each other from a
-// random sample of opening-book lines, at a fixed search depth. It is a
-// regression harness rather than a rating harness: equal depth makes the
-// comparison cheap and reproducible, while the reported Elo difference is
-// anchored to the baseline build's known rating.
+// random sample of opening-book lines, at a fixed search limit: equal depth,
+// equal time per move, or equal nodes per move. It is a regression harness
+// rather than a rating harness: an equal limit makes the comparison cheap and
+// reproducible, while the reported Elo difference is anchored to the baseline
+// build's known rating.
 
 type engineIdentity struct {
 	Name      string `json:"name"`
@@ -183,7 +184,10 @@ type versionReport struct {
 	Candidate   engineIdentity `json:"candidate"`
 	Baseline    engineIdentity `json:"baseline"`
 	AnchorElo   *float64       `json:"anchor_elo,omitempty"`
-	Depth       int            `json:"depth"`
+	Mode        string         `json:"mode"`
+	Depth       int            `json:"depth,omitempty"`
+	MovetimeMS  int64          `json:"movetime_ms,omitempty"`
+	NodeLimit   uint64         `json:"node_limit,omitempty"`
 	Book        string         `json:"book"`
 	BookLines   int            `json:"book_lines"`
 	Openings    []string       `json:"openings"`
@@ -221,18 +225,25 @@ type builtEngine struct {
 	cleanup func()
 }
 
+// versionGameConfig selects one search limit for both engines. mode is
+// "depth", "movetime", or "nodes"; the other limit fields are ignored.
 type versionGameConfig struct {
+	mode     string
 	depth    int
+	movetime time.Duration
+	nodes    uint64
 	maxPlies int
 	verbose  bool
 }
 
-// enginePlayer is the part of an engine the game loop needs. It keeps the
-// fixed-depth version games testable with a fake engine.
+// enginePlayer is the part of an engine the game loop needs. It keeps version
+// games testable with a fake engine.
 type enginePlayer interface {
 	newGame() error
 	setPosition(fen string, moves []string) error
 	goDepth(depth int) (engineSearchResult, error)
+	goMovetime(budget time.Duration) (engineSearchResult, error)
+	goNodes(nodes uint64) (engineSearchResult, error)
 }
 
 func runVersions(args []string, out, errOut io.Writer) error {
@@ -246,6 +257,8 @@ func runVersions(args []string, out, errOut io.Writer) error {
 	openings := flags.Int("openings", 20, "random opening lines to play (two games each)")
 	seed := flags.Uint64("seed", 1, "random seed for opening selection")
 	depth := flags.Int("depth", 5, "fixed search depth in plies for both engines")
+	movetime := flags.Duration("movetime", 0, "fixed search time per move for both engines (overrides -depth)")
+	nodeLimit := flags.Uint64("nodes", 0, "fixed node limit per move for both engines (overrides -depth)")
 	anchorElo := flags.Float64("anchor-elo", 1640, "baseline rating used for implied Elo (0 disables)")
 	maxPlies := flags.Int("max-plies", 300, "maximum game length in plies")
 	jsonPath := flags.String("json", "", "write a JSON report here")
@@ -260,7 +273,32 @@ func runVersions(args []string, out, errOut io.Writer) error {
 	if *openings < 1 {
 		return fmt.Errorf("openings must be at least 1")
 	}
-	if *depth < 1 || *depth > 64 {
+	if *movetime < 0 {
+		return fmt.Errorf("movetime must not be negative")
+	}
+	if *movetime > 0 && *movetime < time.Millisecond {
+		return fmt.Errorf("movetime must be at least 1ms")
+	}
+	if *movetime > 0 && *nodeLimit > 0 {
+		return fmt.Errorf("at most one of -movetime and -nodes may be set")
+	}
+
+	// -depth has a default, so an explicit use of it is only visible through
+	// Visit. That lets time and node modes reject an accidental depth override.
+	explicit := make(map[string]bool, 3)
+	flags.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+	if (*movetime > 0 || *nodeLimit > 0) && explicit["depth"] {
+		return fmt.Errorf("at most one of -depth, -movetime, and -nodes may be set")
+	}
+
+	mode := "depth"
+	switch {
+	case *nodeLimit > 0:
+		mode = "nodes"
+	case *movetime > 0:
+		mode = "movetime"
+	}
+	if mode == "depth" && (*depth < 1 || *depth > 64) {
 		return fmt.Errorf("depth must be between 1 and 64")
 	}
 	if *anchorElo < 0 {
@@ -356,7 +394,14 @@ func runVersions(args []string, out, errOut io.Writer) error {
 	fmt.Fprintf(out, "  candidate: %s (%s)\n", candidateInfo.Name, candidateSource)
 	fmt.Fprintf(out, "  baseline:  %s (%s)\n", baselineInfo.Name, baselineSource)
 	fmt.Fprintf(out, "  anchor:    %s\n", anchor)
-	fmt.Fprintf(out, "  depth:     %d plies (both engines)\n", *depth)
+	limitText := fmt.Sprintf("depth %d plies", *depth)
+	switch mode {
+	case "movetime":
+		limitText = fmt.Sprintf("%s per move", *movetime)
+	case "nodes":
+		limitText = fmt.Sprintf("%d nodes per move", *nodeLimit)
+	}
+	fmt.Fprintf(out, "  limit:     %s (both engines)\n", limitText)
 	fmt.Fprintf(out, "  book:      %s (%d random of %d lines, seed %d)\n", *bookPath, len(selected), bookLines, *seed)
 	fmt.Fprintf(out, "  games:     %d (each opening played twice, colours swapped)\n", len(selected)*2)
 	fmt.Fprintf(out, "  max plies: %d\n", *maxPlies)
@@ -366,7 +411,10 @@ func runVersions(args []string, out, errOut io.Writer) error {
 	fmt.Fprintln(out)
 
 	cfg := versionGameConfig{
+		mode:     mode,
 		depth:    *depth,
+		movetime: *movetime,
+		nodes:    *nodeLimit,
 		maxPlies: *maxPlies,
 		verbose:  *verbose,
 	}
@@ -480,7 +528,7 @@ func runVersions(args []string, out, errOut io.Writer) error {
 		fmt.Fprintln(out)
 	}
 
-	fmt.Fprintf(out, "\nmetrics (fixed depth %d):\n", *depth)
+	fmt.Fprintf(out, "\nmetrics (%s):\n", limitText)
 	fmt.Fprintf(out, "  %-10s %6s %12s %12s %10s %8s %10s %8s\n",
 		"engine", "moves", "nodes", "search time", "nps", "avg d", "ms/move", "p95")
 	printEngineStats(out, "candidate", candidateStats)
@@ -496,11 +544,11 @@ func runVersions(args []string, out, errOut io.Writer) error {
 
 	if *jsonPath != "" {
 		rep := versionReport{
-			Schema:         1,
+			Schema:         2,
 			Candidate:      candidateInfo,
 			Baseline:       baselineInfo,
 			AnchorElo:      anchorValue,
-			Depth:          *depth,
+			Mode:           mode,
 			Book:           *bookPath,
 			BookLines:      bookLines,
 			Openings:       openingNames(selected),
@@ -528,6 +576,14 @@ func runVersions(args []string, out, errOut io.Writer) error {
 			CandidateStats: candidateStats,
 			BaselineStats:  baselineStats,
 			GamesLog:       records,
+		}
+		switch mode {
+		case "depth":
+			rep.Depth = *depth
+		case "movetime":
+			rep.MovetimeMS = movetime.Milliseconds()
+		case "nodes":
+			rep.NodeLimit = *nodeLimit
 		}
 		if err := writeReport(*jsonPath, rep); err != nil {
 			return err
@@ -613,7 +669,7 @@ func playVersionGame(cfg versionGameConfig, line opening, candidateWhite bool, c
 			return versionGameRecord{}, engineAccumulator{}, engineAccumulator{}, fmt.Errorf("%s position: %w", label, err)
 		}
 		start := time.Now()
-		res, err := player.goDepth(cfg.depth)
+		res, err := searchVersionPlayer(player, cfg)
 		elapsed := time.Since(start)
 		if err != nil {
 			return versionGameRecord{}, engineAccumulator{}, engineAccumulator{}, fmt.Errorf("%s search: %w", label, err)
@@ -642,6 +698,18 @@ func playVersionGame(cfg versionGameConfig, line opening, candidateWhite bool, c
 		}
 		history = append(history, res.BestMove)
 		board = next
+	}
+}
+
+// searchVersionPlayer runs one search with the limit selected by cfg.
+func searchVersionPlayer(player enginePlayer, cfg versionGameConfig) (engineSearchResult, error) {
+	switch cfg.mode {
+	case "movetime":
+		return player.goMovetime(cfg.movetime)
+	case "nodes":
+		return player.goNodes(cfg.nodes)
+	default:
+		return player.goDepth(cfg.depth)
 	}
 }
 

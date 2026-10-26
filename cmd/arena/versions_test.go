@@ -3,10 +3,12 @@ package main
 import (
 	"archive/zip"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ethankuehler/gochess/chess"
 )
@@ -124,10 +126,13 @@ func TestCandidateColorSplit(t *testing.T) {
 }
 
 type fakeEngine struct {
-	label          string
-	requestedDepth int
-	fen            string
-	moves          []string
+	label             string
+	requestedMode     string
+	requestedDepth    int
+	requestedMovetime time.Duration
+	requestedNodes    uint64
+	fen               string
+	moves             []string
 }
 
 func (f *fakeEngine) newGame() error { return nil }
@@ -139,7 +144,21 @@ func (f *fakeEngine) setPosition(fen string, moves []string) error {
 }
 
 func (f *fakeEngine) goDepth(depth int) (engineSearchResult, error) {
-	f.requestedDepth = depth
+	f.requestedMode, f.requestedDepth = "depth", depth
+	return f.result(depth)
+}
+
+func (f *fakeEngine) goMovetime(budget time.Duration) (engineSearchResult, error) {
+	f.requestedMode, f.requestedMovetime = "movetime", budget
+	return f.result(4)
+}
+
+func (f *fakeEngine) goNodes(nodes uint64) (engineSearchResult, error) {
+	f.requestedMode, f.requestedNodes = "nodes", nodes
+	return f.result(4)
+}
+
+func (f *fakeEngine) result(depth int) (engineSearchResult, error) {
 	board, err := chess.ParseFEN(f.fen)
 	if err != nil {
 		return engineSearchResult{}, err
@@ -205,6 +224,63 @@ func TestPlayVersionGame(t *testing.T) {
 	}
 	if len(rec.Moves) != rec.Plies {
 		t.Errorf("recorded moves = %d, want %d", len(rec.Moves), rec.Plies)
+	}
+}
+
+func TestPlayVersionGameFixedTime(t *testing.T) {
+	line := opening{Name: "test-opening", Moves: []string{"e2e4", "e7e5"}}
+	candidate := &fakeEngine{label: "candidate"}
+	baseline := &fakeEngine{label: "baseline"}
+	cfg := versionGameConfig{mode: "movetime", movetime: 250 * time.Millisecond, maxPlies: 20}
+
+	if _, _, _, err := playVersionGame(cfg, line, true, candidate, baseline, &strings.Builder{}); err != nil {
+		t.Fatalf("playVersionGame: %v", err)
+	}
+	for _, engine := range []*fakeEngine{candidate, baseline} {
+		if engine.requestedMode != "movetime" || engine.requestedMovetime != cfg.movetime {
+			t.Errorf("%s requested mode/time = %q/%s, want movetime/%s",
+				engine.label, engine.requestedMode, engine.requestedMovetime, cfg.movetime)
+		}
+	}
+}
+
+func TestPlayVersionGameFixedNodes(t *testing.T) {
+	line := opening{Name: "test-opening", Moves: []string{"e2e4", "e7e5"}}
+	candidate := &fakeEngine{label: "candidate"}
+	baseline := &fakeEngine{label: "baseline"}
+	cfg := versionGameConfig{mode: "nodes", nodes: 5000, maxPlies: 20}
+
+	if _, _, _, err := playVersionGame(cfg, line, true, candidate, baseline, &strings.Builder{}); err != nil {
+		t.Fatalf("playVersionGame: %v", err)
+	}
+	for _, engine := range []*fakeEngine{candidate, baseline} {
+		if engine.requestedMode != "nodes" || engine.requestedNodes != cfg.nodes {
+			t.Errorf("%s requested mode/nodes = %q/%d, want nodes/%d",
+				engine.label, engine.requestedMode, engine.requestedNodes, cfg.nodes)
+		}
+	}
+}
+
+func TestRunVersionsRejectsConflictingLimits(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"time and nodes", []string{"-movetime", "100ms", "-nodes", "1000"}, "at most one"},
+		{"explicit depth and time", []string{"-depth", "4", "-movetime", "100ms"}, "at most one"},
+		{"explicit depth and nodes", []string{"-depth", "4", "-nodes", "1000"}, "at most one"},
+		{"sub-millisecond time", []string{"-movetime", "500us"}, "at least 1ms"},
+		{"negative time", []string{"-movetime", "-1s"}, "must not be negative"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := runVersions(tc.args, io.Discard, io.Discard)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("runVersions(%v) = %v, want an error containing %q", tc.args, err, tc.want)
+			}
+		})
 	}
 }
 
