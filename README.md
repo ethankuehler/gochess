@@ -58,7 +58,7 @@ For a release build with a version stamp:
 
 ```sh
 CGO_ENABLED=0 go build -trimpath \
-  -ldflags "-s -w -X github.com/ethankuehler/gochess/uci.Version=0.3.0" \
+  -ldflags "-s -w -X github.com/ethankuehler/gochess/uci.Version=0.4.0" \
   -o gochess ./cmd/uci
 ```
 

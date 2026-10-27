@@ -128,11 +128,11 @@ func orderQSMoves(b *Position, moves []Move) {
 	}
 }
 
-// qsMoveScore returns the MVV-LVA score of a move: the victim's value plus any
-// promoted value, times 16, minus the attacker's value. Move does not encode
-// the captured piece, so the victim comes from the board. An en-passant capture
-// targets an empty square and is therefore scored as a pawn capture.
-func qsMoveScore(b *Position, m Move) int {
+// mvvLva scores a capture by the victim's value minus the attacker's. Move does
+// not encode the captured piece, so the victim comes from the board. An
+// en-passant capture targets an empty square and is therefore scored as a pawn
+// capture. It is shared by quiescence ordering and the main search's ordering.
+func mvvLva(b *Position, m Move) int {
 	attacker := 0
 	if _, piece, ok := b.PieceAt(m.From()); ok {
 		attacker = pieceValues[piece]
@@ -145,9 +145,15 @@ func qsMoveScore(b *Position, m Move) int {
 			victim = pieceValues[Pawn]
 		}
 	}
-	promoted := 0
+	return victim*16 - attacker
+}
+
+// qsMoveScore returns the MVV-LVA score of a move plus the value of any
+// promotion, so a promotion capture outranks a plain capture.
+func qsMoveScore(b *Position, m Move) int {
+	score := mvvLva(b, m)
 	if piece, ok := m.Promotion(); ok {
-		promoted = pieceValues[piece]
+		score += pieceValues[piece] * 16
 	}
-	return (victim+promoted)*16 - attacker
+	return score
 }

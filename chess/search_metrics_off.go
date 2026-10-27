@@ -16,3 +16,7 @@ func (s *searcher) evaluate(b *Position) int {
 func (s *searcher) makeMove(b *Position, move Move) Position {
 	return b.makeMove(move)
 }
+
+func (s *searcher) makeNullMove(b *Position) Position {
+	return b.nullMove()
+}

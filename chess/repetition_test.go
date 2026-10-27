@@ -350,3 +350,37 @@ func TestSearchDrawsByInsufficientMaterial(t *testing.T) {
 		t.Errorf("score = %d, want 0", result.Score)
 	}
 }
+
+func TestRootPVOfRepeatedMove(t *testing.T) {
+	// Black is down a queen. The rook shuffle a8b8/d1d2/b8a8/d2d1 returns the
+	// game to this position, so a8b8 is a repetition draw and outscores every
+	// real move. That move is scored without being searched, so its PV must be
+	// exactly one move long and must not inherit the previous root move's line.
+	position, history := playUCI(t, mustFEN(t, "r3k3/8/8/8/8/8/8/3QK3 b - - 0 1"),
+		"a8b8", "d1d2", "b8a8", "d2d1")
+	if position.Key() != history[0] {
+		t.Fatalf("shuffle did not return to the root: %s", position.FEN())
+	}
+	if position.halfmoveClock != 4 {
+		t.Fatalf("halfmove clock = %d, want 4", position.halfmoveClock)
+	}
+
+	repeat := legalMoveFor(t, position, "a8b8")
+	other := legalMoveFor(t, position, "e8f8")
+	result := position.SearchWithLimits(context.Background(), SearchLimits{
+		MaxDepth:    3,
+		RootMoves:   []Move{repeat, other},
+		GameHistory: history,
+	}, nil)
+
+	if !result.HasMove || result.BestMove != repeat {
+		t.Fatalf("best move = %s, want the repetition %s", result.BestMove, repeat)
+	}
+	if result.Score != 0 {
+		t.Fatalf("score = %d, want 0 for the repetition", result.Score)
+	}
+	if len(result.PV) != 1 || result.PV[0] != repeat {
+		t.Fatalf("PV = %v, want exactly [%s]", result.PV, repeat)
+	}
+	assertPVLegal(t, position, result.PV)
+}
