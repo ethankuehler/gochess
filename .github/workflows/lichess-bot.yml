@@ -1,0 +1,92 @@
+# Template: run gochess as a Lichess bot on GitHub Actions.
+#
+# This file lives outside .github/workflows on purpose, so it is inert until you
+# opt in:
+#
+#   cp tools/lichess/deploy/lichess-bot.yml .github/workflows/lichess-bot.yml
+#   gh secret set LICHESS_BOT_TOKEN        # or Settings -> Secrets -> Actions
+#
+# Then trigger it with "Run workflow" once before trusting the schedule.
+#
+# Shape of the run: GitHub kills a job at 6 hours, so the bot plays for 5h20m,
+# gets SIGINT, and is given the rest of the window to finish its games. The cron
+# fires every 6 hours, which leaves a ~40 minute gap between runs.
+name: lichess-bot
+
+on:
+  schedule:
+    # UTC. Scheduled runs are best-effort and can start several minutes late.
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+# Never let two runs play under the same token. Queue rather than cancel: a
+# cancelled run would abandon a game mid-move.
+concurrency:
+  group: lichess-bot
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  play:
+    runs-on: ubuntu-latest
+    # Must stay under GitHub's 6 hour per-job limit.
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false # the module has no dependencies and no go.sum
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install lichess-bot and build gochess
+        run: ./tools/lichess/setup.sh
+
+      - name: Tune the config for a disposable runner
+        run: |
+          set -euo pipefail
+          cp tools/lichess/config.yml tools/lichess/config.deploy.yml
+          # The runner has 4 cores and 16 GB, so two games fit easily. PGNs and
+          # the log disappear with the runner, so nothing else needs tuning.
+          sed -i 's/^\([[:space:]]*\)Hash: 256$/\1Hash: 128/' tools/lichess/config.deploy.yml
+          grep -q 'Hash: 128' tools/lichess/config.deploy.yml
+
+      - name: Play
+        env:
+          LICHESS_BOT_TOKEN: ${{ secrets.LICHESS_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd tools/lichess/lichess-bot
+          ../venv/bin/python lichess-bot.py \
+            --config ../config.deploy.yml \
+            --logfile ../lichess-bot.log &
+          pid=$!
+
+          # Play for 5h20m, or stop early if the bridge exits on its own (bad
+          # token, config error), so a broken run does not burn the full job.
+          deadline=$(( $(date +%s) + 19200 ))
+          while kill -0 "$pid" 2>/dev/null && [ "$(date +%s)" -lt "$deadline" ]; do
+            sleep 30
+          done
+          if kill -0 "$pid" 2>/dev/null; then
+            echo "stopping: letting running games finish"
+            kill -INT "$pid"
+          fi
+          wait "$pid" || true
+
+      - name: Upload PGNs and log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lichess-bot-${{ github.run_id }}
+          path: |
+            tools/lichess/games/
+            tools/lichess/lichess-bot.log
+          if-no-files-found: ignore
+          retention-days: 7
