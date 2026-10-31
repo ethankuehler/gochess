@@ -110,14 +110,36 @@ func (s *testSession) waitForPrefix(prefix string) string {
 	}
 }
 
-func (s *testSession) bestmove() string {
+func (s *testSession) assertNoBestmoveSince(start int) {
+	s.t.Helper()
+	for _, line := range s.seen[start:] {
+		if strings.HasPrefix(line, "bestmove ") {
+			s.t.Fatalf("unexpected bestmove: %q", line)
+		}
+	}
+}
+
+func (s *testSession) bestmoveLine() (move, ponder string) {
 	s.t.Helper()
 	line := s.waitForPrefix("bestmove ")
 	fields := strings.Fields(line)
-	if len(fields) != 2 {
+	if len(fields) != 2 && len(fields) != 4 {
 		s.t.Fatalf("bestmove line = %q", line)
 	}
-	return fields[1]
+	if len(fields) == 4 && fields[2] != "ponder" {
+		s.t.Fatalf("bestmove line = %q, want an optional ponder token", line)
+	}
+	move = fields[1]
+	if len(fields) == 4 {
+		ponder = fields[3]
+	}
+	return move, ponder
+}
+
+func (s *testSession) bestmove() string {
+	s.t.Helper()
+	move, _ := s.bestmoveLine()
+	return move
 }
 
 func (s *testSession) waitExit() {
@@ -149,6 +171,7 @@ func (s *testSession) handshake() {
 	s.expectPrefix("option name Clear Hash")
 	s.expectPrefix("option name Threads")
 	s.expectPrefix("option name Move Overhead")
+	s.expectPrefix("option name Ponder type check default false")
 	if metricsSupported {
 		s.expectPrefix("option name Analysis type check default false")
 	}
@@ -163,16 +186,22 @@ func (s *testSession) assertBestmoveLegal(fen string) {
 	if err != nil {
 		s.t.Fatalf("ParseFEN: %v", err)
 	}
-	move := s.bestmove()
+	move, ponder := s.bestmoveLine()
 	if move == "0000" {
 		s.t.Fatal("bestmove was 0000 in a non-terminal position")
 	}
-	parsed, err := chess.ParseUCIMove(move)
+	next, _, err := position.ApplyUCIMove(move)
 	if err != nil {
-		s.t.Fatalf("bestmove %q: %v", move, err)
+		s.t.Fatalf("bestmove %q is not legal in %s: %v", move, fen, err)
 	}
-	if _, ok := position.FindLegalMove(*parsed); !ok {
-		s.t.Fatalf("bestmove %q is not legal in %s", move, fen)
+	if ponder != "" {
+		parsed, err := chess.ParseUCIMove(ponder)
+		if err != nil {
+			s.t.Fatalf("ponder move %q: %v", ponder, err)
+		}
+		if _, ok := next.FindLegalMove(*parsed); !ok {
+			s.t.Fatalf("ponder move %q is not legal after bestmove %q", ponder, move)
+		}
 	}
 }
 
@@ -189,6 +218,31 @@ func TestGoDepth(t *testing.T) {
 	s.send("position startpos")
 	s.send("go depth 2")
 	s.assertBestmoveLegal(chess.NewStartingPosition().FEN())
+	s.send("quit")
+	s.waitExit()
+}
+
+func TestBestmovePonderToken(t *testing.T) {
+	s := newTestSession(t)
+	s.handshake()
+	s.send("position startpos")
+	s.send("go depth 4")
+	move, ponder := s.bestmoveLine()
+	if move == "0000" || ponder == "" {
+		t.Fatalf("bestmove = %q, ponder = %q; want a move and a ponder reply", move, ponder)
+	}
+	position := chess.NewStartingPosition()
+	next, _, err := position.ApplyUCIMove(move)
+	if err != nil {
+		t.Fatalf("bestmove %q is not legal: %v", move, err)
+	}
+	parsed, err := chess.ParseUCIMove(ponder)
+	if err != nil {
+		t.Fatalf("ponder move %q: %v", ponder, err)
+	}
+	if _, ok := next.FindLegalMove(*parsed); !ok {
+		t.Fatalf("ponder move %q is not legal after bestmove %q", ponder, move)
+	}
 	s.send("quit")
 	s.waitExit()
 }
@@ -362,14 +416,145 @@ func TestPonderHitIgnoredDuringNormalSearch(t *testing.T) {
 	s.waitExit()
 }
 
-func TestPonderHitStopsSearch(t *testing.T) {
+func TestPonderWaitsForPonderHit(t *testing.T) {
+	s := newTestSession(t)
+	s.handshake()
+	s.send("position startpos")
+	s.send("go ponder movetime 200")
+	s.waitForPrefix("info depth 2")
+
+	start := len(s.seen)
+	s.send("isready")
+	s.waitForPrefix("readyok")
+	s.assertNoBestmoveSince(start)
+
+	s.send("ponderhit")
+	s.assertBestmoveLegal(chess.NewStartingPosition().FEN())
+	s.send("quit")
+	s.waitExit()
+}
+
+func TestPonderHitStartsClockLate(t *testing.T) {
+	s := newTestSession(t)
+	s.handshake()
+	s.send("position startpos")
+	s.send("go ponder movetime 400")
+	s.waitForPrefix("info depth 2")
+
+	// The ponder movetime must not start ticking until ponderhit. If it did,
+	// the engine would have stopped (and sent bestmove) before this point.
+	time.Sleep(500 * time.Millisecond)
+	start := len(s.seen)
+	s.send("isready")
+	s.waitForPrefix("readyok")
+	s.assertNoBestmoveSince(start)
+
+	hit := time.Now()
+	s.send("ponderhit")
+	s.assertBestmoveLegal(chess.NewStartingPosition().FEN())
+	if elapsed := time.Since(hit); elapsed < 100*time.Millisecond {
+		t.Fatalf("bestmove arrived %v after ponderhit; the move budget did not start at the hit", elapsed)
+	}
+	s.send("quit")
+	s.waitExit()
+}
+
+func TestPonderHitWithoutClockIsInfinite(t *testing.T) {
 	s := newTestSession(t)
 	s.handshake()
 	s.send("position startpos")
 	s.send("go ponder")
 	s.waitForPrefix("info depth 1")
 	s.send("ponderhit")
+
+	start := len(s.seen)
+	s.send("isready")
+	s.waitForPrefix("readyok")
+	s.assertNoBestmoveSince(start)
+
+	s.send("stop")
 	s.assertBestmoveLegal(chess.NewStartingPosition().FEN())
+	s.send("quit")
+	s.waitExit()
+}
+
+func TestPonderHitAfterDepthLimit(t *testing.T) {
+	s := newTestSession(t)
+	s.handshake()
+	s.send("position startpos")
+	s.send("go ponder depth 2")
+	s.waitForPrefix("info depth 2")
+
+	start := len(s.seen)
+	s.send("isready")
+	s.waitForPrefix("readyok")
+	s.assertNoBestmoveSince(start)
+
+	s.send("ponderhit")
+	s.assertBestmoveLegal(chess.NewStartingPosition().FEN())
+	s.send("quit")
+	s.waitExit()
+}
+
+func TestStopDuringPonder(t *testing.T) {
+	s := newTestSession(t)
+	s.handshake()
+	s.send("position startpos")
+	s.send("go ponder movetime 1000")
+	s.waitForPrefix("info depth 1")
+	s.send("stop")
+	s.assertBestmoveLegal(chess.NewStartingPosition().FEN())
+
+	s.send("position startpos")
+	s.send("go depth 1")
+	s.assertBestmoveLegal(chess.NewStartingPosition().FEN())
+	s.send("quit")
+	s.waitExit()
+}
+
+func TestPonderTerminalPosition(t *testing.T) {
+	s := newTestSession(t)
+	s.handshake()
+	s.send("position fen 7k/6Q1/6K1/8/8/8/8/8 b - - 0 1")
+	s.send("go ponder")
+
+	start := len(s.seen)
+	s.send("isready")
+	s.waitForPrefix("readyok")
+	s.assertNoBestmoveSince(start)
+
+	s.send("stop")
+	if move := s.bestmove(); move != "0000" {
+		t.Fatalf("terminal ponder bestmove = %s, want 0000", move)
+	}
+	s.send("quit")
+	s.waitExit()
+}
+
+func TestPonderHitTwice(t *testing.T) {
+	s := newTestSession(t)
+	s.handshake()
+	s.send("position startpos")
+	s.send("go ponder movetime 300")
+	s.waitForPrefix("info depth 2")
+	s.send("ponderhit")
+	s.send("ponderhit")
+	s.assertBestmoveLegal(chess.NewStartingPosition().FEN())
+
+	start := len(s.seen)
+	s.send("isready")
+	s.waitForPrefix("readyok")
+	s.assertNoBestmoveSince(start)
+	s.send("quit")
+	s.waitExit()
+}
+
+func TestPonderQuit(t *testing.T) {
+	s := newTestSession(t)
+	s.handshake()
+	s.send("position startpos")
+	s.send("go ponder")
+	s.waitForPrefix("info depth 1")
 	s.send("quit")
 	s.waitExit()
 }

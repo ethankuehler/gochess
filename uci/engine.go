@@ -9,6 +9,8 @@ import (
 	"io/fs"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/ethankuehler/gochess/chess"
 	"github.com/ethankuehler/gochess/data"
@@ -35,10 +37,29 @@ type Engine struct {
 	tt          *chess.TranspositionTable
 	debug       bool
 	searching   bool
-	pondering   bool
+	ponder      *ponderState
 	cancel      context.CancelFunc
 	done        chan struct{}
 	quitting    bool
+
+	ponderHits   int
+	ponderMisses int
+}
+
+// ponderState is the extra state carried by one go ponder command. The search
+// itself receives the pointer when it starts, so releasing it only needs to
+// close the channel; the command loop never has to look the search up.
+type ponderState struct {
+	clock   *chess.SearchClock
+	params  goParams // sanitized: Ponder=false, Infinite=false
+	side    chess.Colour
+	started time.Time
+	release chan struct{}
+
+	// released is guarded by Engine.mu. depth is updated by the search
+	// goroutine and read by the command loop when it reports the outcome.
+	released bool
+	depth    atomic.Int64
 }
 
 // Run starts a UCI session on the given streams and returns when the GUI sends
@@ -239,24 +260,54 @@ func (e *Engine) handleStop() {
 	if e.searching && e.cancel != nil {
 		e.cancel()
 	}
+	ps := e.ponder
+	if ps != nil {
+		e.releasePonderLocked(ps)
+		e.ponder = nil
+		e.ponderMisses++
+	}
 	e.mu.Unlock()
+
+	if ps != nil {
+		fmt.Fprintf(e.errOut, "ponder miss: %dms depth %d\n",
+			time.Since(ps.started).Milliseconds(), ps.depth.Load())
+	}
 }
 
 func (e *Engine) handlePonderHit() {
-	// Pondering is not advertised and has no clock budget. If a GUI sends
-	// go ponder anyway, treat ponderhit as stop so the engine returns a move
-	// instead of waiting for a stop that may never arrive.
 	e.mu.Lock()
-	searching := e.searching
-	pondering := e.pondering
-	cancel := e.cancel
-	e.mu.Unlock()
-	if !searching || !pondering || cancel == nil {
+	ps := e.ponder
+	if !e.searching || ps == nil {
+		e.mu.Unlock()
 		fmt.Fprintln(e.errOut, "ponderhit ignored: not pondering")
 		return
 	}
-	fmt.Fprintln(e.errOut, "ponderhit treated as stop: pondering is not supported")
-	cancel()
+
+	// The clock starts now, not at go ponder: our clock was not running while
+	// the opponent was thinking, so the full move budget is still available.
+	budget := allocateBudget(ps.params, ps.side, e.options.moveOverhead)
+	if budget.ok {
+		now := time.Now()
+		ps.clock.SetDeadlines(now.Add(budget.soft), now.Add(budget.hard))
+	}
+	e.releasePonderLocked(ps)
+	e.ponder = nil
+	e.ponderHits++
+	elapsed := time.Since(ps.started)
+	depth := ps.depth.Load()
+	e.mu.Unlock()
+
+	fmt.Fprintf(e.errOut, "ponder hit: %dms depth %d\n", elapsed.Milliseconds(), depth)
+}
+
+// releasePonderLocked closes a ponder search's release channel exactly once.
+// The caller must hold e.mu.
+func (e *Engine) releasePonderLocked(ps *ponderState) {
+	if ps.released {
+		return
+	}
+	ps.released = true
+	close(ps.release)
 }
 
 // quit stops a running search and waits for it to finish. It is safe to call
@@ -274,6 +325,11 @@ func (e *Engine) quit() {
 	e.quitting = true
 	cancel := e.cancel
 	done := e.done
+	if ps := e.ponder; ps != nil {
+		e.releasePonderLocked(ps)
+		e.ponder = nil
+	}
+	hits, misses := e.ponderHits, e.ponderMisses
 	e.mu.Unlock()
 
 	if cancel != nil {
@@ -281,6 +337,9 @@ func (e *Engine) quit() {
 	}
 	if done != nil {
 		<-done
+	}
+	if hits+misses > 0 {
+		fmt.Fprintf(e.errOut, "ponder summary: hits %d misses %d\n", hits, misses)
 	}
 }
 

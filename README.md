@@ -36,15 +36,18 @@ with chess.engine.SimpleEngine.popen_uci("./gochess") as engine:
 
 Supported commands: `uci`, `isready`, `debug`, `ucinewgame`, `position`
 (`startpos` or `fen`, plus moves), `go` (`depth`, `nodes`, `movetime`,
-`infinite`, `searchmoves`, or clock fields `wtime`, `btime`, `winc`, `binc`,
-`movestogo`), `stop`, `quit`, and `bench`. It emits `info` lines (`depth`,
-`seldepth`, `score`, `nodes`, `nps`, `time`, `pv`) and `bestmove`; checkmate
-and stalemate are `bestmove 0000`. Options are `Hash` (default 16 MB, range
-1–1024), `Clear Hash`, `Threads` (fixed at 1), and `Move Overhead` (default
-50 ms, range 0–5000). A `metrics` build also advertises `Analysis` (default
-false; adds final search metrics as `info string analysis`). `Ponder`,
-`MultiPV`, and Chess960 are accepted but ignored, since none are implemented
-yet.
+`infinite`, `ponder`, `searchmoves`, or clock fields `wtime`, `btime`, `winc`,
+`binc`, `movestogo`), `ponderhit`, `stop`, `quit`, and `bench`. It emits `info`
+lines (`depth`, `seldepth`, `score`, `nodes`, `nps`, `time`, `pv`) and
+`bestmove`; checkmate and stalemate are `bestmove 0000`. A line with at least
+two plies is reported as `bestmove <move> ponder <reply>`. A `go ponder`
+search runs without a clock; the normal move budget starts at `ponderhit`, and
+`stop` still produces the `bestmove` the protocol requires. Options are `Hash`
+(default 16 MB, range 1–1024), `Clear Hash`, `Threads` (fixed at 1),
+`Move Overhead` (default 50 ms, range 0–5000), and `Ponder` (default false).
+A `metrics` build also advertises `Analysis` (default false; adds final search
+metrics as `info string analysis`). `MultiPV` and Chess960 are accepted but
+ignored, since neither is implemented yet.
 
 Search metrics are compiled out by default. Build an instrumented binary with:
 
@@ -58,7 +61,7 @@ For a release build with a version stamp:
 
 ```sh
 CGO_ENABLED=0 go build -trimpath \
-  -ldflags "-s -w -X github.com/ethankuehler/gochess/uci.Version=0.4.0" \
+  -ldflags "-s -w -X github.com/ethankuehler/gochess/uci.Version=0.5.0" \
   -o gochess ./cmd/uci
 ```
 
@@ -86,7 +89,10 @@ CGO_ENABLED=0 go build -trimpath \
   legal evasions searched when in check and MVV-LVA capture ordering. A
   Zobrist-keyed transposition table caches main-search results, supplies a hash
   move for ordering, and is reused across moves in a UCI game; `Hash` and
-  `Clear Hash` control it. There is no pondering or opening book.
+  `Clear Hash` control it. Pondering is supported through the UCI `Ponder`
+  option: `go ponder` searches the position after the predicted reply with no
+  clock, and `ponderhit` installs the normal move budget. There is no opening
+  book.
 - **UCI layer** — `uci.Run` is the engine side, a separate goroutine owns each
   search, and `uci.Client` drives an in-process engine. `cmd/uci` is the
   standalone binary; `cmd/web` is the browser demo.
@@ -297,7 +303,8 @@ tools/lichess/  optional Lichess Bot API bridge (Python, not in the Go build)
 
 ## Known limitations
 
-No pondering, MultiPV, Chess960, tablebases, or opening book. Quiescence
+No MultiPV, Chess960, tablebases, or opening book. Pondering is a UCI feature
+and is not used by `cmd/web` or the arena harness. Quiescence
 search covers captures, en passant, and promotions only: it has no quiet checks,
 delta pruning, or SEE, and it does not extend the principal variation.
 Stalemate exactly at the quiescence horizon is not detected. The transposition

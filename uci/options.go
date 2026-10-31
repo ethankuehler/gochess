@@ -14,15 +14,16 @@ const (
 	maxMoveOverheadMS     = 5000
 )
 
-// options holds the settings that are actually implemented. Ponder, MultiPV,
-// and similar options are deliberately absent: setoption accepts them so a GUI
-// does not break, but advertising them would promise behaviour the engine does
-// not have.
+// options holds the settings that are actually implemented. MultiPV and
+// similar options are deliberately absent: setoption accepts them so a GUI does
+// not break, but advertising them would promise behaviour the engine does not
+// have.
 type options struct {
 	moveOverhead time.Duration
 	threads      int
 	hashMB       int
 	analysis     bool
+	ponder       bool
 }
 
 func defaultOptions() options {
@@ -40,6 +41,7 @@ func (o options) lines() []string {
 		"option name Clear Hash type button",
 		"option name Threads type spin default 1 min 1 max 1",
 		fmt.Sprintf("option name Move Overhead type spin default %d min 0 max %d", defaultMoveOverheadMS, maxMoveOverheadMS),
+		"option name Ponder type check default false",
 	}
 	if metricsSupported {
 		lines = append(lines, "option name Analysis type check default false")
@@ -115,8 +117,17 @@ func (o *options) set(name, value string, hasValue bool) string {
 		// only needs to accept the button.
 		return ""
 	case "ponder":
-		// Ponder is not advertised. Ignore the value rather than beginning to
-		// ponder unexpectedly.
+		if !hasValue {
+			return ""
+		}
+		switch {
+		case strings.EqualFold(strings.TrimSpace(value), "true"):
+			o.ponder = true
+		case strings.EqualFold(strings.TrimSpace(value), "false"):
+			o.ponder = false
+		default:
+			return fmt.Sprintf("invalid Ponder value %q", value)
+		}
 		return ""
 	case "uci_chess960":
 		if hasValue && strings.EqualFold(strings.TrimSpace(value), "true") {

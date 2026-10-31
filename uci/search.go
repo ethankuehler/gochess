@@ -11,8 +11,9 @@ import (
 )
 
 // startSearch launches the one search goroutine. The command loop remains free
-// to answer isready, stop, and quit while it runs.
-func (e *Engine) startSearch(position *chess.Position, limits chess.SearchLimits, infinite, pondering bool) {
+// to answer isready, stop, and quit while it runs. pondering is non-nil for a
+// go ponder search; it carries the clock that ponderhit updates.
+func (e *Engine) startSearch(position *chess.Position, limits chess.SearchLimits, infinite bool, pondering *ponderState) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 
@@ -23,16 +24,16 @@ func (e *Engine) startSearch(position *chess.Position, limits chess.SearchLimits
 		return
 	}
 	e.searching = true
-	e.pondering = pondering
+	e.ponder = pondering
 	e.cancel = cancel
 	e.done = done
 	e.mu.Unlock()
 
 	start := time.Now()
-	go e.searchRoutine(ctx, position, limits, infinite, start, done)
+	go e.searchRoutine(ctx, position, limits, infinite, pondering, start, done)
 }
 
-func (e *Engine) searchRoutine(ctx context.Context, position *chess.Position, limits chess.SearchLimits, infinite bool, start time.Time, done chan struct{}) {
+func (e *Engine) searchRoutine(ctx context.Context, position *chess.Position, limits chess.SearchLimits, infinite bool, pondering *ponderState, start time.Time, done chan struct{}) {
 	reported := false
 	finished := false
 	defer func() {
@@ -49,11 +50,26 @@ func (e *Engine) searchRoutine(ctx context.Context, position *chess.Position, li
 	}()
 
 	result := position.SearchWithLimits(ctx, limits, func(info chess.SearchInfo) {
+		if pondering != nil {
+			pondering.depth.Store(int64(info.Depth))
+		}
 		if !e.isQuitting() {
 			e.writeInfo(info)
 		}
 	})
 	elapsed := time.Since(start)
+
+	// A ponder search withholds its result until the GUI confirms the move
+	// (ponderhit) or abandons it (stop). If the search already hit a depth or
+	// node limit, this select is the only thing keeping it open. If it is still
+	// running, ponderhit has already closed the channel and the search keeps
+	// going until the deadline it installed.
+	if pondering != nil {
+		select {
+		case <-pondering.release:
+		case <-ctx.Done():
+		}
+	}
 
 	// In infinite mode the search may reach a depth/node limit before the GUI
 	// sends stop. Hold the result until stop or quit, as the specification
@@ -79,7 +95,7 @@ func (e *Engine) searchRoutine(ctx context.Context, position *chess.Position, li
 func (e *Engine) finishSearch(done chan struct{}) {
 	e.mu.Lock()
 	e.searching = false
-	e.pondering = false
+	e.ponder = nil
 	e.cancel = nil
 	if e.done == done {
 		e.done = nil
@@ -145,6 +161,10 @@ func (e *Engine) writeFinal(result chess.SearchResult, elapsed time.Duration) {
 		PV:       result.PV,
 	})
 	e.writeAnalysis(result.Metrics)
+	if result.PonderMove != (chess.Move{}) {
+		e.out.line("bestmove %s ponder %s", result.BestMove, result.PonderMove)
+		return
+	}
 	e.out.line("bestmove %s", result.BestMove)
 }
 

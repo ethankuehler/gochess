@@ -56,13 +56,7 @@ func (e *Engine) handleGo(args []string) {
 	}
 
 	params := parseGoParams(args)
-	if params.ponder {
-		// Pondering is not advertised. If a GUI sends go ponder anyway, search
-		// without a clock and wait for stop/quit.
-		params.infinite = true
-	}
 	rootMoves := e.resolveRootMoves(position, params)
-	budget := allocateBudget(params, position.SideToMove(), e.options.moveOverhead)
 
 	limits := chess.SearchLimits{
 		MaxDepth:       params.depth,
@@ -72,13 +66,30 @@ func (e *Engine) handleGo(args []string) {
 		TT:             e.transpositionTable(),
 		CollectMetrics: e.options.analysis && metricsSupported,
 	}
-	if budget.ok {
+
+	var pondering *ponderState
+	if params.ponder {
+		// A ponder search starts without a clock. The move budget is installed
+		// at ponderhit, when our clock actually starts; installing it here
+		// would burn the budget while the opponent thinks.
+		stored := params
+		stored.ponder = false
+		stored.infinite = false
+		pondering = &ponderState{
+			clock:   &chess.SearchClock{},
+			params:  stored,
+			side:    position.SideToMove(),
+			started: time.Now(),
+			release: make(chan struct{}),
+		}
+		limits.Clock = pondering.clock
+	} else if budget := allocateBudget(params, position.SideToMove(), e.options.moveOverhead); budget.ok {
 		now := time.Now()
 		limits.SoftDeadline = now.Add(budget.soft)
 		limits.Deadline = now.Add(budget.hard)
 	}
 
-	e.startSearch(position, limits, params.infinite, params.ponder)
+	e.startSearch(position, limits, params.infinite && !params.ponder, pondering)
 }
 
 func parseGoParams(args []string) goParams {
