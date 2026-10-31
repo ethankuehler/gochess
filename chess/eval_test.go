@@ -25,10 +25,16 @@ func TestEvaluateTerms(t *testing.T) {
 			want: 25,
 		},
 		{
-			name: "king corner",
+			name: "king corner middlegame",
+			a:    "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/KNBQ1BNR w kq - 0 1",
+			b:    "rnbqkbnr/pppppppp/8/8/4K3/8/PPPPPPPP/1NBQ1BNR w kq - 0 1",
+			want: 45,
+		},
+		{
+			name: "king corner endgame",
 			a:    "7k/8/8/8/8/8/8/K7 w - - 0 1",
 			b:    "7k/8/8/8/4K3/8/8/8 w - - 0 1",
-			want: 55,
+			want: -60,
 		},
 		{
 			name: "pawn near promotion",
