@@ -300,8 +300,15 @@ func TestSearchMetricsPreserveSearchResults(t *testing.T) {
 	if metrics.MakeMoveCalls < metrics.SearchMakeMoveCalls || metrics.MakeMoveCalls > metrics.PseudoMoves+metrics.SearchMakeMoveCalls {
 		t.Fatalf("copy-make counts do not add up: %+v", metrics)
 	}
-	if metrics.SearchMakeMoveCalls != measured.Nodes {
+	// Every node is entered by one copy-make, except that a PVS or LMR
+	// re-search revisits the same child without copying it again. Allow that
+	// small excess but nothing else.
+	if metrics.SearchMakeMoveCalls > measured.Nodes {
 		t.Fatalf("search copy-make calls = %d, nodes = %d", metrics.SearchMakeMoveCalls, measured.Nodes)
+	}
+	if excess := measured.Nodes - metrics.SearchMakeMoveCalls; excess > measured.Nodes/100+16 {
+		t.Fatalf("search copies = %d, nodes = %d (%d re-search nodes)",
+			metrics.SearchMakeMoveCalls, measured.Nodes, excess)
 	}
 	if phaseSum := metrics.MoveGenNS + metrics.LegalFilterNS + metrics.EvaluationNS + metrics.SearchMakeMoveNS; phaseSum > metrics.ElapsedNS {
 		t.Fatalf("measured phases = %dns, elapsed = %dns", phaseSum, metrics.ElapsedNS)
@@ -389,4 +396,102 @@ func TestSearchMetricsJSONNames(t *testing.T) {
 			t.Errorf("JSON field %q missing from %s", name, encoded)
 		}
 	}
+}
+
+func TestPVHasNoRepeatedPositions(t *testing.T) {
+	fixtures := []string{
+		NewStartingPosition().FEN(),
+		kiwipeteFEN,
+		freeQueenFEN,
+		poisonedPawnFEN,
+		"8/8/8/4k3/8/8/3Q4/4K3 w - - 0 1",
+	}
+
+	for _, fen := range fixtures {
+		position := mustFEN(t, fen)
+		for depth := 1; depth <= 5; depth++ {
+			result := position.Search(depth)
+			if !result.HasMove {
+				continue
+			}
+			if len(result.PV) > result.Depth {
+				t.Fatalf("depth %d on %q: PV has %d moves, depth is %d", depth, fen, len(result.PV), result.Depth)
+			}
+			current := position
+			seen := map[PositionKey]bool{current.Key(): true}
+			for i, move := range result.PV {
+				next, err := current.ApplyMove(move)
+				if err != nil {
+					t.Fatalf("depth %d on %q: PV move %d (%s) is illegal: %v", depth, fen, i+1, move, err)
+				}
+				if seen[next.Key()] {
+					t.Fatalf("depth %d on %q: PV returns to an earlier position at move %d", depth, fen, i+1)
+				}
+				seen[next.Key()] = true
+				current = next
+			}
+		}
+	}
+}
+
+func TestSearchOptionsPreserveScore(t *testing.T) {
+	fixtures := []string{
+		NewStartingPosition().FEN(),
+		kiwipeteFEN,
+		freeQueenFEN,
+		poisonedPawnFEN,
+		"8/8/8/4k3/8/8/3Q4/4K3 w - - 0 1",
+	}
+
+	var totalCutoffs uint64
+	for _, fen := range fixtures {
+		position := mustFEN(t, fen)
+		for depth := 3; depth <= 5; depth++ {
+			plain := position.searchWithOptions(context.Background(), SearchLimits{MaxDepth: depth}, nil, searchOptions{})
+			tt := NewTranspositionTable(DefaultHashMB)
+			full := position.searchWithOptions(context.Background(), SearchLimits{MaxDepth: depth, TT: tt}, nil, searchOptions{pvs: true, aspiration: true})
+
+			if full.Score != plain.Score || full.BestMove != plain.BestMove {
+				t.Errorf("depth %d on %q: selective %s/%d, plain %s/%d",
+					depth, fen, full.BestMove, full.Score, plain.BestMove, plain.Score)
+			}
+			if full.Depth != depth {
+				t.Errorf("depth %d on %q: completed depth %d", depth, fen, full.Depth)
+			}
+			totalCutoffs += full.TT.Cutoffs
+		}
+	}
+	if totalCutoffs == 0 {
+		t.Fatal("no table cutoffs at null-window nodes")
+	}
+}
+
+func TestAspirationMatchesFullWindow(t *testing.T) {
+	fixtures := []string{NewStartingPosition().FEN(), kiwipeteFEN, freeQueenFEN}
+
+	for _, fen := range fixtures {
+		position := mustFEN(t, fen)
+		for depth := 4; depth <= 6; depth++ {
+			wide := position.searchWithOptions(context.Background(), SearchLimits{MaxDepth: depth}, nil, searchOptions{pvs: true})
+			asp := position.searchWithOptions(context.Background(), SearchLimits{MaxDepth: depth}, nil, searchOptions{pvs: true, aspiration: true})
+
+			if asp.Score != wide.Score || asp.BestMove != wide.BestMove || asp.Depth != wide.Depth {
+				t.Errorf("depth %d on %q: aspiration %s/%d, full window %s/%d",
+					depth, fen, asp.BestMove, asp.Score, wide.BestMove, wide.Score)
+			}
+		}
+	}
+}
+
+func TestPVReachesRequestedDepth(t *testing.T) {
+	position := mustFEN(t, kiwipeteFEN)
+
+	result := position.Search(6)
+	if result.Depth != 6 {
+		t.Fatalf("depth = %d, want 6", result.Depth)
+	}
+	if len(result.PV) != result.Depth {
+		t.Fatalf("PV has %d moves, want %d", len(result.PV), result.Depth)
+	}
+	assertPVLegal(t, position, result.PV)
 }

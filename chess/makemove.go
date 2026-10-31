@@ -73,6 +73,38 @@ func (b *Position) makeMove(m Move) Position {
 	return b.makeMoveInternal(m, true)
 }
 
+// nullMove returns the position after a "pass": the same board with the side to
+// move flipped, the en passant target cleared, and the clocks advanced. It is
+// used only by null-move pruning and is never a legal game move. Castling
+// rights and the piece placement are unchanged, so the incremental key only
+// needs the en passant and side-to-move terms replaced.
+func (b *Position) nullMove() Position {
+	next := *b
+	next.key = b.key ^ b.epHash ^ zobristSide
+	next.enPassantSquare = 0
+	next.epHash = 0
+	next.flags ^= whiteToMove
+	if next.halfmoveClock < 65535 {
+		next.halfmoveClock++
+	}
+	if b.sideToMove() == Black && next.fullmoveNumber < 65535 {
+		next.fullmoveNumber++
+	}
+	return next
+}
+
+// hasNonPawnMaterial reports whether colour still has a knight, bishop, rook, or
+// queen. Null-move pruning is disabled without one: a free move is worth too
+// much in a pure pawn ending, where zugzwang is common.
+func (b *Position) hasNonPawnMaterial(colour Colour) bool {
+	offset := Piece(0)
+	if colour == Black {
+		offset = blackPieceOffset
+	}
+	return b.pieceBitboards[Knight+offset]|b.pieceBitboards[Bishop+offset]|
+		b.pieceBitboards[Rook+offset]|b.pieceBitboards[Queen+offset] != 0
+}
+
 // makeMoveForLegality applies only the board changes needed to test whether the
 // mover's king is attacked. The result has a stale key, clocks, castling rights,
 // and en passant target, so it must not be used as a game position.

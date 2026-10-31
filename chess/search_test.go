@@ -193,11 +193,11 @@ func TestScoreToMate(t *testing.T) {
 }
 
 func TestOrderMoves(t *testing.T) {
-	position := mustFEN(t, freeQueenFEN)
+	position := mustFEN(t, kiwipeteFEN)
 	moves := position.LegalMoves()
 
-	var scratch [256]Move
-	ordered := orderMoves(moves, scratch[:0], Move{})
+	s := &searcher{}
+	ordered := s.orderMoves(position, append([]Move(nil), moves...), Move{}, 4)
 	if len(ordered) != len(moves) {
 		t.Fatalf("ordered %d moves, want %d", len(ordered), len(moves))
 	}
@@ -225,6 +225,91 @@ func TestOrderMoves(t *testing.T) {
 		if sawQuiet {
 			t.Fatalf("capture or promotion %s comes after a quiet move", m)
 		}
+	}
+}
+
+func TestOrderMovesMVVLVA(t *testing.T) {
+	// d4xe5 is PxQ, e2xe5 is RxQ, and d4xc5 is PxP, so MVV-LVA must order them
+	// exactly that way regardless of generation order.
+	position := mustFEN(t, "4k3/8/8/2p1q3/3P4/8/4R3/4K3 w - - 0 1")
+	moves := position.LegalMoves()
+
+	s := &searcher{}
+	ordered := s.orderMoves(position, append([]Move(nil), moves...), Move{}, 0)
+	index := make(map[string]int, len(ordered))
+	for i, m := range ordered {
+		index[m.String()] = i
+	}
+
+	pawnTakesQueen, ok1 := index["d4e5"]
+	rookTakesQueen, ok2 := index["e2e5"]
+	pawnTakesPawn, ok3 := index["d4c5"]
+	if !ok1 || !ok2 || !ok3 {
+		t.Fatalf("missing captures in ordering: %v", index)
+	}
+	if !(pawnTakesQueen < rookTakesQueen && rookTakesQueen < pawnTakesPawn) {
+		t.Fatalf("MVV-LVA order is %d, %d, %d; want increasing", pawnTakesQueen, rookTakesQueen, pawnTakesPawn)
+	}
+}
+
+func TestOrderMovesHashKillerHistory(t *testing.T) {
+	position := mustFEN(t, "4k3/8/8/2p1q3/3P4/8/4R3/4K3 w - - 0 1")
+	moves := position.LegalMoves()
+
+	hash := legalMoveFor(t, position, "e1d1")
+	killer := legalMoveFor(t, position, "e1f1")
+	scored := legalMoveFor(t, position, "e2e3")
+	plain := legalMoveFor(t, position, "e2e4")
+
+	s := &searcher{}
+	s.killers[3][0] = killer
+	s.history[White][scored.From()][scored.To()] = 4000
+
+	ordered := s.orderMoves(position, append([]Move(nil), moves...), hash, 3)
+	index := make(map[string]int, len(ordered))
+	for i, m := range ordered {
+		index[m.String()] = i
+	}
+	if index[hash.String()] != 0 {
+		t.Fatalf("hash move is at %d, want 0", index[hash.String()])
+	}
+	if index[killer.String()] > index[scored.String()] {
+		t.Fatalf("killer %s ordered after history move %s", killer, scored)
+	}
+	if index[scored.String()] > index[plain.String()] {
+		t.Fatalf("history move %s ordered after quiet move %s", scored, plain)
+	}
+}
+
+func TestRecordQuietCutoff(t *testing.T) {
+	s := &searcher{}
+	first, err := ParseUCIMove("a2a3")
+	if err != nil {
+		t.Fatalf("ParseUCIMove(a2a3): %v", err)
+	}
+	second, err := ParseUCIMove("b2b3")
+	if err != nil {
+		t.Fatalf("ParseUCIMove(b2b3): %v", err)
+	}
+
+	s.recordQuietCutoff(White, *first, 3, 4)
+	s.recordQuietCutoff(White, *second, 3, 4)
+	if s.killers[4][0] != *second || s.killers[4][1] != *first {
+		t.Fatalf("killers = %v, want [%s %s]", s.killers[4], second, first)
+	}
+	s.recordQuietCutoff(White, *first, 3, 4)
+	if s.killers[4][0] != *first || s.killers[4][1] != *second {
+		t.Fatalf("killers after repeat = %v, want [%s %s]", s.killers[4], first, second)
+	}
+
+	from, to := first.From(), first.To()
+	if got := s.history[White][from][to]; got != 18 {
+		t.Fatalf("history = %d, want 18", got)
+	}
+	s.history[White][from][to] = historyMax - 1
+	s.recordQuietCutoff(White, *first, 2, 4)
+	if got := s.history[White][from][to]; got > historyMax/2+1 {
+		t.Fatalf("history = %d after saturation, want it halved", got)
 	}
 }
 

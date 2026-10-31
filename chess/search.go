@@ -19,6 +19,15 @@ const (
 	// node; cancellation is checked often enough to keep stop responsive.
 	searchCheckInterval = 256
 
+	// Root aspiration windows. The first window is +/- aspirationDelta around
+	// the previous score and doubles on a fail, falling back to the full window
+	// after aspirationMaxRetries attempts.
+	aspirationDelta      = 25
+	aspirationMaxRetries = 4
+
+	// futilityMargin is the per-depth centipawn margin for futility pruning.
+	futilityMargin = 100
+
 	// maxRepeatHistory bounds the game history copied into a search. A
 	// position with a halfmove clock of 100 or more is already a draw, so at
 	// most 99 earlier positions can still take part in a repetition.
@@ -127,7 +136,29 @@ func (b *Position) Search(depth int) SearchResult {
 //
 // The attack tables must have been built with BuildAllAttacks,
 // BuildAllAttacksFromFS, or the individual builders.
-func (b *Position) SearchWithLimits(ctx context.Context, limits SearchLimits, info func(SearchInfo)) (result SearchResult) {
+func (b *Position) SearchWithLimits(ctx context.Context, limits SearchLimits, info func(SearchInfo)) SearchResult {
+	return b.searchWithOptions(ctx, limits, info, defaultSearchOptions())
+}
+
+// searchOptions selects the selective-search features for one search. Production
+// search enables all of them; tests use the flags to prove a guard fires and to
+// compare a feature against the full-width behavior.
+type searchOptions struct {
+	pvs        bool
+	aspiration bool
+	nullMove   bool
+	lmr        bool
+	futility   bool
+}
+
+// defaultSearchOptions enables every feature used in play.
+func defaultSearchOptions() searchOptions {
+	return searchOptions{pvs: true, aspiration: true, nullMove: true, lmr: true, futility: true}
+}
+
+// searchWithOptions performs the search described by SearchWithLimits with the
+// given feature switches.
+func (b *Position) searchWithOptions(ctx context.Context, limits SearchLimits, info func(SearchInfo), opts searchOptions) (result SearchResult) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -149,6 +180,7 @@ func (b *Position) SearchWithLimits(ctx context.Context, limits SearchLimits, in
 		maxNodes: limits.MaxNodes,
 		tt:       limits.TT,
 		metrics:  metrics,
+		opts:     opts,
 	}
 	defer func() {
 		result.TT = s.ttStats
@@ -229,7 +261,7 @@ func (b *Position) SearchWithLimits(ctx context.Context, limits SearchLimits, in
 
 	fallback := moves[0]
 	ordered := append([]Move(nil), moves...)
-	promoteMove(ordered, rootHash)
+	ordered = s.orderMoves(b, ordered, rootHash, 0)
 	completedDepth := 0
 	var bestMove Move
 	var bestScore int
@@ -240,42 +272,41 @@ func (b *Position) SearchWithLimits(ctx context.Context, limits SearchLimits, in
 			break
 		}
 
-		s.pvLength[0] = 0
+		// Aspiration windows start narrow around the previous iteration's
+		// score and widen on a fail. Deeper iterations near a mate and the
+		// first few depths use the full window.
 		alpha, beta := -infinity, infinity
-		iterBest := Move{}
-		iterScore := -infinity
-		var iterPV []Move
-		found := false
-		aborted := false
-
-		for _, m := range ordered {
-			if s.shouldStop() {
-				aborted = true
-				break
-			}
-			child := s.makeMove(b, m)
-			score := 0
-			if !s.repeatsEarlier(child.key, int(child.halfmoveClock), 0) {
-				score = -s.negamax(child, depth-1, -beta, -alpha, 1)
-			}
-			if s.stopped {
-				aborted = true
-				break
-			}
-			if score > iterScore {
-				iterScore = score
-				iterBest = m
-				found = true
-				iterPV = make([]Move, 1, 1+s.pvLength[1])
-				iterPV[0] = m
-				iterPV = append(iterPV, s.pvTable[1][:s.pvLength[1]]...)
-			}
-			if score > alpha {
-				alpha = score
-			}
+		if s.opts.aspiration && depth >= 4 && completedDepth > 0 && !nearMate(bestScore) {
+			alpha = max(bestScore-aspirationDelta, -infinity)
+			beta = min(bestScore+aspirationDelta, infinity)
 		}
 
-		if aborted || !found {
+		var iterBest Move
+		var iterScore int
+		var iterPV []Move
+		aborted := false
+		completed := false
+		for attempt := 0; ; attempt++ {
+			iterBest, iterScore, iterPV, aborted = s.searchRoot(b, ordered, depth, alpha, beta)
+			if aborted {
+				break
+			}
+			if iterScore > alpha && iterScore < beta {
+				completed = true
+				break
+			}
+			// A fail means the window missed the score. Widen it and search
+			// this depth again; the last attempt always uses the full window.
+			promoteMove(ordered, iterBest)
+			if attempt >= aspirationMaxRetries {
+				alpha, beta = -infinity, infinity
+			} else if iterScore <= alpha {
+				alpha = max(alpha-(beta-alpha), -infinity)
+			} else {
+				beta = min(beta+(beta-alpha), infinity)
+			}
+		}
+		if aborted || !completed {
 			break
 		}
 
@@ -337,8 +368,128 @@ func (b *Position) SearchWithLimits(ctx context.Context, limits SearchLimits, in
 	return result
 }
 
+// searchRoot searches every root move at the given depth and window. It returns
+// the best move, score, and PV, and reports whether the search was stopped. A
+// root move that is scored as a repetition is not searched, so it contributes a
+// one-move PV and never inherits the previous root move's line. Only a move
+// searched with the full window contributes a PV tail.
+func (s *searcher) searchRoot(b *Position, ordered []Move, depth, alpha, beta int) (best Move, score int, pv []Move, aborted bool) {
+	score = -infinity
+	wideWindow := true // the first searched move gets the full window
+	for _, m := range ordered {
+		if s.shouldStop() {
+			return Move{}, 0, nil, true
+		}
+		s.pvLength[1] = 0
+		child := s.makeMove(b, m)
+		moveScore := 0
+		searched := false
+		wide := false
+		if !s.repeatsEarlier(child.key, int(child.halfmoveClock), 0) {
+			searched = true
+			if !s.opts.pvs || wideWindow {
+				moveScore = -s.negamax(child, depth-1, -beta, -alpha, 1, true)
+				wideWindow = false
+				wide = true
+			} else {
+				moveScore = -s.negamax(child, depth-1, -alpha-1, -alpha, 1, true)
+				if moveScore > alpha && moveScore < beta {
+					moveScore = -s.negamax(child, depth-1, -beta, -alpha, 1, true)
+					wide = true
+				}
+			}
+		}
+		if s.stopped {
+			return Move{}, 0, nil, true
+		}
+		if moveScore > score {
+			score = moveScore
+			best = m
+			pv = append(pv[:0], m)
+			if searched && wide {
+				pv = append(pv, s.pvTable[1][:s.pvLength[1]]...)
+			}
+		}
+		if moveScore > alpha {
+			alpha = moveScore
+		}
+	}
+	return best, score, pv, false
+}
+
+// nearMate reports whether score is close enough to a mate score that an
+// aspiration window would be meaningless.
+func nearMate(score int) bool {
+	return score >= mateScoreTTThreshold || score <= -mateScoreTTThreshold
+}
+
+// mateWindow reports whether either bound is a mate score, in which case
+// selective pruning must not run.
+func mateWindow(alpha, beta int) bool {
+	return beta >= mateScoreTTThreshold || alpha <= -mateScoreTTThreshold
+}
+
+// futilityAllowed reports whether the node may compute a static score for
+// futility pruning and razoring. Only frontier scout nodes qualify.
+func (s *searcher) futilityAllowed(depth int, pv, inCheck bool, alpha, beta int) bool {
+	return s.opts.futility && !pv && !inCheck && depth <= 2 && !mateWindow(alpha, beta)
+}
+
+// futilityPrunes reports whether a quiet move can be skipped: the static score
+// plus the margin still cannot reach alpha. The first move, the hash move,
+// captures, and promotions are never pruned.
+func (s *searcher) futilityPrunes(m, hashMove Move, depth, staticEval, alpha int, haveStaticEval bool, best int) bool {
+	if !haveStaticEval || best <= -infinity || m == hashMove {
+		return false
+	}
+	if _, promotion := m.Promotion(); m.IsCapture() || promotion {
+		return false
+	}
+	return staticEval+futilityMargin*depth <= alpha
+}
+
+// lateMoveReduction returns the reduction to apply to a quiet scout move, or 0
+// when the guards reject it. Only late quiet moves that do not give check are
+// reduced, and never at a PV node, so the principal variation is searched at
+// full depth. A reduced move that beats alpha is re-searched at full depth by
+// the caller, so the reduction can only cost nodes, never accuracy.
+func (s *searcher) lateMoveReduction(child *Position, m Move, depth, moveIndex int, pv bool, alpha, beta int) int {
+	if !s.opts.lmr || pv || depth < 3 || moveIndex < 3 || mateWindow(alpha, beta) {
+		return 0
+	}
+	if m.IsCapture() {
+		return 0
+	}
+	if _, promotion := m.Promotion(); promotion {
+		return 0
+	}
+	if child.InCheck() {
+		return 0
+	}
+	reduction := 1 + (depth-3)/4 + moveIndex/8
+	if limit := depth - 2; reduction > limit {
+		reduction = limit
+	}
+	if reduction > 3 {
+		reduction = 3
+	}
+	return reduction
+}
+
+// nullMoveAllowed reports whether null-move pruning may run at this node. It is
+// deliberately conservative: scout nodes only, not in check, not immediately
+// after another null move, deep enough, outside a mate window, and only when the
+// side to move has a non-pawn piece. Keeping the guard in one place makes each
+// condition testable.
+func (s *searcher) nullMoveAllowed(b *Position, depth int, pv, inCheck, nullAllowed bool, alpha, beta int) bool {
+	return s.opts.nullMove && !pv && !inCheck && nullAllowed && depth >= 5 &&
+		!mateWindow(alpha, beta) && b.hasNonPawnMaterial(b.sideToMove())
+}
+
 // searcher carries the node counter, limits, and PV table for one search.
 type searcher struct {
+	opts searchOptions
+
 	ctx      context.Context
 	deadline time.Time
 	maxNodes uint64
@@ -358,6 +509,12 @@ type searcher struct {
 
 	pvTable  [maxPly + 1][maxPly + 1]Move
 	pvLength [maxPly + 1]int
+
+	// killers holds the two most recent quiet moves that caused a beta cutoff
+	// at each ply. history scores quiet moves by how often they cut off, split
+	// by the side that played them.
+	killers [maxPly + 1][2]Move
+	history [2][64][64]int
 }
 
 // repeatsEarlier reports whether key has already occurred once in the last
@@ -455,8 +612,8 @@ func (s *searcher) shouldStop() bool {
 // so tick is reached only for depth-positive nodes. Position is passed by value:
 // it is small, and the value parameter keeps the copy-make child on the stack
 // instead of forcing a heap allocation per node.
-func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
-	if depth == 0 {
+func (s *searcher) negamax(b Position, depth, alpha, beta, ply int, nullAllowed bool) int {
+	if depth <= 0 {
 		return s.quiesce(b, alpha, beta, ply)
 	}
 	if s.tick() {
@@ -468,11 +625,23 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 	if ply < len(s.pvLength) {
 		s.pvLength[ply] = 0
 	}
+	// Record this node's key before anything recurses. Repetition checks below
+	// scan earlier entries only, so the write can happen up front, and a null
+	// move needs the parent key already in place.
+	s.keys[s.pathBase+ply] = b.key
+
+	// pv distinguishes principal-variation nodes from null-window (scout)
+	// nodes. With PVS the first move of a PV node is searched with the full
+	// window and later moves are scouted, so window width still identifies the
+	// node type. Table cutoffs and all unsound pruning are limited to scouts.
+	pv := s.opts.pvs && beta-alpha > 1
 
 	alphaOrig := alpha
 	inCheck := b.InCheck()
 	ttUsable := s.tt != nil && b.halfmoveClock < ttMaxHalfmoveClock
 	var hashMove Move
+	var staticEval int
+	haveStaticEval := false
 
 	// When the side to move is not in check, the draw checks can run before
 	// move generation, which lets a table cutoff skip that work entirely. When
@@ -483,15 +652,45 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 			return 0
 		}
 		if ttUsable {
-			if score, cutoff, move := s.probeTT(b.key, depth, alpha, beta, ply); cutoff {
+			if score, cutoff, move := s.probeTT(b.key, depth, alpha, beta, ply, pv); cutoff {
 				return score
 			} else {
 				hashMove = move
 			}
 		}
+		if s.nullMoveAllowed(&b, depth, pv, false, nullAllowed, alpha, beta) {
+			// Shallow null searches cost more than they save in this engine:
+			// at depth 6 they roughly double the kiwipete subtree, while from
+			// depth 7 they are a clear win. Require a deep-enough node.
+			reduction := 3
+			child := s.makeNullMove(&b)
+			score := -s.negamax(child, depth-1-reduction, -beta, -beta+1, ply+1, false)
+			if s.stopped {
+				return 0
+			}
+			if score >= beta {
+				// The cutoff is a lower bound proved by giving the opponent a
+				// free move, so an unproven mate score must not escape.
+				if score >= mateScoreTTThreshold {
+					score = beta
+				}
+				if ttUsable {
+					s.storeTT(b.key, depth, score, alpha, beta, ply, Move{})
+				}
+				return score
+			}
+		}
+		// Frontier nodes get a static score once for futility pruning. It is
+		// limited to scout nodes, so the PV is unaffected. Razoring was tried
+		// here as well and measured as a node regression in this engine; only
+		// futility is kept.
+		if s.futilityAllowed(depth, pv, false, alpha, beta) {
+			staticEval = s.evaluate(&b)
+			haveStaticEval = true
+		}
 	}
 
-	var buf, ordered [256]Move
+	var buf [256]Move
 	moves := s.legalMoves(&b, buf[:0])
 	if len(moves) == 0 {
 		if inCheck {
@@ -507,30 +706,68 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 			return 0
 		}
 		if ttUsable {
-			if score, cutoff, move := s.probeTT(b.key, depth, alpha, beta, ply); cutoff {
+			if score, cutoff, move := s.probeTT(b.key, depth, alpha, beta, ply, pv); cutoff {
 				return score
 			} else {
 				hashMove = move
 			}
 		}
 	}
-	s.keys[s.pathBase+ply] = b.key
-
 	best := -infinity
 	var bestMove Move
-	for _, m := range orderMoves(moves, ordered[:0], hashMove) {
+	us := b.sideToMove()
+	first := true
+	moveIndex := 0
+	for _, m := range s.orderMoves(&b, moves, hashMove, ply) {
+		// A quiet move that cannot lift the static score to alpha is not worth
+		// searching at a frontier scout node. Captures and promotions are
+		// still searched, and the first move is never pruned.
+		if s.futilityPrunes(m, hashMove, depth, staticEval, alpha, haveStaticEval, best) {
+			first = false
+			moveIndex++
+			continue
+		}
+		// Reset the child's PV first: a move skipped by repeatsEarlier is not
+		// searched, and updatePV must not copy the previous sibling's line.
+		if ply+1 < len(s.pvLength) {
+			s.pvLength[ply+1] = 0
+		}
 		child := s.makeMove(&b, m)
 		score := 0
-		if !s.repeatsEarlier(child.key, int(child.halfmoveClock), ply) {
-			score = -s.negamax(child, depth-1, -beta, -alpha, ply+1)
+		if s.repeatsEarlier(child.key, int(child.halfmoveClock), ply) {
+			score = 0
+		} else if !s.opts.pvs || (first && pv) {
+			// The first move of a PV node gets the full window. At a null-window
+			// node every move is already searched with a null window, so only
+			// PV nodes reach the scout branch below.
+			score = -s.negamax(child, depth-1, -beta, -alpha, ply+1, true)
+		} else if reduction := s.lateMoveReduction(&child, m, depth, moveIndex, pv, alpha, beta); reduction > 0 {
+			// Search a late quiet move shallower first; if it still beats
+			// alpha, repeat the search at full depth before trusting it.
+			score = -s.negamax(child, depth-1-reduction, -alpha-1, -alpha, ply+1, true)
+			if score > alpha {
+				score = -s.negamax(child, depth-1, -beta, -alpha, ply+1, true)
+			}
+		} else {
+			// Scout with a null window and re-search the full window when the
+			// move improves alpha. At a null-window node score > alpha implies
+			// score >= beta, so this branch only does work at PV nodes.
+			score = -s.negamax(child, depth-1, -alpha-1, -alpha, ply+1, true)
+			if pv && score > alpha && score < beta {
+				score = -s.negamax(child, depth-1, -beta, -alpha, ply+1, true)
+			}
 		}
+		first = false
+		moveIndex++
 		if s.stopped {
 			return 0
 		}
 		if score > best {
 			best = score
 			bestMove = m
-			s.updatePV(ply, m)
+			if pv {
+				s.updatePV(ply, m)
+			}
 		}
 		if score > alpha {
 			alpha = score
@@ -538,6 +775,9 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 		if alpha >= beta {
 			if MetricsEnabled && s.metrics != nil {
 				s.metrics.BetaCutoffs++
+			}
+			if _, promotion := m.Promotion(); !m.IsCapture() && !promotion {
+				s.recordQuietCutoff(us, m, depth, ply)
 			}
 			break
 		}
@@ -553,7 +793,7 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int) int {
 // cutoff is only taken at null-window nodes; principal-variation nodes keep
 // searching so the PV is built from real lines rather than a cached score. The
 // returned move is useful for ordering even when the entry is too shallow.
-func (s *searcher) probeTT(key uint64, depth, alpha, beta, ply int) (score int, cutoff bool, move Move) {
+func (s *searcher) probeTT(key uint64, depth, alpha, beta, ply int, pv bool) (score int, cutoff bool, move Move) {
 	s.ttStats.Probes++
 	entry, ok := s.tt.probe(key)
 	if !ok {
@@ -561,7 +801,7 @@ func (s *searcher) probeTT(key uint64, depth, alpha, beta, ply int) (score int, 
 	}
 	s.ttStats.Hits++
 	move = entry.move
-	if int(entry.depth) < depth || beta-alpha <= 1 {
+	if int(entry.depth) < depth || pv {
 		return 0, false, move
 	}
 
@@ -632,37 +872,98 @@ func promoteMove(moves []Move, best Move) {
 	}
 }
 
-// orderMoves puts the transposition-table move first, then captures, en
-// passant, and promotions, then quiet moves. It writes into scratch and returns
-// the used slice; ordering changes the number of nodes visited but never the
-// search score. A hash move that is not in the legal list is ignored.
-func orderMoves(moves, scratch []Move, hashMove Move) []Move {
-	out := scratch[:0]
-	if hashMove != (Move{}) {
-		for _, m := range moves {
-			if m == hashMove {
-				out = append(out, m)
-				break
+// Move-ordering scores. The gaps leave room for the components to be added
+// without one class ever outranking another by accident.
+const (
+	orderHashMove   = 1 << 30
+	orderCapture    = 1 << 24
+	orderKiller1    = 1 << 20
+	orderKiller2    = 1 << 19
+	orderHistoryMax = 1 << 18
+
+	// historyMax bounds a single history entry; reaching it halves the table.
+	historyMax = 1 << 14
+)
+
+// orderMoves sorts moves in place into search order: the hash move first, then
+// captures and promotions by MVV-LVA, then the two killers for this ply, then
+// quiet moves by history score. The sort is stable, so moves with equal scores
+// keep generation order. It never adds or drops a move; ordering changes the
+// number of nodes visited but never the search score. A hash move that is not
+// in the legal list is ignored.
+func (s *searcher) orderMoves(b *Position, moves []Move, hashMove Move, ply int) []Move {
+	if len(moves) < 2 {
+		return moves
+	}
+	us := b.sideToMove()
+	var killer1, killer2 Move
+	if ply < len(s.killers) {
+		killer1, killer2 = s.killers[ply][0], s.killers[ply][1]
+	}
+	var scores [256]int
+	for i, m := range moves {
+		scores[i] = s.moveScore(b, m, hashMove, killer1, killer2, us)
+	}
+	for i := 1; i < len(moves); i++ {
+		move, score := moves[i], scores[i]
+		j := i - 1
+		for j >= 0 && scores[j] < score {
+			moves[j+1], scores[j+1] = moves[j], scores[j]
+			j--
+		}
+		moves[j+1], scores[j+1] = move, score
+	}
+	return moves
+}
+
+// moveScore returns the ordering score of one move. Captures come before any
+// quiet move even when the history table is saturated, and the hash move comes
+// before everything.
+func (s *searcher) moveScore(b *Position, m, hashMove, killer1, killer2 Move, us Colour) int {
+	if m == hashMove {
+		return orderHashMove
+	}
+	if piece, promotion := m.Promotion(); promotion {
+		return orderCapture + mvvLva(b, m) + pieceValues[piece]*16
+	}
+	if m.IsCapture() {
+		return orderCapture + mvvLva(b, m)
+	}
+	if m == killer1 {
+		return orderKiller1
+	}
+	if m == killer2 {
+		return orderKiller2
+	}
+	score := s.history[us][m.From()][m.To()]
+	if score > orderHistoryMax {
+		score = orderHistoryMax
+	}
+	return score
+}
+
+// recordQuietCutoff updates the killer and history tables after a quiet move
+// causes a beta cutoff. Captures are already ordered by MVV-LVA and are never
+// recorded. History is halved when an entry saturates so old scores fade.
+func (s *searcher) recordQuietCutoff(us Colour, m Move, depth, ply int) {
+	if ply < len(s.killers) && s.killers[ply][0] != m {
+		s.killers[ply][1] = s.killers[ply][0]
+		s.killers[ply][0] = m
+	}
+	h := &s.history[us][m.From()][m.To()]
+	if *h < historyMax {
+		*h += depth * depth
+	}
+	if *h <= historyMax {
+		return
+	}
+	for c := range s.history {
+		for from := range s.history[c] {
+			for to := range s.history[c][from] {
+				s.history[c][from][to] /= 2
 			}
 		}
 	}
-	for _, m := range moves {
-		if m == hashMove {
-			continue
-		}
-		if _, promotion := m.Promotion(); m.IsCapture() || promotion {
-			out = append(out, m)
-		}
-	}
-	for _, m := range moves {
-		if m == hashMove {
-			continue
-		}
-		if _, promotion := m.Promotion(); !m.IsCapture() && !promotion {
-			out = append(out, m)
-		}
-	}
-	return out
 }
 
 // ScoreToMate converts a mate score into a distance in moves. ok is false for

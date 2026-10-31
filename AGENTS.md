@@ -29,7 +29,11 @@ deepening alpha-beta search, and a UCI front end.
     every position with Stockfish perft, adjudicates all draw rules, and checks
     that gochess's search recognizes drawn and terminal positions.
   - `cmd/arena` (`cmd/arena/`) — plays paired gochess-versus-Stockfish games
-    from an opening book and reports a bootstrap Elo estimate.
+    from an opening book and reports a bootstrap Elo estimate. Its `versions`
+    subcommand instead pits two local gochess builds against each other from a
+    random opening sample at a fixed depth, time per move, or node count per
+    move, and reports NPS/time/depth metrics plus an anchor-based implied
+    rating.
   - `cmd/search` (`cmd/search/`) — fixed-depth search CLI; prints the best
     move, score, nodes, time, and nps, or just the static evaluation.
   - `cmd/web` (`cmd/web/`) — local browser board; human White, engine Black,
@@ -58,7 +62,16 @@ deepening alpha-beta search, and a UCI front end.
   fixed-time or fixed-node limits, a paired opening book (`data/openings.csv`),
   draw adjudication, JSON output, and a bootstrap Elo estimate over opening
   pairs. It runs games sequentially and reads `data/openings.csv` from disk, so
-  run it from the repo root.
+  run it from the repo root. `cmd/arena/engine.go` is the external UCI process
+  client used for Stockfish and version matches; it parses the final depth,
+  seldepth, nodes, nps, time, hashfull, tbhits, score, and PV. `cmd/arena/versions.go`
+  implements `arena versions`: it builds a candidate from the working tree and a
+  baseline from `-baseline-ref` (default `HEAD`) unless `-engine`/`-baseline`
+  binaries are supplied, samples `-openings` random book lines with `-seed`,
+  plays each line at a fixed `-depth`, `-movetime`, or `-nodes` limit with
+  colours swapped, and reports W/D/L, Elo difference, anchor-based implied Elo,
+  and per-engine nodes/NPS/time/depth metrics. The three limits are mutually
+  exclusive. Version games are sequential; the baseline anchor defaults to 1640.
 - `cmd/uci/main.go` — the UCI executable. `go build -o gochess ./cmd/uci`
   produces a self-contained binary; `gochess bench [depth]` runs the benchmark
   and exits, and `gochess -version` prints the version. Normal startup runs the
@@ -150,11 +163,18 @@ deepening alpha-beta search, and a UCI front end.
     fifty-move, seventy-five-move, threefold/fivefold-repetition, and
     insufficient-material helpers.
   - `perft.go` — `Perft`, `PerftDivide`, and `PerftResult`.
-  - `eval.go` — material values and the precomputed piece-square table
-    (centrality, king safety, pawn advancement), plus `Position.Evaluate`.
+  - `eval.go` — material values, the precomputed piece-square table
+    (centrality, king safety, pawn advancement), and `attackPenalty` threat
+    terms for hanging or cheaply attacked pieces, plus `Position.Evaluate`.
+  - `qsearch.go` — depth-zero `quiesce`: stand-pat, captures, en passant, and
+    promotions, all legal evasions when in check, MVV-LVA ordering, and
+    quiescence node/draw accounting.
   - `search.go` — `MateScore`, `SearchResult`, `SearchInfo`, `SearchLimits`,
-    fixed-depth `Search`, iterative-deepening `SearchWithLimits`, capture-first
-    move ordering, PV tracking, seldepth, cancellation/deadline/node limits,
+    fixed-depth `Search`, iterative-deepening `SearchWithLimits`, depth-zero
+    delegation to `quiesce`, MVV-LVA + killer + history move ordering,
+    principal-variation search with root aspiration windows, null-move pruning,
+    late-move reductions, futility pruning, PV tracking, seldepth,
+    twofold-repetition draw scoring, cancellation/deadline/node limits,
     transposition-table probes/cutoffs/hash-move ordering, and `ScoreToMate`.
   - `transposition.go` — `TranspositionTable`, `NewTranspositionTable`,
     `Clear`, `TTStats`, depth-preferred/aging replacement, and mate-score
@@ -219,6 +239,10 @@ go run ./cmd/perft -suite data/perft.csv
 go run ./cmd/match -stockfish stockfish -games 4 -depth 4
 go run ./cmd/arena -pairs 20 -movetime 250ms -sf-elo 1320
 go run ./cmd/arena -check-book
+go run ./cmd/arena versions -openings 20 -depth 5 -anchor-elo 1640
+go run ./cmd/arena versions -engine ./gochess-new -baseline ./gochess-old -depth 6
+go run ./cmd/arena versions -engine ./gochess-new -baseline ./gochess-old -movetime 100ms
+go run ./cmd/arena versions -engine ./gochess-new -baseline ./gochess-old -nodes 100000
 go run ./cmd/search -depth 4
 go run ./cmd/search -fen "<FEN>" -depth 5
 go run ./cmd/search -fen "<FEN>" -moves "e2e4 e7e5" -depth 5
@@ -306,7 +330,10 @@ Bitboard representation:
   capturable en passant target, but not the clocks. `makeMoveForLegality`
   performs only the board and occupancy updates needed for king-safety
   filtering; its key, clocks, rights, and en passant target are stale, so it
-  must not be used as a game position.
+  must not be used as a game position. `nullMove` is the pruning-only "pass":
+  the same board with the side to move flipped, en passant cleared, and the
+  clocks advanced. It is never a legal move and only the search uses it.
+  `hasNonPawnMaterial` gates null-move pruning.
 - `LegalMoves` computes checkers and absolute-pin masks once, then generates
   ordinary non-king moves directly through check and pin masks. Double check
   generates king moves only. King moves and en-passant candidates retain
@@ -328,10 +355,18 @@ Bitboard representation:
 Evaluation and search:
 
 - `Position.Evaluate` returns centipawns from **White's** point of view and
-  needs no attack tables. It sums a precomputed `[12][64]int`
-  (`pieceSquareValues`) containing material, centrality, king safety, and pawn
-  advancement. Black entries are the negated value on the rank-mirrored square
-  (`square ^ 56`).
+  requires the attack tables (`ensureAttackTables` panics otherwise). It sums a
+  precomputed `[12][64]int` (`pieceSquareValues`) containing material,
+  centrality, king safety, and pawn advancement. Black entries are the negated
+  value on the rank-mirrored square (`square ^ 56`). It then adds symmetric
+  attack terms from `attackPenalty`: a hanging piece (attacked and undefended),
+  or a piece attacked by a cheaper material class, costs 10 (pawn), 30
+  (knight/bishop), 50 (rook), or 80 (queen); a defended piece attacked by an
+  equal or more valuable piece is left to the search. A king costs 50 whenever
+  it is attacked, because that is check. Attacking an enemy piece earns the
+  same bonus because `Evaluate` is zero-sum for negamax. The terms are
+  deliberately small because a static attack test cannot resolve defenders and
+  escape squares.
 - `SearchResult.Score` is from the **side to move's** point of view, the negamax
   convention. `evaluateForSideToMove` does the sign flip for Black; forgetting
   it is the classic evaluation bug.
@@ -347,7 +382,28 @@ Evaluation and search:
   oldest first), `TT` (nil disables the table; the caller owns reuse and
   clearing), and `CollectMetrics` (default false). It checks cancellation
   and the hard deadline every 256 nodes and at every root move, so `stop` stays
-  responsive.
+  responsive. `MaxNodes`, deadlines, and cancellation include quiescence work.
+- `negamax` uses principal-variation search: the first move of a PV node is
+  searched with the full window, later moves are scouted with a null window and
+  re-searched when they improve alpha. `pv := beta-alpha > 1` identifies a PV
+  node, and table cutoffs are skipped there. Unsound pruning runs only at
+  null-window (scout) nodes: null move (depth >= 5, not in check, no consecutive
+  nulls, non-pawn material, R=3), late-move reductions on late quiet moves that
+  do not give check (re-searched at full depth on a fail-high), and futility
+  pruning at depth <= 2 (quiet moves only, `staticEval + 100*depth <= alpha`).
+  The PV is therefore searched with no reductions and no pruning. The root adds
+  aspiration windows from depth 4: 25 cp around the previous score, doubling on
+  a fail, capped retries, then the full window.
+- `negamax` delegates every depth-zero node to `quiesce` in `chess/qsearch.go`.
+  It searches captures, en passant, and promotions; it takes the static score as
+  a stand-pat lower bound when not in check; and it searches every legal evasion
+  when in check, returning a mate score when there are none. Ordering is
+  MVV-LVA. Quiescence does not probe or store in the transposition table and
+  does not extend the PV. It counts its own node, so every node is counted
+  exactly once, and `SelDepth` includes quiescence plies while `Depth` does not.
+  Draw checks run at every quiescence node, with checkmate taking precedence
+  over a fifty-move or repetition claim. Stalemate at the horizon is
+  deliberately not detected.
 - `TranspositionTable` stores the full 64-bit Zobrist key, a move, a score, a
   depth, a bound (`ttExact`/`ttLower`/`ttUpper`), and an age. Indexing is
   `key & mask`; the slot count is rounded down to a power of two. Replacement is
@@ -370,7 +426,10 @@ Evaluation and search:
   copy-make. `PseudoMoves` counts directly emitted legal moves plus king and
   en-passant candidates before rejection. `MakeMoveCalls` counts every
   copy-make, including king and en-passant validation in legal generation;
-  `SearchMakeMoveCalls` is the search-tree subset.
+  `SearchMakeMoveCalls` is the search-tree subset, including quiescence nodes
+  and null-move copies. PVS and LMR re-searches revisit a child without copying
+  it again, so `Nodes` can slightly exceed `SearchMakeMoveCalls`. All counters
+  and timings include quiescence work.
   Metrics are compiled in only with `-tags metrics`; `MetricsEnabled` reports
   which build is active. The default build has no timer, counter, or wrapper
   dispatch overhead: `CollectMetrics` is ignored and `SearchResult.Metrics` is
@@ -385,9 +444,13 @@ Evaluation and search:
   first legal move with `Depth == 0`; a terminal position returns
   `HasMove == false`. `Draw` is true when the root itself is a fifty-move,
   threefold, or insufficient-material draw; a legal move is still returned.
-  `Nodes` is cumulative across iterations, `SelDepth` is the deepest ply
-  reached, and `PonderMove` is the second PV move when present. The `info`
-  callback runs once per completed iteration.
+  `Nodes` is cumulative across iterations and includes quiescence nodes,
+  `SelDepth` is the deepest ply reached including quiescence, and `PonderMove`
+  is the second PV move when present. The PV is the last completed iteration's
+  line and may end at the leaf where quiescence took over. A root move scored as
+  a repetition is not searched, so it gets a one-move PV. The `info` callback
+  runs once per completed iteration; an aspiration re-search of the same depth
+  does not emit another line.
 - UCI `searchmoves` is resolved to generated moves and passed as `RootMoves`.
   UCI clocks become `Deadline`/`SoftDeadline` through `uci.allocateBudget`;
   `Move Overhead` is reserved before the deadline is computed.
@@ -402,7 +465,13 @@ Evaluation and search:
   through `SearchLimits.GameHistory`; the draw helpers live in `repetition.go`.
   A drawn root returns a legal move with `Draw == true` and score 0, because
   UCI still requires a `bestmove`. Checkmate takes precedence over a draw.
-- At depth 0 the search still tests for checkmate when the side to move is in
+- `searcher.repeatsEarlier` also scores a move that returns to a position
+  already present once in the game history plus search path as a draw, before
+  recursing into the child. This is deliberately earlier than the threefold
+  check: it stops a winning side from shuffling into a repetition and prevents
+  a transposition-table cutoff at the repeated child from hiding a perpetual
+  check. The root threefold check still uses `repetitionDraw`.
+- At depth 0, `quiesce` still tests for checkmate when the side to move is in
   check, so a depth-1 search finds mate in one. Stalemate exactly at the horizon
   is not detected.
 - `cmd/search` builds the attack tables itself. Run it from the repo root so
@@ -542,10 +611,14 @@ Things to be careful with:
   directory. `BuildAllAttacksFromFS` deliberately does not fall back to a
   random magic search: a bad embedded file should be a startup error, not an
   unpredictable delay.
-- `SearchWithLimits` counts nodes at `negamax` entry, excluding the root, and
-  polls cancellation/deadlines every 256 nodes. If you change the polling
-  interval, keep `stop` responsive at low time controls. `SearchResult.Nodes`
-  is cumulative across iterative-deepening iterations.
+- `SearchWithLimits` counts nodes at `negamax` entry for depth-positive nodes
+  and at `quiesce` entry for leaves, excluding the root, and polls
+  cancellation/deadlines every 256 nodes. If you change the polling interval,
+  keep `stop` responsive at low time controls. `SearchResult.Nodes` is
+  cumulative across iterative-deepening iterations and aspiration retries. Each
+  non-root node is entered by exactly one copy-make, so `SearchMakeMoveCalls`
+  matches `Nodes` except for the extra entries opened by PVS and LMR re-searches
+  (small, and asserted loosely on the metrics fixture).
 - `TranspositionTable` is single-threaded and has no locks. Reuse one table only
   for sequential searches; a nil `SearchLimits.TT` disables it. The UCI engine
   allocates, resizes, and clears the table only from the command loop while
@@ -590,19 +663,29 @@ Things to be careful with:
   data-driven from `data/perft.csv`; the fast rows run by default and the deep
   rows run with `PERFT_DEEP=1`.
 - Evaluation coverage includes the starting position (0), exact deltas for
-  centrality, king corner, pawn advancement, material removal, a table-mirror
-  check, and a colour-symmetry test that flips a FEN vertically and asserts the
+  centrality, king corner, pawn advancement, material removal, attacked-piece
+  cases for every type and both colours, hanging versus defended pieces,
+  cheaper-attacker cases, a check that `attackInfo.all` matches
+  `isSquareAttacked`, a table-mirror check, and a colour-symmetry test
+  (including attack positions) that flips a FEN vertically and asserts the
   score negates.
 - Search coverage includes mate in one, checkmate, stalemate, a free queen, a
   poisoned-pawn horizon case, best-move legality, determinism, non-mutation, and
-  a score comparison against a full-width reference minimax at depths 1-3.
+  a score comparison against a full-width reference minimax at per-fixture
+  depths. `chess/qsearch_test.go` covers stand-pat, free and defended captures,
+  en passant, promotions, MVV-LVA ordering, quiet evasions, mate/draw precedence
+  at the horizon, the max-ply cap, colour symmetry, node limits, cancellation,
+  and reference equivalence. The reference oracle models draws, repetition, and
+  the ply cap but has no alpha-beta, so dense middlegame positions are compared
+  only at shallow depths.
 - `chess/ucimove_test.go` covers double pushes, captures, en passant, castling,
   all four promotions, promotion captures, illegal/malformed moves, and
   `FindLegalMove` with flagless notation. `chess/repetition_test.go` covers key
   equality and incremental maintenance, fifty-move, seventy-five-move,
   threefold/fivefold, and insufficient-material draws at the root,
-  repetition/fifty-move detection along the search path, and checkmate
-  precedence.
+  repetition/fifty-move detection along the search path, twofold repetition
+  avoidance with a transposition table (the real-game shuffling position), and
+  checkmate precedence.
   `chess/data_fs_test.go` covers `BuildAllAttacksFromFS(data.FS)`, missing
   embedded files, and `LoadMagicEntriesFS`. `chess/search_limits_test.go`
   covers iterative deepening, info callbacks, PV legality, soft deadlines, node
@@ -621,7 +704,10 @@ Things to be careful with:
   external UCI client, per-position perft validation, legal-move checks, and
   draw awareness. CI runs the Stockfish match test after installing Stockfish.
 - `cmd/arena` tests cover Elo conversion, the pair bootstrap, score conversion,
-  and book loading, validation, and transposition dropping.
+  book loading/validation/transposition dropping, random opening selection,
+  info parsing, engine metric aggregation, colour splits, fixed-depth,
+  fixed-time, and fixed-node version games driven by fake engines, and rejection
+  of conflicting limit flags.
 - `uci/client_test.go` covers `StartInProcess`, `SetPosition` (including an
   invalid FEN and recovery), `GoDepth`, `GoMovetime`, `GoNodes`, `SetOption`,
   PV legality, terminal positions, `NewGame`, idempotent `Close`, analysis

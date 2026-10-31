@@ -33,6 +33,18 @@ func (s *searcher) evaluate(b *Position) int {
 	return score
 }
 
+func (s *searcher) makeNullMove(b *Position) Position {
+	if s.metrics == nil {
+		return b.nullMove()
+	}
+	start := time.Now()
+	child := b.nullMove()
+	s.metrics.MakeMoveCalls++
+	s.metrics.SearchMakeMoveCalls++
+	s.metrics.SearchMakeMoveNS += time.Since(start).Nanoseconds()
+	return child
+}
+
 func (s *searcher) makeMove(b *Position, move Move) Position {
 	if s.metrics == nil {
 		return b.makeMove(move)
