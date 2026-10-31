@@ -16,7 +16,7 @@ engine:
   dir: "../../.."
   name: "gochess"
   protocol: "uci"
-  ponder: false          # gochess has no pondering
+  ponder: true           # python-chess sets the engine's Ponder option per move
   working_dir: ""
   debug: false
   uci_options:
