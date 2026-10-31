@@ -1,0 +1,29 @@
+[Unit]
+Description=gochess Lichess bot (lichess-bot bridge)
+Documentation=https://github.com/ethankuehler/gochess/blob/main/tools/lichess/README.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Group=@GROUP@
+WorkingDirectory=@BOTDIR@
+EnvironmentFile=@ENVFILE@
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@VENV@/bin/python lichess-bot.py --config @CONFIG@ --logfile @LOGFILE@
+
+# lichess-bot finishes running games on SIGINT; SIGTERM would abort them.
+KillSignal=SIGINT
+# Send that SIGINT only to the bridge, not to the engine processes in its
+# cgroup. The engines are shut down by lichess-bot itself, after the games end.
+KillMode=mixed
+# A 10+5 game can run for 20 minutes; do not SIGKILL it on `systemctl stop`.
+TimeoutStopSec=1500
+
+Restart=always
+RestartSec=15
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

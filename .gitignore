@@ -21,4 +21,5 @@ tools/lichess/venv/
 tools/lichess/games/
 tools/lichess/*.log
 tools/lichess/config.local.yml
+tools/lichess/config.deploy.yml
 tools/lichess/.env

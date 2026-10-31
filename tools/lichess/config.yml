@@ -99,4 +99,13 @@ matchmaking:
   # picking 2500+ bots that decline; 400 still includes the useful 1200-1900
   # range. Incoming challenges keep the wider band above.
   opponent_rating_difference: 400
-  rating_preference: "none"
+  # Weight the draw toward the top of the band. lichess-bot's weight is
+  # `rating - 593`, so a bot at the top (~2196) is 2x as likely to be picked as
+  # one at the bottom (~1396). Measured over the live pool (406 bots online,
+  # 157 in band) the mean opponent moves from ~1820 to ~1860 and the 1900+ share
+  # of challenges goes from ~37% to ~44%. That is a nudge, not a filter: the
+  # weak end stays reachable (the bot scores ~95% below 1500).
+  # Set back to "none" for a flat distribution, or "low" to bias the other way.
+  # For a real floor, drop opponent_rating_difference (it takes precedence) and
+  # set opponent_min_rating/opponent_max_rating instead.
+  rating_preference: "high"

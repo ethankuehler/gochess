@@ -98,7 +98,24 @@ echo "==> building gochess"
 (cd "$root" && go build -o gochess ./cmd/uci)
 
 cd "$botdir"
-exec "$venv/bin/python" lichess-bot.py \
-  --config "$here/config.yml" \
-  --logfile "$here/lichess-bot.log" \
-  "$@"
+
+# Hold a power assertion for as long as the bot runs. -d keeps the display
+# awake, -i prevents idle system sleep, -m keeps the disk awake, -s prevents
+# system sleep on AC, and -u declares the user active. Lichess keeps the game
+# clock running while the host is suspended, so a sleep of even a minute can
+# turn a winning position into a time forfeit.
+#
+# Nothing in this script needs root: caffeinate holds a per-user assertion for
+# as long as the bot runs. It cannot prevent a lid-close sleep, though, so keep
+# the lid open. Disabling lid-close sleep itself is a separate, root-only
+# system setting (pmset) and is not required here.
+bot=( "$venv/bin/python" lichess-bot.py
+      --config "$here/config.yml"
+      --logfile "$here/lichess-bot.log"
+      "$@" )
+if command -v caffeinate >/dev/null 2>&1; then
+  echo "==> keeping the host awake with caffeinate"
+  exec caffeinate -dimsu "${bot[@]}"
+fi
+echo "warning: caffeinate not found; the host may sleep mid-game" >&2
+exec "${bot[@]}"

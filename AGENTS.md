@@ -216,6 +216,13 @@ deepening alpha-beta search, and a UCI front end.
   tighter 400-point band. No token is stored in the repo, and neither script is
   part of the Go build, tests, or CI. The generated `lichess-bot/`, `venv/`,
   `games/`, `.env`, and logs are gitignored.
+
+  **Do not deploy the bot to GitHub Actions.** The owner has ruled this out:
+  `.github/workflows/lichess-bot.yml` is disabled and must not be enabled,
+  re-added, or proposed as a hosting option unless the owner explicitly asks
+  for it in that conversation. The bot is meant to run on the owner's own
+  machine or a VPS. `tools/lichess/deploy/lichess-bot.yml` is kept only as an
+  inert template.
 - `.github/workflows/ci.yml` — GitHub Actions CI (format, build, vet, race
   tests).
 - `.vscode/launch.json` — VS Code debug config for `main.go`.
@@ -377,12 +384,19 @@ Evaluation and search:
 - `Position.SearchWithLimits(ctx, limits, info)` performs iterative-deepening
   negamax alpha-beta. `SearchLimits` has `MaxDepth` (0 means no explicit cap, up
   to `maxPly`), `MaxNodes`, `Deadline` (hard wall clock), `SoftDeadline` (stop
-  between iterations), `RootMoves` (nil means all legal moves; a non-nil empty
-  list means no root moves), `GameHistory` (position keys before the root,
-  oldest first), `TT` (nil disables the table; the caller owns reuse and
-  clearing), and `CollectMetrics` (default false). It checks cancellation
-  and the hard deadline every 256 nodes and at every root move, so `stop` stays
-  responsive. `MaxNodes`, deadlines, and cancellation include quiescence work.
+  between iterations), `Clock` (a `*SearchClock` that overrides both time
+  fields), `RootMoves` (nil means all legal moves; a non-nil empty list means no
+  root moves), `GameHistory` (position keys before the root, oldest first), `TT`
+  (nil disables the table; the caller owns reuse and clearing), and
+  `CollectMetrics` (default false). It checks cancellation and the hard deadline
+  every 256 nodes and at every root move, so `stop` stays responsive.
+  `MaxNodes`, deadlines, and cancellation include quiescence work.
+- `SearchClock` stores soft and hard deadlines in `atomic.Int64` Unix
+  nanoseconds; the zero value means no deadline. `SetDeadlines` is safe to call
+  while the search runs, which is how `go ponder` starts untimed and `ponderhit`
+  installs the move budget. A non-nil `SearchLimits.Clock` wins over
+  `Deadline`/`SoftDeadline`. Do not set a ponder deadline at `go ponder`; the
+  budget must start at the hit, when the engine's clock actually starts.
 - `negamax` uses principal-variation search: the first move of a PV node is
   searched with the full window, later moves are scouted with a null window and
   re-searched when they improve alpha. `pv := beta-alpha > 1` identifies a PV
@@ -532,10 +546,14 @@ UCI protocol:
   `info string no valid position` and `bestmove 0000` rather than searching a
   stale board.
 - `go` supports `depth`, `nodes`, `movetime`, `wtime`/`btime`/`winc`/`binc`/
-  `movestogo`, `infinite`, `ponder` (treated as infinite; `ponderhit` acts as stop because
-  pondering is not implemented), and `searchmoves`.
-  A bare `go` is treated as infinite. `infinite` waits for `stop` after the
-  search result is ready; terminal positions send `bestmove 0000` immediately.
+  `movestogo`, `infinite`, `ponder`, and `searchmoves`. A `go ponder` search
+  runs without a clock; `ponderhit` installs the normal `allocateBudget`
+  deadline starting at the hit, using the stored `wtime`/`btime`/`movetime`.
+  If the pondered search already reached a depth/node limit, it waits for
+  `ponderhit` or `stop`. `stop` still produces a `bestmove`, including during
+  pondering. A bare `go` is treated as infinite. `infinite` waits for `stop`
+  after the search result is ready; terminal positions send `bestmove 0000`
+  immediately.
 - When `go` carries both `movetime` and clock fields, `movetime` is a ceiling:
   `allocateBudget` uses the smaller of the movetime cap and the clock budget.
   A GUI that sends both (lichess-bot does) therefore cannot make the engine
@@ -543,16 +561,28 @@ UCI protocol:
 - Checkmate and stalemate use `bestmove 0000`; checkmate is `info score mate 0`
   and stalemate is `info score cp 0`. Scores are side-to-move relative, and mate
   distances are in moves via `ScoreToMate`.
-- `Hash` (default 16 MB, range 1–1024), `Clear Hash`, `Threads` (1..1), and
-  `Move Overhead` are always advertised. `setoption name Hash` allocates a new
-  table and `Clear Hash` clears the current one; both are ignored while a search
-  is running. A metrics build also advertises `Analysis` (check, default false);
-  it adds one compact `info string analysis <json>` before the final `bestmove`,
-  and the client retains per-iteration
-  depth/seldepth/nodes/time/NPS and the final metrics. `Ponder`, `MultiPV`, and
-  `UCI_Chess960` are accepted/ignored where harmless but are not advertised
-  because they are not implemented. There is no pondering, MultiPV, Chess960,
-  tablebase, or opening book support.
+- `Hash` (default 16 MB, range 1–1024), `Clear Hash`, `Threads` (1..1),
+  `Move Overhead`, and `Ponder` (check, default false) are always advertised.
+  `setoption name Hash` allocates a new table and `Clear Hash` clears the
+  current one; both are ignored while a search is running. A metrics build also
+  advertises `Analysis` (check, default false); it adds one compact
+  `info string analysis <json>` before the final `bestmove`, and the client
+  retains per-iteration depth/seldepth/nodes/time/NPS and the final metrics.
+  `Ponder` controls the GUI's willingness to ponder; the engine honors
+  `go ponder` regardless of the option value. `MultiPV` and `UCI_Chess960` are
+  accepted/ignored where harmless but are not advertised because they are not
+  implemented. There is no MultiPV, Chess960, tablebase, or opening book
+  support.
+- Pondering uses `Engine.ponder` (a `*ponderState`), not the old boolean.
+  `go ponder` starts with `SearchLimits.Clock` and no deadline; `ponderhit`
+  computes the normal budget from the stored, sanitized `go` params with
+  `now` as the start and calls `SetDeadlines`. Both `ponderhit` and `stop`
+  close the release channel exactly once; the search goroutine waits on it
+  after `SearchWithLimits` returns. The final `bestmove` is withheld until
+  that release, and `bestmove` carries `ponder <reply>` from `PonderMove`.
+  `finishSearch` clears the state before writing `bestmove`. Never set the
+  deadline at `go ponder` and never suppress `bestmove` on `stop` during
+  pondering: the UCI spec and python-chess both require it.
 - `bench` uses a fixed position list, fixed depth, one thread, and no clock; its
   final stdout line is `<nodes> nodes <nps> nps`. It creates one table and
   clears it between positions, so per-position node counts are deterministic.

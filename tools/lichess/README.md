@@ -61,6 +61,19 @@ the upgrade is irreversible.
    `run.sh` rebuilds `./gochess` before each start, so the running bot always
    matches the working tree.
 
+## Running it 24/7
+
+GitHub Actions is **not** an approved hosting option here; the owner has ruled
+it out. Do not enable `.github/workflows/lichess-bot.yml` or propose Actions as
+a host without an explicit request.
+
+`run.sh` is meant for a laptop: it keeps the host awake with `caffeinate` and
+dies with the terminal. For an always-on host, see
+[`deploy/README.md`](deploy/README.md). It installs the same bridge as a
+systemd service on an Oracle Cloud Always Free VM, derives a per-host
+`config.deploy.yml` (with a `--low-ram` variant for the 1 GB micro shape), and
+stops with SIGINT so running games finish instead of being aborted.
+
 ## What it plays
 
 `config.yml` is set up for:
