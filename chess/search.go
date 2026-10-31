@@ -2,6 +2,7 @@ package chess
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 )
 
@@ -34,6 +35,60 @@ const (
 	maxRepeatHistory = 100
 )
 
+// SearchClock holds the wall-clock deadlines for one search. The zero value
+// means no deadline. It is safe to update while a search is running, which is
+// how pondering starts without a clock and installs the move budget when the
+// GUI sends ponderhit.
+//
+// Deadlines are stored as Unix nanoseconds, so the monotonic clock reading of a
+// time.Time is dropped. That is fine for a move deadline: the search only needs
+// to compare wall-clock instants, and a single atomic load keeps the check
+// cheap on the node path.
+type SearchClock struct {
+	soft atomic.Int64 // Unix nanoseconds; 0 means none
+	hard atomic.Int64
+}
+
+// SetDeadlines installs the soft and hard deadlines. A zero time clears that
+// deadline. The search reads them after every completed iteration and every
+// searchCheckInterval nodes, so an update takes effect at the next check.
+func (c *SearchClock) SetDeadlines(soft, hard time.Time) {
+	c.soft.Store(deadlineNanos(soft))
+	c.hard.Store(deadlineNanos(hard))
+}
+
+// Deadlines returns the deadlines currently installed. A zero time means that
+// deadline is unset.
+func (c *SearchClock) Deadlines() (soft, hard time.Time) {
+	return timeFromNanos(c.soft.Load()), timeFromNanos(c.hard.Load())
+}
+
+func deadlineNanos(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixNano()
+}
+
+func timeFromNanos(n int64) time.Time {
+	if n == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, n)
+}
+
+// softPassed reports whether the soft deadline has been reached.
+func (c *SearchClock) softPassed() bool {
+	d := c.soft.Load()
+	return d != 0 && time.Now().UnixNano() >= d
+}
+
+// hardPassed reports whether the hard deadline has been reached.
+func (c *SearchClock) hardPassed() bool {
+	d := c.hard.Load()
+	return d != 0 && time.Now().UnixNano() >= d
+}
+
 // SearchLimits describes the bounds of one search. Zero values mean "no limit"
 // except for MaxDepth, where zero also means "no explicit depth limit" and the
 // searcher deepens until the deadline, the node limit, or cancellation.
@@ -42,6 +97,7 @@ type SearchLimits struct {
 	MaxNodes       uint64              // counts negamax and quiescence nodes; zero means none
 	Deadline       time.Time           // hard wall-clock deadline; zero means none
 	SoftDeadline   time.Time           // stop between iterations after this time; zero means none
+	Clock          *SearchClock        // overrides the two deadlines; may be updated while searching
 	RootMoves      []Move              // nil means every legal move; non-nil restricts the root
 	GameHistory    []PositionKey       // keys of positions before the root, oldest first
 	TT             *TranspositionTable // nil disables the transposition table
@@ -174,9 +230,14 @@ func (b *Position) searchWithOptions(ctx context.Context, limits SearchLimits, i
 			result.Metrics = metrics
 		}()
 	}
+	clock := limits.Clock
+	if clock == nil {
+		clock = new(SearchClock)
+		clock.SetDeadlines(limits.SoftDeadline, limits.Deadline)
+	}
 	s := searcher{
 		ctx:      ctx,
-		deadline: limits.Deadline,
+		clock:    clock,
 		maxNodes: limits.MaxNodes,
 		tt:       limits.TT,
 		metrics:  metrics,
@@ -344,7 +405,7 @@ func (b *Position) searchWithOptions(ctx context.Context, limits SearchLimits, i
 		}
 
 		promoteMove(ordered, iterBest)
-		if !limits.SoftDeadline.IsZero() && !time.Now().Before(limits.SoftDeadline) {
+		if s.clock.softPassed() {
 			break
 		}
 	}
@@ -491,7 +552,7 @@ type searcher struct {
 	opts searchOptions
 
 	ctx      context.Context
-	deadline time.Time
+	clock    *SearchClock
 	maxNodes uint64
 	nodes    uint64
 	stopped  bool
@@ -599,7 +660,7 @@ func (s *searcher) shouldStop() bool {
 		default:
 		}
 	}
-	if !s.deadline.IsZero() && !time.Now().Before(s.deadline) {
+	if s.clock != nil && s.clock.hardPassed() {
 		s.stopped = true
 		return true
 	}
