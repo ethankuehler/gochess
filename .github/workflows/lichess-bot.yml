@@ -1,16 +1,17 @@
-# Template: run gochess as a Lichess bot on GitHub Actions.
+# gochess on GitHub Actions — DO NOT ENABLE.
 #
-# This file lives outside .github/workflows on purpose, so it is inert until you
-# opt in:
+# The owner has ruled out GitHub Actions as a hosting option (see AGENTS.md).
+# This workflow is disabled on purpose and must stay that way: do not enable it,
+# do not dispatch it, and do not propose it as a hosting option unless the
+# owner explicitly asks for it. The bot runs on the owner's own machine or a
+# VPS instead.
 #
-#   cp tools/lichess/deploy/lichess-bot.yml .github/workflows/lichess-bot.yml
-#   gh secret set LICHESS_BOT_TOKEN        # or Settings -> Secrets -> Actions
+# The inert copy of this workflow lives in tools/lichess/deploy/ and carries the
+# same warning. Kept in-repo only as a reference implementation.
 #
-# Then trigger it with "Run workflow" once before trusting the schedule.
-#
-# Shape of the run: GitHub kills a job at 6 hours, so the bot plays for 5h20m,
-# gets SIGINT, and is given the rest of the window to finish its games. The cron
-# fires every 6 hours, which leaves a ~40 minute gap between runs.
+# Design notes, if it is ever revived: GitHub kills a job at 6 hours, so the bot
+# plays for 5h20m, gets SIGINT, and is given the rest of the window to finish
+# its games. The cron fires every 6 hours, leaving a ~40 minute gap.
 name: lichess-bot
 
 on:

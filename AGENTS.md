@@ -216,6 +216,13 @@ deepening alpha-beta search, and a UCI front end.
   tighter 400-point band. No token is stored in the repo, and neither script is
   part of the Go build, tests, or CI. The generated `lichess-bot/`, `venv/`,
   `games/`, `.env`, and logs are gitignored.
+
+  **Do not deploy the bot to GitHub Actions.** The owner has ruled this out:
+  `.github/workflows/lichess-bot.yml` is disabled and must not be enabled,
+  re-added, or proposed as a hosting option unless the owner explicitly asks
+  for it in that conversation. The bot is meant to run on the owner's own
+  machine or a VPS. `tools/lichess/deploy/lichess-bot.yml` is kept only as an
+  inert template.
 - `.github/workflows/ci.yml` — GitHub Actions CI (format, build, vet, race
   tests).
 - `.vscode/launch.json` — VS Code debug config for `main.go`.
