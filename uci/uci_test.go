@@ -266,8 +266,7 @@ func TestAllocateBudget(t *testing.T) {
 		t.Fatalf("low-time budget = %+v", lowTime)
 	}
 
-	// A movetime is a ceiling when the clock is also present. At 3+2 with
-	// three seconds left the clock budget is 750ms soft / 1.5s hard, not 5s.
+	// Movetime caps the budget derived from the clock.
 	clockCapped := allocateBudget(goParams{
 		hasClock:    true,
 		wtime:       3 * time.Second,

@@ -2,7 +2,6 @@
 
 package chess
 
-// MetricsEnabled reports whether this build compiles in search metrics.
 const MetricsEnabled = false
 
 func (s *searcher) legalMoves(b *Position, buf []Move) []Move {

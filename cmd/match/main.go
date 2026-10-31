@@ -1,8 +1,4 @@
-// Command match plays gochess against Stockfish and checks the rules at every
-// position. Stockfish is used both as an opponent and as an independent perft
-// oracle: before each move the legal-move tree is compared with Stockfish at
-// the requested validation depth. The game is adjudicated with the same draw
-// rules the engine implements, and gochess must recognize each drawn position.
+// Command match validates gochess games against Stockfish.
 package main
 
 import (
@@ -319,8 +315,6 @@ func drawReason(board *chess.Position, history []chess.PositionKey) string {
 	}
 }
 
-// checkTerminalAwareness requires the search to report the correct result for
-// checkmate and stalemate.
 func checkTerminalAwareness(board *chess.Position, history []chess.PositionKey, depth int) error {
 	result := board.SearchWithLimits(context.Background(), chess.SearchLimits{
 		MaxDepth:    depth,
@@ -341,8 +335,6 @@ func checkTerminalAwareness(board *chess.Position, history []chess.PositionKey, 
 	return nil
 }
 
-// checkDrawAwareness runs gochess's own search on a drawn position and requires
-// it to report the draw with score zero.
 func checkDrawAwareness(board *chess.Position, history []chess.PositionKey, depth int, reason string) error {
 	result := board.SearchWithLimits(context.Background(), chess.SearchLimits{
 		MaxDepth:    depth,
@@ -360,8 +352,6 @@ func checkDrawAwareness(board *chess.Position, history []chess.PositionKey, dept
 	return nil
 }
 
-// validatePosition compares our perft divide with Stockfish's at the current
-// position. At depth 1 this checks the complete legal move list.
 func validatePosition(board *chess.Position, rootFEN string, history []string, stockfish *stockfishClient, depth int) error {
 	if err := stockfish.setPosition(rootFEN, history); err != nil {
 		return err

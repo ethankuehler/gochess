@@ -1,14 +1,6 @@
 package chess
 
-// quiesce resolves forcing moves at a leaf: captures, en passant, and
-// promotions. It counts its own node, so negamax must delegate at depth zero
-// before calling tick. Every node in the search is counted exactly once.
-//
-// When the side to move is in check, stand-pat is forbidden and every legal
-// evasion is searched; checkmate takes precedence over a draw claim. Otherwise
-// the static score is the stand-pat lower bound and only forcing moves are
-// searched. Quiescence does not use the transposition table and does not extend
-// the principal variation.
+// quiesce resolves captures and promotions, or every evasion when in check.
 func (s *searcher) quiesce(b Position, alpha, beta, ply int) int {
 	if s.tick() {
 		return 0
@@ -24,8 +16,6 @@ func (s *searcher) quiesce(b Position, alpha, beta, ply int) int {
 	}
 
 	if ply >= maxPly {
-		// Safety net. Threefold repetition and this cap are what terminate long
-		// check-evasion sequences; mate detection is not attempted at the cap.
 		if b.IsFiftyMoveDraw() || b.IsInsufficientMaterial() {
 			return 0
 		}
@@ -71,8 +61,6 @@ func (s *searcher) quiesce(b Position, alpha, beta, ply int) int {
 	return s.searchQSMoves(&b, forcing, standPat, alpha, beta, ply)
 }
 
-// searchQSMoves searches moves with fail-soft alpha-beta. best is stand-pat at
-// a non-check node and -infinity at an evasion node. It never updates the PV.
 func (s *searcher) searchQSMoves(b *Position, moves []Move, best, alpha, beta, ply int) int {
 	for _, m := range moves {
 		child := s.makeMove(b, m)
@@ -96,9 +84,6 @@ func (s *searcher) searchQSMoves(b *Position, moves []Move, best, alpha, beta, p
 	return best
 }
 
-// filterCapturesAndPromotions compacts captures, en passant, and promotions to
-// the front of moves and returns the used prefix. It writes in place, so it
-// does not allocate.
 func filterCapturesAndPromotions(moves []Move) []Move {
 	kept := moves[:0]
 	for _, m := range moves {
@@ -109,9 +94,6 @@ func filterCapturesAndPromotions(moves []Move) []Move {
 	return kept
 }
 
-// orderQSMoves sorts moves by MVV-LVA in descending order. The insertion sort
-// is stable, so equal scores keep generation order; quiet evasions score zero,
-// which puts them after every capture and promotion in generation order.
 func orderQSMoves(b *Position, moves []Move) {
 	var scores [256]int
 	for i, m := range moves {
@@ -128,10 +110,7 @@ func orderQSMoves(b *Position, moves []Move) {
 	}
 }
 
-// mvvLva scores a capture by the victim's value minus the attacker's. Move does
-// not encode the captured piece, so the victim comes from the board. An
-// en-passant capture targets an empty square and is therefore scored as a pawn
-// capture. It is shared by quiescence ordering and the main search's ordering.
+// mvvLva treats an empty capture target as an en-passant pawn.
 func mvvLva(b *Position, m Move) int {
 	attacker := 0
 	if _, piece, ok := b.PieceAt(m.From()); ok {
@@ -148,8 +127,6 @@ func mvvLva(b *Position, m Move) int {
 	return victim*16 - attacker
 }
 
-// qsMoveScore returns the MVV-LVA score of a move plus the value of any
-// promotion, so a promotion capture outranks a plain capture.
 func qsMoveScore(b *Position, m Move) int {
 	score := mvvLva(b, m)
 	if piece, ok := m.Promotion(); ok {

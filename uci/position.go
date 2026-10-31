@@ -45,9 +45,6 @@ func (e *Engine) positionFailed(err error) {
 	e.mu.Unlock()
 }
 
-// parsePosition parses a position command's arguments and applies every move.
-// It returns the new position and the keys of the positions before it, oldest
-// first, and never mutates the engine state on failure.
 func parsePosition(args []string) (*chess.Position, []chess.PositionKey, error) {
 	if len(args) == 0 {
 		return nil, nil, fmt.Errorf("position: expected startpos or fen")

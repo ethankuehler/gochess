@@ -12,10 +12,6 @@ import (
 	"time"
 )
 
-// uciEngine is a minimal external UCI process client. The arena uses it for
-// Stockfish and for the two gochess builds in version matches. Keeping every
-// engine in its own process isolates crashes and makes the version match test
-// the exact binaries that were built.
 type uciEngine struct {
 	cmd       *exec.Cmd
 	stdin     io.WriteCloser
@@ -31,10 +27,6 @@ type engineOption struct {
 	value string
 }
 
-// engineSearchResult is the information collected from one `go` command. Score
-// is from the side to move's point of view, as UCI defines it. Nodes and
-// TimeMS are the final values reported by the engine; NPS is derived from them
-// when the engine does not report one.
 type engineSearchResult struct {
 	BestMove string
 	Score    int
@@ -95,9 +87,6 @@ func (c *uciEngine) handshake(options []engineOption) error {
 		}
 	}
 
-	// Fixed defaults keep games comparable and reproducible. Unknown options
-	// are ignored by the engine's tolerant setoption parser, so this is safe
-	// for older gochess builds as well as Stockfish.
 	base := []engineOption{
 		{name: "Threads", value: "1"},
 		{name: "Hash", value: "16"},
@@ -251,8 +240,6 @@ func (c *uciEngine) label() string {
 	return filepath.Base(c.path)
 }
 
-// parseEngineInfo extracts the final-search metrics the arena reports from one
-// UCI info line. Unknown fields and `info string` diagnostics are ignored.
 func parseEngineInfo(fields []string, result *engineSearchResult) {
 	if len(fields) < 2 || fields[1] == "string" {
 		return

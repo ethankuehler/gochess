@@ -10,9 +10,6 @@ import (
 	"github.com/ethankuehler/gochess/chess"
 )
 
-// startSearch launches the one search goroutine. The command loop remains free
-// to answer isready, stop, and quit while it runs. pondering is non-nil for a
-// go ponder search; it carries the clock that ponderhit updates.
 func (e *Engine) startSearch(position *chess.Position, limits chess.SearchLimits, infinite bool, pondering *ponderState) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -59,11 +56,7 @@ func (e *Engine) searchRoutine(ctx context.Context, position *chess.Position, li
 	})
 	elapsed := time.Since(start)
 
-	// A ponder search withholds its result until the GUI confirms the move
-	// (ponderhit) or abandons it (stop). If the search already hit a depth or
-	// node limit, this select is the only thing keeping it open. If it is still
-	// running, ponderhit has already closed the channel and the search keeps
-	// going until the deadline it installed.
+	// Ponder results wait for ponderhit or stop.
 	if pondering != nil {
 		select {
 		case <-pondering.release:
@@ -71,17 +64,12 @@ func (e *Engine) searchRoutine(ctx context.Context, position *chess.Position, li
 		}
 	}
 
-	// In infinite mode the search may reach a depth/node limit before the GUI
-	// sends stop. Hold the result until stop or quit, as the specification
-	// requires. Terminal positions are the exception: there is nothing to
-	// search, so bestmove goes out immediately.
+	// Infinite results wait for stop unless the position is terminal.
 	if infinite && result.HasMove {
 		<-ctx.Done()
 	}
 
-	// Mark the session idle before bestmove reaches the GUI. A GUI may react
-	// immediately with position/go, and the command loop must not reject that
-	// next command just because this goroutine is still writing its last line.
+	// Go idle before bestmove so the GUI can immediately send position/go.
 	e.finishSearch(done)
 	finished = true
 
@@ -110,8 +98,6 @@ func (e *Engine) isQuitting() bool {
 	return e.quitting
 }
 
-// writeInfo formats one UCI info line. Scores are reported from the side to
-// move's point of view, which is the engine's point of view at the root.
 func (e *Engine) writeInfo(info chess.SearchInfo) {
 	elapsedMS := info.Time.Milliseconds()
 	if elapsedMS < 1 {
@@ -139,9 +125,7 @@ func (e *Engine) writeInfo(info chess.SearchInfo) {
 
 func (e *Engine) writeFinal(result chess.SearchResult, elapsed time.Duration) {
 	if !result.HasMove {
-		// A terminal checkmate has Score == -MateScore. An empty searchmoves
-		// list also produces HasMove=false but Score 0, so do not infer mate
-		// from "no move returned".
+		// Empty searchmoves also has no move, but is not checkmate.
 		if moves, ok := chess.ScoreToMate(result.Score); ok && result.Score < 0 && moves == 0 {
 			e.out.line("info depth 0 score mate 0")
 		} else {

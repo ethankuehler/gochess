@@ -2,7 +2,6 @@ package chess
 
 import "testing"
 
-// mustFEN parses a FEN or fails the test.
 func mustFEN(t *testing.T, fen string) *Position {
 	t.Helper()
 	b, err := ParseFEN(fen)
@@ -12,8 +11,6 @@ func mustFEN(t *testing.T, fen string) *Position {
 	return b
 }
 
-// mustTestMove builds a move from UCI notation plus any flags the notation
-// cannot express.
 func mustTestMove(t *testing.T, uci string, extraFlags uint16) Move {
 	t.Helper()
 	m, err := ParseUCIMove(uci)
@@ -23,7 +20,6 @@ func mustTestMove(t *testing.T, uci string, extraFlags uint16) Move {
 	return newMove(m.From(), m.To(), m.flags|extraFlags)
 }
 
-// mustSquare parses an algebraic square or fails the test.
 func mustSquare(t *testing.T, name string) Square {
 	t.Helper()
 	square, err := ParseSquare(name)

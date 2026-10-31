@@ -97,8 +97,6 @@ func TestSearchClockUpdateSoftDuringSearch(t *testing.T) {
 		Clock:    clock,
 	}, func(info SearchInfo) {
 		if info.Depth == 2 {
-			// This mirrors ponderhit: the deadline is installed after the
-			// search has already started, between iterations.
 			clock.SetDeadlines(time.Now().Add(-time.Millisecond), time.Time{})
 		}
 	})

@@ -5,9 +5,7 @@ import (
 	"strings"
 )
 
-// PGNHeader holds the Seven Tag Roster values for a PGN game. Empty fields are
-// written as "?" (or "????.??.??" for Date), and an empty Result is written as
-// "*". Result must be one of "1-0", "0-1", "1/2-1/2", or "*".
+// PGNHeader holds the Seven Tag Roster; empty fields receive PGN defaults.
 type PGNHeader struct {
 	Event  string
 	Site   string
@@ -18,10 +16,6 @@ type PGNHeader struct {
 	Result string
 }
 
-// SAN returns the Standard Algebraic Notation form of a legal move. It returns
-// an error when m is not legal in b. The move may be a generated move or a
-// notation-only move from ParseUCIMove; promotion is part of the notation and
-// must match. Check and checkmate are marked with "+" and "#".
 func (b *Position) SAN(m Move) (string, error) {
 	legal, ok := b.FindLegalMove(m)
 	if !ok {
@@ -30,8 +24,6 @@ func (b *Position) SAN(m Move) (string, error) {
 	return b.san(legal), nil
 }
 
-// san formats a legal move. b must be the position before legal and legal must
-// be one of b.LegalMoves.
 func (b *Position) san(legal Move) string {
 	from, to := Square(legal.from), Square(legal.to)
 	if legal.IsCastling() {
@@ -70,7 +62,6 @@ func (b *Position) san(legal Move) string {
 	return san.String()
 }
 
-// sanSuffix returns "+" for a check and "#" for a checkmate, otherwise "".
 func (b *Position) sanSuffix(m Move) string {
 	next := b.makeMove(m)
 	if !next.InCheck() {
@@ -82,9 +73,6 @@ func (b *Position) sanSuffix(m Move) string {
 	return "+"
 }
 
-// sanDisambiguation returns the shortest file, rank, or square suffix that
-// identifies m among the legal moves of the same piece type to the same
-// destination square.
 func (b *Position) sanDisambiguation(m Move, piece Piece) string {
 	disambiguate := false
 	sameFile := false
@@ -125,10 +113,7 @@ func (b *Position) sanDisambiguation(m Move, piece Piece) string {
 	}
 }
 
-// PGN formats a game as Portable Game Notation. It emits the Seven Tag
-// Roster, a SetUp/FEN tag pair when start is not the standard starting
-// position, SAN movetext wrapped at 80 columns, and the result token. It
-// returns an error if any move is illegal from start.
+// PGN emits the Seven Tag Roster and SAN movetext wrapped at 80 columns.
 func PGN(start *Position, moves []Move, header PGNHeader) (string, error) {
 	if start == nil {
 		return "", fmt.Errorf("PGN: nil start position")
@@ -197,7 +182,6 @@ func PGN(start *Position, moves []Move, header PGNHeader) (string, error) {
 	return pgn.String(), nil
 }
 
-// writePGNTag writes one tag pair with a trailing newline.
 func writePGNTag(pgn *strings.Builder, name, value string) {
 	pgn.WriteByte('[')
 	pgn.WriteString(name)
@@ -206,8 +190,6 @@ func writePGNTag(pgn *strings.Builder, name, value string) {
 	pgn.WriteString("\"]\n")
 }
 
-// escapePGNValue escapes backslashes and quotes in a tag value and folds line
-// breaks into spaces.
 func escapePGNValue(value string) string {
 	return strings.NewReplacer(
 		`\`, `\\`,
@@ -217,7 +199,6 @@ func escapePGNValue(value string) string {
 	).Replace(value)
 }
 
-// writePGNMovetext writes space-separated tokens wrapped at 80 columns.
 func writePGNMovetext(pgn *strings.Builder, tokens []string) {
 	lineLength := 0
 	for _, token := range tokens {

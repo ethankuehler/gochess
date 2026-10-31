@@ -12,17 +12,15 @@ import (
 // BitBoard is a set of board squares, one bit per square.
 type BitBoard uint64
 
-// Position is a complete chess position: piece placement, side to move,
-// castling rights, the en passant target, and both move clocks.
 type Position struct {
-	pieceBitboards  [12]BitBoard // one bitboard per piece type and colour
-	occupancy       [2]BitBoard  // cached white and black occupancy
-	enPassantSquare BitBoard     // en passant target square
-	flags           uint8        // packed turn and castling rights
-	halfmoveClock   uint16       // half moves since the last pawn advance or capture
-	fullmoveNumber  uint16       // full moves
-	key             uint64       // Zobrist key for repetition detection
-	epHash          uint64       // cached en passant contribution to key
+	pieceBitboards  [12]BitBoard
+	occupancy       [2]BitBoard
+	enPassantSquare BitBoard
+	flags           uint8
+	halfmoveClock   uint16
+	fullmoveNumber  uint16
+	key             uint64
+	epHash          uint64
 }
 
 func (b BitBoard) String() string {
@@ -42,8 +40,6 @@ func (b BitBoard) String() string {
 	return buffer.String()
 }
 
-// SquaresToBitBoard converts algebraic square strings (e.g. "a1", "e4") to
-// a bitboard mask.
 func SquaresToBitBoard(squares []string) (BitBoard, error) {
 	var board BitBoard
 	for _, square := range squares {
@@ -56,19 +52,16 @@ func SquaresToBitBoard(squares []string) (BitBoard, error) {
 	return board, nil
 }
 
-// NewStartingPosition returns the standard chess starting position.
 func NewStartingPosition() *Position {
 	b := Position{}
 
-	// Set the white pieces on their home squares.
 	b.pieceBitboards[Pawn] = 0b1111111100000000
 	b.pieceBitboards[Bishop] = 0b00100100
 	b.pieceBitboards[Knight] = 0b01000010
 	b.pieceBitboards[Rook] = 0b10000001
-	b.pieceBitboards[Queen] = 0b00001000 // d1 (bit 3) - standard chess position
-	b.pieceBitboards[King] = 0b00010000  // e1 (bit 4) - standard chess position
+	b.pieceBitboards[Queen] = 0b00001000
+	b.pieceBitboards[King] = 0b00010000
 
-	// Copy the pieces for black.
 	b.pieceBitboards[Pawn+blackPieceOffset] = b.pieceBitboards[Pawn] << 40
 	b.pieceBitboards[Bishop+blackPieceOffset] = b.pieceBitboards[Bishop] << 56
 	b.pieceBitboards[Knight+blackPieceOffset] = b.pieceBitboards[Knight] << 56
@@ -76,10 +69,8 @@ func NewStartingPosition() *Position {
 	b.pieceBitboards[Queen+blackPieceOffset] = b.pieceBitboards[Queen] << 56
 	b.pieceBitboards[King+blackPieceOffset] = b.pieceBitboards[King] << 56
 
-	// White to move with all castling rights.
 	b.flags |= whiteToMove | whiteKingsideCastling | whiteQueensideCastling | blackKingsideCastling | blackQueensideCastling
 
-	// The halfmove clock starts at zero and the fullmove number at one.
 	b.halfmoveClock = 0
 	b.fullmoveNumber = 1
 
@@ -168,7 +159,6 @@ func ParseFEN(fen string) (*Position, error) {
 
 	b.flags = 0
 
-	// Players turn.
 	switch fields[1] {
 	case "w":
 		b.flags |= whiteToMove
@@ -177,7 +167,6 @@ func ParseFEN(fen string) (*Position, error) {
 		return nil, fmt.Errorf("invalid FEN %q: invalid side to move %q", fen, fields[1])
 	}
 
-	// Castling rights.
 	castling := fields[2]
 	if castling != "-" {
 		seen := make(map[rune]bool, len(castling))
@@ -197,7 +186,6 @@ func ParseFEN(fen string) (*Position, error) {
 		}
 	}
 
-	// En passant target.
 	if fields[3] == "-" {
 		b.enPassantSquare = 0
 	} else {
@@ -211,7 +199,6 @@ func ParseFEN(fen string) (*Position, error) {
 		b.enPassantSquare = BitBoard(1) << SquareFromFileRank(fr)
 	}
 
-	// Halfmove clock.
 	v, err := strconv.Atoi(fields[4])
 	if err != nil {
 		return nil, fmt.Errorf("invalid FEN %q: halfmove clock %q is not a number", fen, fields[4])
@@ -221,7 +208,6 @@ func ParseFEN(fen string) (*Position, error) {
 	}
 	b.halfmoveClock = uint16(v)
 
-	// Fullmove number. Standard FEN numbering starts at 1.
 	v, err = strconv.Atoi(fields[5])
 	if err != nil {
 		return nil, fmt.Errorf("invalid FEN %q: fullmove number %q is not a number", fen, fields[5])
@@ -238,10 +224,8 @@ func ParseFEN(fen string) (*Position, error) {
 	return &b, nil
 }
 
-// stateString returns the FEN fields that follow the piece placement.
 func (b *Position) stateString() string {
 	var buffer bytes.Buffer
-	// Side to move.
 	buffer.WriteRune(' ')
 	if b.flags&whiteToMove > 0 {
 		buffer.WriteRune('w')
@@ -249,7 +233,6 @@ func (b *Position) stateString() string {
 		buffer.WriteRune('b')
 	}
 
-	// Castling rights.
 	buffer.WriteRune(' ')
 	canCastle := false
 	for i, v := range castlingSymbols {
@@ -262,7 +245,6 @@ func (b *Position) stateString() string {
 		buffer.WriteRune('-')
 	}
 
-	// En passant target.
 	buffer.WriteRune(' ')
 	if b.enPassantSquare > 0 {
 		buffer.WriteString(SquareName(Square(bits.TrailingZeros64(uint64(b.enPassantSquare)))))
@@ -349,8 +331,6 @@ func (b *Position) FEN() string {
 	return buffer.String()
 }
 
-// refreshOccupancy rebuilds the cached per-colour occupancy from the piece
-// bitboards. Constructors call it; makeMove updates the cache incrementally.
 func (b *Position) refreshOccupancy() {
 	b.occupancy[White] = b.pieceBitboards[Pawn] |
 		b.pieceBitboards[Knight] |
@@ -366,8 +346,6 @@ func (b *Position) refreshOccupancy() {
 		b.pieceBitboards[King+blackPieceOffset]
 }
 
-// Occupancy returns a mask of every occupied square for the given colour.
-// Colour should be White, Black, or Both.
 func (b *Position) Occupancy(colour Colour) BitBoard {
 	switch colour {
 	case White, Black:
@@ -379,7 +357,6 @@ func (b *Position) Occupancy(colour Colour) BitBoard {
 	}
 }
 
-// PieceBitboard returns the bitboard for one piece type and colour.
 func (b *Position) PieceBitboard(colour Colour, piece Piece) BitBoard {
 	if colour != White && colour != Black {
 		panic("PieceBitboard: colour must be White or Black")

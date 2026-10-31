@@ -7,10 +7,6 @@ import (
 	"time"
 )
 
-// moveGenStats captures instrumentation for one instrumented legal move
-// generation. Ordinary legal moves and special-move candidates are counted as
-// pseudo moves; only king and en-passant candidates need copy-make validation.
-// Generation and remaining legality-filter time are disjoint.
 type moveGenStats struct {
 	pseudoMoves   uint64
 	legalMoves    uint64
@@ -66,8 +62,7 @@ func (b *Position) addStrictlyLegalKingMovesWithStats(moves []Move, ctx *legalCo
 	return moves
 }
 
-// legalMovesWithStats mirrors strictlyLegalMoves with instrumentation. Keep
-// the generation and validation order in sync with the default implementation.
+// Keep this in sync with strictlyLegalMoves.
 func (b *Position) legalMovesWithStats(moves []Move, stats *moveGenStats) []Move {
 	generationStart := time.Now()
 	filterBefore := stats.filterNS

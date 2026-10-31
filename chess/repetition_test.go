@@ -6,8 +6,6 @@ import (
 	"testing"
 )
 
-// playUCI applies moves and returns the final position plus the keys of every
-// position before it, oldest first.
 func playUCI(t *testing.T, position *Position, moves ...string) (*Position, []PositionKey) {
 	t.Helper()
 	history := make([]PositionKey, 0, len(moves))
@@ -120,8 +118,6 @@ func TestPositionKeyEquality(t *testing.T) {
 }
 
 func TestIsThreefoldRepetition(t *testing.T) {
-	// A four-ply king shuffle returns to the starting position. Repeating it
-	// twice makes the starting position the third occurrence.
 	position, history := playUCI(t, mustFEN(t, "4k3/8/8/8/8/8/8/R3K3 w - - 0 1"),
 		"e1d1", "e8d8", "d1e1", "d8e8")
 	if position.IsThreefoldRepetition(history) {
@@ -140,8 +136,6 @@ func TestIsThreefoldRepetition(t *testing.T) {
 }
 
 func TestIsFivefoldRepetition(t *testing.T) {
-	// Three four-ply cycles make the starting position the fourth occurrence;
-	// a fourth cycle makes it the fifth, which is an automatic draw.
 	position, history := playUCI(t, mustFEN(t, "4k3/8/8/8/8/8/8/R3K3 w - - 0 1"),
 		"e1d1", "e8d8", "d1e1", "d8e8",
 		"e1d1", "e8d8", "d1e1", "d8e8",
@@ -213,8 +207,6 @@ func TestSearchDetectsRepetitionInPath(t *testing.T) {
 		t.Fatalf("ApplyUCIMove(d2d3): %v", err)
 	}
 
-	// Two earlier occurrences of the child plus the occurrence reached by
-	// d2d3 make three. The search must score the line as a draw.
 	result := position.SearchWithLimits(context.Background(), SearchLimits{
 		MaxDepth:    1,
 		RootMoves:   []Move{quiet},
@@ -229,7 +221,6 @@ func TestSearchDetectsRepetitionInPath(t *testing.T) {
 }
 
 func TestSearchDetectsFiftyMoveInPath(t *testing.T) {
-	// The quiet move takes the halfmove clock to 100, which is a draw.
 	position := mustFEN(t, "4k3/8/8/3q4/8/8/3R4/4K3 w - - 99 1")
 	quiet := legalMoveFor(t, position, "d2d3")
 
@@ -246,8 +237,6 @@ func TestSearchDetectsFiftyMoveInPath(t *testing.T) {
 }
 
 func TestSearchPrefersCheckmateAtFiftyMoveHorizon(t *testing.T) {
-	// The quiet mating move takes the halfmove clock to 100, but checkmate
-	// ends the game before the draw can be claimed.
 	position := mustFEN(t, "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 99 1")
 
 	result := position.Search(1)
@@ -266,8 +255,6 @@ func TestSearchPrefersCheckmateAtFiftyMoveHorizon(t *testing.T) {
 }
 
 func TestSearchAvoidsRepetitionWhenAhead(t *testing.T) {
-	// White is up a rook. Repeating into a third occurrence of the position
-	// after a1b1 would be a draw, so the search must prefer a different move.
 	position := mustFEN(t, "4k3/8/8/8/8/8/8/R3K3 w - - 2 1")
 	repeat := legalMoveFor(t, position, "a1b1")
 	other := legalMoveFor(t, position, "e1d1")
@@ -293,10 +280,7 @@ func TestSearchAvoidsRepetitionWhenAhead(t *testing.T) {
 }
 
 func TestSearchAvoidsTwofoldRepetitionWithTT(t *testing.T) {
-	// This is the position from a real game where the engine shuffled with
-	// Bh7+ Kh8 Be4+ Kg8, allowing Black to claim a threefold draw. Rxf2 wins the
-	// knight and keeps the winning position. The transposition table must not
-	// hide the in-search twofold repetition.
+	// Rxf2 avoids the repetition from a real game.
 	position := mustFEN(t, "5rk1/p4pp1/3p4/2p5/2P1B3/1PN2P2/PK1P1n1R/6r1 w - - 2 28")
 
 	result := position.Search(8)
@@ -352,10 +336,7 @@ func TestSearchDrawsByInsufficientMaterial(t *testing.T) {
 }
 
 func TestRootPVOfRepeatedMove(t *testing.T) {
-	// Black is down a queen. The rook shuffle a8b8/d1d2/b8a8/d2d1 returns the
-	// game to this position, so a8b8 is a repetition draw and outscores every
-	// real move. That move is scored without being searched, so its PV must be
-	// exactly one move long and must not inherit the previous root move's line.
+	// A repetition move has a one-move PV because it is not searched.
 	position, history := playUCI(t, mustFEN(t, "r3k3/8/8/8/8/8/8/3QK3 b - - 0 1"),
 		"a8b8", "d1d2", "b8a8", "d2d1")
 	if position.Key() != history[0] {

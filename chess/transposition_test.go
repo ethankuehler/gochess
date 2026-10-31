@@ -89,20 +89,16 @@ func TestTranspositionTableReplacement(t *testing.T) {
 	entries := uint64(tt.Entries())
 	tt.newSearch()
 
-	// Same key: a shallower result must not displace a deeper one.
 	tt.store(0x10, 5, 50, ttExact, Move{})
 	tt.store(0x10, 3, 30, ttExact, Move{})
 	if entry, _ := tt.probe(0x10); entry.depth != 5 || entry.score != 50 {
 		t.Fatalf("shallower store replaced a deeper entry: %+v", entry)
 	}
-	// Equal depth replaces.
 	tt.store(0x10, 5, 51, ttUpper, Move{})
 	if entry, _ := tt.probe(0x10); entry.score != 51 || entry.bound != ttUpper {
 		t.Fatalf("equal-depth store did not replace: %+v", entry)
 	}
 
-	// Index collision: same slot, different key. The deeper current-generation
-	// entry wins; a stale-generation entry is replaced even when shallower.
 	collision := 0x10 + entries
 	tt.store(0x10, 6, 60, ttExact, Move{})
 	tt.store(collision, 4, 40, ttExact, Move{})
@@ -154,9 +150,7 @@ func TestSearchWithTTMatchesWithout(t *testing.T) {
 		poisonedPawnFEN,
 		"8/8/8/4k3/8/8/3Q4/4K3 w - - 0 1",
 	}
-	// LMR and futility are heuristic, so the table (which changes ordering and
-	// therefore which moves are reduced) may legitimately perturb a score.
-	// Compare the sound feature set here; the tactical tests cover the rest.
+	// Compare sound features because ordering can change heuristic scores.
 	sound := searchOptions{pvs: true, aspiration: true}
 
 	var totalHits uint64
@@ -173,9 +167,6 @@ func TestSearchWithTTMatchesWithout(t *testing.T) {
 			if cached.HasMove != plain.HasMove {
 				t.Errorf("depth %d on %q: TT HasMove = %v, plain = %v", depth, fen, cached.HasMove, plain.HasMove)
 			}
-			// Only the table supplies a hash move, so the two searches order
-			// moves differently and can trade a few nodes either way. Require
-			// no meaningful regression rather than a strict win.
 			if cached.Nodes > plain.Nodes+plain.Nodes/20+16 {
 				t.Errorf("depth %d on %q: TT visited %d nodes, plain %d", depth, fen, cached.Nodes, plain.Nodes)
 			}
@@ -226,8 +217,6 @@ func TestSearchTTPreservesMateScores(t *testing.T) {
 		t.Fatalf("best move = %s, want a1a8", got)
 	}
 
-	// A mate score stored at one ply must keep the same distance when it is
-	// probed at another ply.
 	tt.newSearch()
 	stored := scoreToTT(MateScore-5, 3)
 	tt.store(0x99, 4, stored, ttExact, Move{})
@@ -279,10 +268,6 @@ func TestSearchWithoutTTReportsNoTableActivity(t *testing.T) {
 	}
 }
 
-// TestSearchTTMatchesWithoutAcrossRandomGame compares table and no-table
-// searches along a deterministic random game. Real games exercise castling,
-// en passant, promotions, checks, and repetition history that the small fixed
-// fixtures do not.
 func TestSearchTTMatchesWithoutAcrossRandomGame(t *testing.T) {
 	position := NewStartingPosition()
 	history := make([]PositionKey, 0, 60)

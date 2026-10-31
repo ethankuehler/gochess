@@ -4,7 +4,6 @@ package chess
 
 import "time"
 
-// MetricsEnabled reports whether this build compiles in search metrics.
 const MetricsEnabled = true
 
 func (s *searcher) legalMoves(b *Position, buf []Move) []Move {

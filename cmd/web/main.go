@@ -1,6 +1,4 @@
-// Command web serves a small local chess board UI. The board state and legal
-// moves live here; engine moves are requested from an in-process UCI engine
-// session, so the page exercises the same protocol a GUI would use.
+// Command web serves a local chess board with an in-process UCI engine.
 package main
 
 import (
@@ -25,11 +23,10 @@ const (
 	defaultEngineDepth = 4
 )
 
-// engineInfo describes the engine's most recent move for the UI.
 type engineInfo struct {
 	Depth  int    `json:"depth"`
-	Score  int    `json:"score"`            // centipawns, White-relative
-	MateIn int    `json:"mateIn,omitempty"` // engine's POV: >0 mates, <0 is mated
+	Score  int    `json:"score"`
+	MateIn int    `json:"mateIn,omitempty"`
 	Nodes  uint64 `json:"nodes"`
 	TimeMS int64  `json:"timeMs"`
 }
@@ -151,8 +148,6 @@ func (g *game) undoOneLocked() {
 	g.engineInfo = nil
 }
 
-// undoLocked takes back one move. With the engine enabled it also takes back
-// the engine's reply, so the board returns to the human's turn.
 func (g *game) undoLocked() {
 	if len(g.positions) <= 1 {
 		return
@@ -165,14 +160,10 @@ func (g *game) undoLocked() {
 	}
 }
 
-// engineTurnLocked reports whether the engine, which normally plays Black, is
-// to move. Auto play bypasses this by asking the engine to move for both sides.
 func (g *game) engineTurnLocked() bool {
 	return g.engineEnabled && g.currentLocked().SideToMove() == chess.Black
 }
 
-// setEngineLocked enables or disables the engine and validates its depth. A zero
-// depth keeps the current depth, which makes toggling simpler for clients.
 func (g *game) setEngineLocked(enabled bool, depth int) error {
 	if depth == 0 {
 		depth = g.engineDepth
@@ -196,9 +187,7 @@ var (
 	errNoDrawClaim       = errors.New("no draw claim available")
 )
 
-// engineMove asks the UCI engine for the side to move's move and applies it.
-// The search runs without the game lock so a reset can cancel it, and a reset
-// swaps the client so a stale result is discarded rather than applied.
+// Replacing the client on reset discards an in-flight result.
 func (g *game) engineMove() error {
 	g.mu.Lock()
 	if !g.engineEnabled {
@@ -227,8 +216,6 @@ func (g *game) engineMove() error {
 	rootFEN := b.FEN()
 	var moves []string
 	if len(g.positions)-1 == len(g.history) {
-		// Replaying the whole move list gives the engine the repetition
-		// history that a bare FEN cannot express.
 		rootFEN = g.positions[0].FEN()
 		moves = append([]string(nil), g.history...)
 	}
@@ -304,8 +291,6 @@ func (g *game) applyUCILocked(uci string) error {
 	return nil
 }
 
-// historyKeysLocked returns the repetition keys of every earlier position,
-// oldest first.
 func (g *game) historyKeysLocked() []chess.PositionKey {
 	keys := make([]chess.PositionKey, 0, len(g.positions)-1)
 	for _, previous := range g.positions[:len(g.positions)-1] {
@@ -314,17 +299,12 @@ func (g *game) historyKeysLocked() []chess.PositionKey {
 	return keys
 }
 
-// claimableLocked reports whether the side to move can claim a draw under the
-// threefold-repetition or fifty-move rule. A claimable draw does not end the
-// game by itself.
 func (g *game) claimableLocked() (threefold, fiftyMove bool) {
 	b := g.currentLocked()
 	history := g.historyKeysLocked()
 	return b.IsThreefoldRepetition(history), b.IsFiftyMoveDraw()
 }
 
-// claimDrawLocked records a draw claim by the side to move. It returns an error
-// when the game is already over or no claim is available.
 func (g *game) claimDrawLocked() error {
 	if g.statusLocked() != "playing" {
 		return errGameOver
@@ -341,10 +321,7 @@ func (g *game) claimDrawLocked() error {
 	return nil
 }
 
-// statusLocked returns the game status of the current position. Threefold
-// repetition and the fifty-move rule are claimable and are reported here only
-// after a claim; fivefold repetition, the seventy-five-move rule, and
-// insufficient material end the game automatically.
+// Threefold and fifty-move draws only end the game after a claim.
 func (g *game) statusLocked() string {
 	b := g.currentLocked()
 	moves := b.LegalMoves()
@@ -370,9 +347,6 @@ func (g *game) statusLocked() string {
 	return "playing"
 }
 
-// pgnLocked formats the game as PGN. The game always starts from the stored
-// initial position, so replaying the move list also reconstructs the SAN
-// movetext and the final result.
 func (g *game) pgnLocked(now time.Time) (string, error) {
 	start := g.positions[0]
 	position := start
@@ -397,8 +371,6 @@ func (g *game) pgnLocked(now time.Time) (string, error) {
 	})
 }
 
-// pgnResult converts a game status to a PGN result token. Claimable draws only
-// produce a result after the claim has been recorded.
 func pgnResult(status string, sideToMove chess.Colour) string {
 	switch status {
 	case "checkmate":
@@ -653,9 +625,6 @@ func (g *game) handleMove(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, g.snapshotLocked())
 }
 
-// handleClaimDraw records the side to move's claim of a threefold-repetition or
-// fifty-move draw. Claimable draws do not end the game until this endpoint is
-// called; automatic draws are handled by statusLocked.
 func (g *game) handleClaimDraw(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -678,9 +647,7 @@ func (g *game) handleReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Replace the engine rather than sending ucinewgame: closing the old
-	// client cancels any in-flight search, so reset stays responsive even at
-	// very high depths.
+	// Closing the old client cancels any in-flight search.
 	g.engineMu.Lock()
 	defer g.engineMu.Unlock()
 

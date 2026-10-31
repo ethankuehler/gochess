@@ -8,9 +8,6 @@ import (
 	"strconv"
 )
 
-// LoadMagicEntries reads and validates a CSV of magic entries
-// (square, mask, magic), one row per square. IndexBits is recomputed from
-// the mask so it always agrees with the data.
 func LoadMagicEntries(fileName string) ([]MagicEntry, error) {
 	data, err := readCSV(fileName)
 	if err != nil {
@@ -19,7 +16,6 @@ func LoadMagicEntries(fileName string) ([]MagicEntry, error) {
 	return parseMagicEntries(data, fileName)
 }
 
-// LoadMagicEntriesFS reads and validates magic entries from an fs.FS.
 func LoadMagicEntriesFS(fsys fs.FS, fileName string) ([]MagicEntry, error) {
 	if fsys == nil {
 		return nil, fmt.Errorf("nil filesystem")
@@ -31,7 +27,6 @@ func LoadMagicEntriesFS(fsys fs.FS, fileName string) ([]MagicEntry, error) {
 	return parseMagicEntries(data, fileName)
 }
 
-// parseMagicEntries validates magic CSV records and returns the entries.
 func parseMagicEntries(data [][]string, fileName string) ([]MagicEntry, error) {
 	if len(data) != squareCount+1 {
 		return nil, fmt.Errorf("%s: expected %d data rows, got %d", fileName, squareCount, len(data))
@@ -59,8 +54,6 @@ func parseMagicEntries(data [][]string, fileName string) ([]MagicEntry, error) {
 	return target, nil
 }
 
-// SaveMagicEntries writes magic entries to a CSV (square, mask, magic), one
-// row per square, in the same format LoadMagicEntries reads.
 func SaveMagicEntries(fileName string, entries []MagicEntry) error {
 	if len(entries) != squareCount {
 		return fmt.Errorf("expected %d magic entries, got %d", squareCount, len(entries))

@@ -4,9 +4,6 @@ package main
 
 import "runtime/metrics"
 
-// readProcessCPUSeconds falls back to the runtime CPU counters on platforms
-// without getrusage. Unsupported counters (all zero) are reported as
-// unavailable rather than as an idle process.
 func readProcessCPUSeconds() (float64, bool) {
 	values := []metrics.Sample{
 		{Name: "/cpu/classes/total:cpu-seconds"},

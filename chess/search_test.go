@@ -63,8 +63,6 @@ func TestSearchWinsFreeQueen(t *testing.T) {
 func TestSearchAvoidsPoisonedPawn(t *testing.T) {
 	position := mustFEN(t, poisonedPawnFEN)
 
-	// Quiescence sees Kxe3 after Qxe3+, so even the depth-1 search must avoid
-	// the poisoned pawn capture.
 	shallow := position.Search(1)
 	if got := shallow.BestMove.String(); got == "e1e3" {
 		t.Fatalf("depth 1 plays the poisoned pawn capture e1e3")
@@ -229,8 +227,6 @@ func TestOrderMoves(t *testing.T) {
 }
 
 func TestOrderMovesMVVLVA(t *testing.T) {
-	// d4xe5 is PxQ, e2xe5 is RxQ, and d4xc5 is PxP, so MVV-LVA must order them
-	// exactly that way regardless of generation order.
 	position := mustFEN(t, "4k3/8/8/2p1q3/3P4/8/4R3/4K3 w - - 0 1")
 	moves := position.LegalMoves()
 
@@ -314,11 +310,6 @@ func TestRecordQuietCutoff(t *testing.T) {
 }
 
 func TestAlphaBetaMatchesMinimax(t *testing.T) {
-	// The reference is full-width and the reference qsearch has no pruning, so
-	// dense positions are limited to shallow depths. The value here is score
-	// equivalence between alpha-beta and plain minimax, not coverage volume;
-	// dense middlegame scores are covered by the direct qsearch tests and by
-	// legality, determinism, and symmetry checks on the production search.
 	fixtures := []struct {
 		name     string
 		fen      string
@@ -348,12 +339,7 @@ func TestAlphaBetaMatchesMinimax(t *testing.T) {
 	}
 }
 
-// referenceMinimax is a full-width minimax with the same evaluation, terminal,
-// draw, and repetition rules as Search. It exists only to validate alpha-beta
-// pruning and the leaf integration in tests. Depth zero delegates to the
-// full-width referenceQuiesce in qsearch_test.go; both share one key path so
-// repetition is detected in the same places as production. It has no
-// transposition table and no pruning.
+// referenceMinimax is a full-width oracle with no pruning or table.
 func referenceMinimax(b *Position, depth, ply int) int {
 	return referenceMinimaxAt(&searcher{}, b, depth, ply)
 }

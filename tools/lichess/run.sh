@@ -99,23 +99,38 @@ echo "==> building gochess"
 
 cd "$botdir"
 
-# Hold a power assertion for as long as the bot runs. -d keeps the display
-# awake, -i prevents idle system sleep, -m keeps the disk awake, -s prevents
-# system sleep on AC, and -u declares the user active. Lichess keeps the game
+# Hold a power assertion for as long as the bot runs. Lichess keeps the game
 # clock running while the host is suspended, so a sleep of even a minute can
-# turn a winning position into a time forfeit.
+# turn a winning position into a time forfeit. On macOS, caffeinate -dimsu
+# keeps the display and disk awake, prevents idle and AC sleep, and declares
+# the user active. On Linux, systemd-inhibit blocks sleep and idle for the
+# lifetime of the bot. Neither protects against a forced/root suspend.
 #
-# Nothing in this script needs root: caffeinate holds a per-user assertion for
-# as long as the bot runs. It cannot prevent a lid-close sleep, though, so keep
-# the lid open. Disabling lid-close sleep itself is a separate, root-only
-# system setting (pmset) and is not required here.
+# Nothing here needs root for ordinary sleep prevention. On macOS, caffeinate
+# cannot prevent lid-close sleep, so keep the lid open. Linux lid-close behavior
+# may be controlled separately by the desktop environment or logind.
 bot=( "$venv/bin/python" lichess-bot.py
       --config "$here/config.yml"
       --logfile "$here/lichess-bot.log"
       "$@" )
-if command -v caffeinate >/dev/null 2>&1; then
-  echo "==> keeping the host awake with caffeinate"
-  exec caffeinate -dimsu "${bot[@]}"
-fi
-echo "warning: caffeinate not found; the host may sleep mid-game" >&2
+case "$(uname -s)" in
+  Darwin)
+    if command -v caffeinate >/dev/null 2>&1; then
+      echo "==> keeping the host awake with caffeinate"
+      exec caffeinate -dimsu "${bot[@]}"
+    fi
+    ;;
+  Linux)
+    if command -v systemd-inhibit >/dev/null 2>&1; then
+      echo "==> keeping the host awake with systemd-inhibit"
+      exec systemd-inhibit \
+        --what=sleep:idle \
+        --who=gochess \
+        --why="Lichess bot is running" \
+        --mode=block \
+        "${bot[@]}"
+    fi
+    ;;
+esac
+echo "warning: no supported power inhibitor found; the host may sleep mid-game" >&2
 exec "${bot[@]}"

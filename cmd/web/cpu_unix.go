@@ -4,9 +4,7 @@ package main
 
 import "syscall"
 
-// readProcessCPUSeconds returns the process CPU time (user plus system) in
-// seconds. The Go runtime's /cpu/classes metrics are not populated on every
-// platform, notably macOS, so use the OS accounting directly on Unix.
+// Use getrusage because runtime CPU metrics are unavailable on some Unix systems.
 func readProcessCPUSeconds() (float64, bool) {
 	var usage syscall.Rusage
 	if err := syscall.Getrusage(syscall.RUSAGE_SELF, &usage); err != nil {

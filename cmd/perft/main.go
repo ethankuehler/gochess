@@ -1,5 +1,4 @@
-// Command perft runs move-generation benchmarks and compares the engine's
-// perft divide with Stockfish.
+// Command perft runs and compares move-generation counts.
 package main
 
 import (

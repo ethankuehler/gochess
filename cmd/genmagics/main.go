@@ -1,10 +1,4 @@
-// Command genmagics regenerates the rook and bishop magic-number tables in
-// data/. Run it from the repository root:
-//
-//	go run ./cmd/genmagics
-//
-// It rewrites data/rook_magics.csv and data/bishop_magics.csv. The search is
-// random, so the resulting numbers differ on every run but are equally valid.
+// Command genmagics regenerates data/rook_magics.csv and data/bishop_magics.csv.
 package main
 
 import (

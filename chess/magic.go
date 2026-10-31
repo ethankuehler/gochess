@@ -9,25 +9,14 @@ import (
 	"math/rand/v2"
 )
 
-// magicAttemptLimit bounds the random search for one square's magic.
 const magicAttemptLimit = 1_000_000
 
-// LoadMagicsFromDisk controls whether the sliding-piece builders restore
-// magics from the data/ CSVs (true) or search for new ones (false). It
-// defaults to true; when a CSV is missing or invalid the builder logs the
-// problem and falls back to a fresh search.
 var LoadMagicsFromDisk = true
-
-// SaveMagicsToDisk makes the sliding-piece builders write freshly generated
-// magics to the data/ CSVs after a random search. It has no effect when
-// LoadMagicsFromDisk is set.
 var SaveMagicsToDisk = false
 
-// knightAttacks and kingAttacks are indexed by square.
 var knightAttacks []BitBoard
 var kingAttacks []BitBoard
 
-// Pawn attack and move tables are split by colour.
 var (
 	whitePawnAttacks []BitBoard
 	whitePawnMoves   []BitBoard
@@ -35,7 +24,6 @@ var (
 	blackPawnMoves   []BitBoard
 )
 
-// Sliding-piece magic entries and attack tables.
 var (
 	rookMagicEntries   []MagicEntry
 	bishopMagicEntries []MagicEntry
@@ -43,16 +31,12 @@ var (
 	bishopAttackTables [][]BitBoard
 )
 
-// MagicEntry holds a magic-bitboard lookup for one square: Mask is the
-// relevant occupancy squares, Magic the multiplier, and IndexBits the number
-// of set bits in Mask. The attack table holds 1 << IndexBits entries.
 type MagicEntry struct {
 	Mask      BitBoard
 	Magic     uint64
 	IndexBits uint
 }
 
-// newMagicEntry computes IndexBits from Mask so the two can never disagree.
 func newMagicEntry(mask BitBoard, magic uint64) MagicEntry {
 	return MagicEntry{
 		Mask:      mask,
@@ -61,7 +45,7 @@ func newMagicEntry(mask BitBoard, magic uint64) MagicEntry {
 	}
 }
 
-// Directions is a set of movement vectors as {rank delta, file delta}.
+// Directions contains {rank delta, file delta} vectors.
 type Directions [4][2]int
 
 var (
@@ -69,36 +53,27 @@ var (
 	bishopDirections = Directions{{1, 1}, {-1, -1}, {1, -1}, {-1, 1}}
 )
 
-// magicIndex hashes the relevant blockers into an attack-table index.
 func magicIndex(entry MagicEntry, occupancy BitBoard) uint64 {
 	blockers := occupancy & entry.Mask
 	hash := uint64(blockers) * entry.Magic
 	return hash >> (64 - entry.IndexBits)
 }
 
-// RookAttack returns the rook attacks from square given the occupancy.
 func RookAttack(square Square, occupancy BitBoard) BitBoard {
 	index := magicIndex(rookMagicEntries[square], occupancy)
 	return rookAttackTables[square][index]
 }
 
-// BishopAttack returns the bishop attacks from square given the occupancy.
 func BishopAttack(square Square, occupancy BitBoard) BitBoard {
 	index := magicIndex(bishopMagicEntries[square], occupancy)
 	return bishopAttackTables[square][index]
 }
 
-// QueenAttack combines the rook and bishop lookups; queens need no
-// tables of their own.
 func QueenAttack(square Square, occupancy BitBoard) BitBoard {
 	return RookAttack(square, occupancy) | BishopAttack(square, occupancy)
 }
 
-// RelevantBlockers returns the occupancy mask for a sliding piece on fr:
-// the squares along its rays whose occupancy can change the attack set.
-// The terminal edge square of each ray is excluded (a ray attacks its
-// terminal square whether it is occupied or not, so that bit carries no
-// information), as is the origin square.
+// RelevantBlockers excludes ray edges and the origin.
 func RelevantBlockers(fr FileRank, directions Directions) BitBoard {
 	var mask BitBoard
 	rank, file := int(fr.rank), int(fr.file)
@@ -122,7 +97,6 @@ func RelevantBlockers(fr FileRank, directions Directions) BitBoard {
 	return mask &^ (BitBoard(1) << SquareFromFileRank(fr))
 }
 
-// findMagic searches for a collision-free magic entry and attack table.
 func findMagic(fr FileRank, directions Directions) (MagicEntry, []BitBoard, error) {
 	mask := RelevantBlockers(fr, directions)
 	square := SquareFromFileRank(fr)
@@ -138,10 +112,7 @@ func findMagic(fr FileRank, directions Directions) (MagicEntry, []BitBoard, erro
 	return MagicEntry{}, nil, errors.New("hit magic limit, magic not found")
 }
 
-// tryMagic attempts to fill an attack table for one square using the
-// candidate magic, failing on any non-constructive collision (two blocker
-// configurations with different attack sets hashing to the same slot).
-// Attack sets are never empty, so a zero slot means "not yet written".
+// Attack sets are never empty, so zero marks an unwritten table slot.
 func tryMagic(square Square, entry MagicEntry, directions Directions) ([]BitBoard, error) {
 	table := make([]BitBoard, 1<<entry.IndexBits)
 	var blockers BitBoard
@@ -165,8 +136,6 @@ func tryMagic(square Square, entry MagicEntry, directions Directions) ([]BitBoar
 	return table, nil
 }
 
-// SlidingAttacks returns the attacks from square for the given occupancy
-// along directions.
 func SlidingAttacks(square Square, occupancy BitBoard, directions Directions) BitBoard {
 	fr := FileRankFromSquare(square)
 	rank, file := int(fr.rank), int(fr.file)
@@ -201,9 +170,7 @@ func BuildAllAttacks() {
 	BuildBishopAttacks()
 }
 
-// BuildAllAttacksFromFS builds every attack table from an fs.FS. The files are
-// loaded into locals first so a failure leaves the package-level tables
-// untouched. This is the initializer used by the self-contained UCI binary.
+// BuildAllAttacksFromFS leaves existing tables untouched on failure.
 func BuildAllAttacksFromFS(fsys fs.FS) error {
 	knight, err := loadAttackTableFS(fsys, "knight_attacks.csv")
 	if err != nil {
@@ -264,19 +231,14 @@ func buildSliderAttacksFS(fsys fs.FS, fileName string, directions Directions) ([
 	return magics, tables, nil
 }
 
-// BuildRookAttacks fills rookMagicEntries and rookAttackTables for every square.
 func BuildRookAttacks() {
 	rookMagicEntries, rookAttackTables = buildSliderAttacks(rookDirections, "data/rook_magics.csv")
 }
 
-// BuildBishopAttacks fills bishopMagicEntries and bishopAttackTables for every square.
 func BuildBishopAttacks() {
 	bishopMagicEntries, bishopAttackTables = buildSliderAttacks(bishopDirections, "data/bishop_magics.csv")
 }
 
-// buildSliderAttacks generates magic numbers and attack tables for every
-// square. By default the magics are restored from the given CSV; when that
-// file is missing or invalid the builder falls back to a random search.
 func buildSliderAttacks(directions Directions, fileName string) ([]MagicEntry, [][]BitBoard) {
 	if LoadMagicsFromDisk {
 		magics, err := LoadMagicEntries(fileName)
@@ -310,8 +272,6 @@ func buildSliderAttacks(directions Directions, fileName string) ([]MagicEntry, [
 	return magics, tables
 }
 
-// buildMagicTables rebuilds the attack tables for a set of magics, failing if
-// any stored magic does not produce a collision-free table.
 func buildMagicTables(magics []MagicEntry, directions Directions) ([][]BitBoard, error) {
 	tables := make([][]BitBoard, squareCount)
 	for square := Square(0); square < squareCount; square++ {

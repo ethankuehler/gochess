@@ -4,35 +4,29 @@ import (
 	"iter"
 )
 
-// Square is a board index: 0 = a1 and 63 = h8.
+// Square uses little-endian rank-file mapping: a1 = 0, h8 = 63.
 type Square int
 
 const squareCount = 64
 const boardSize = 8
 
-// FileRank is a zero-based file and rank coordinate.
 type FileRank struct {
 	file uint64
 	rank uint64
 }
 
-// FileRankFromSquare converts a square index to file/rank coordinates.
 func FileRankFromSquare(square Square) FileRank {
 	return FileRank{file: uint64(square % boardSize), rank: uint64(square / boardSize)}
 }
 
-// SquareFromFileRank converts file/rank coordinates to a square index.
 func SquareFromFileRank(fr FileRank) Square {
 	return Square(fr.file + fr.rank*boardSize)
 }
 
-// File returns the zero-based file (0 = a).
 func (fr FileRank) File() uint64 { return fr.file }
 
-// Rank returns the zero-based rank (0 = rank 1).
 func (fr FileRank) Rank() uint64 { return fr.rank }
 
-// Piece identifies a piece type; black pieces use blackPieceOffset.
 type Piece int
 
 const (
@@ -47,7 +41,6 @@ const (
 
 const blackPieceOffset = 6
 
-// PieceTypes yields the piece indices for a colour.
 func PieceTypes(colour Colour) iter.Seq[Piece] {
 	var start Piece
 	var stop Piece
@@ -72,7 +65,6 @@ func PieceTypes(colour Colour) iter.Seq[Piece] {
 	}
 }
 
-// Position flag bits.
 const (
 	whiteToMove            uint8 = 1
 	whiteKingsideCastling  uint8 = 1 << 1
@@ -81,7 +73,6 @@ const (
 	blackQueensideCastling uint8 = 1 << 4
 )
 
-// Colour selects one side, or Both when iterating.
 type Colour int
 
 const (
@@ -90,7 +81,6 @@ const (
 	Black Colour = 1
 )
 
-// Opposite returns the other colour.
 func (c Colour) Opposite() Colour {
 	switch c {
 	case White:
@@ -102,16 +92,13 @@ func (c Colour) Opposite() Colour {
 	}
 }
 
-// rank1Mask selects the first rank.
 const rank1Mask BitBoard = 255
 
-// File masks are used when shifting pawns to find attacks.
 const (
 	fileAMask BitBoard = 0x0101010101010101
 	fileHMask BitBoard = 0x8080808080808080
 )
 
-// Named squares used by castling and move generation.
 const (
 	a1 Square = 0
 	b1 Square = 1
@@ -132,9 +119,7 @@ const (
 	h8 Square = 63
 )
 
-// Piece and board notation tables. The piece symbols follow the Piece
-// constants in the standard order P N B R Q K, white pieces first, then black
-// pieces offset by blackPieceOffset.
+// Symbol order must match the Piece constants and blackPieceOffset.
 var (
 	pieceSymbols        = []string{"P", "N", "B", "R", "Q", "K", "p", "n", "b", "r", "q", "k"}
 	unicodePieceSymbols = []string{"♙", "♘", "♗", "♖", "♕", "♔", "♟", "♞", "♝", "♜", "♛", "♚"}

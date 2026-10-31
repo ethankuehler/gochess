@@ -2,7 +2,6 @@ package chess
 
 import "math/bits"
 
-// sideToMove returns the colour whose turn it is.
 func (b *Position) sideToMove() Colour {
 	if b.flags&whiteToMove != 0 {
 		return White
@@ -10,10 +9,8 @@ func (b *Position) sideToMove() Colour {
 	return Black
 }
 
-// SideToMove returns the colour whose turn it is.
 func (b *Position) SideToMove() Colour { return b.sideToMove() }
 
-// kingSquare returns the square of colour's king.
 func (b *Position) kingSquare(colour Colour) Square {
 	var kings BitBoard
 	if colour == White {
@@ -27,7 +24,6 @@ func (b *Position) kingSquare(colour Colour) Square {
 	return Square(bits.TrailingZeros64(uint64(kings)))
 }
 
-// pieceAt returns the piece on square. ok is false when the square is empty.
 func (b *Position) pieceAt(square Square) (colour Colour, piece Piece, ok bool) {
 	mask := BitBoard(1) << square
 	for i, v := range b.pieceBitboards {
@@ -42,14 +38,10 @@ func (b *Position) pieceAt(square Square) (colour Colour, piece Piece, ok bool) 
 	return Both, NoPiece, false
 }
 
-// PieceAt returns the piece on square. ok is false when the square is empty.
 func (b *Position) PieceAt(square Square) (colour Colour, piece Piece, ok bool) {
 	return b.pieceAt(square)
 }
 
-// castlingClearTable maps a from/to square to the rights it invalidates. Any
-// move involving a king or rook home square clears the corresponding right,
-// which also handles a rook being captured in place.
 var castlingClearTable = [squareCount]uint8{
 	a1: whiteQueensideCastling,
 	e1: whiteKingsideCastling | whiteQueensideCastling,
@@ -59,25 +51,15 @@ var castlingClearTable = [squareCount]uint8{
 	h8: blackKingsideCastling,
 }
 
-// castlingRightsToClear returns the rights that a move from or to square
-// invalidates.
 func castlingRightsToClear(square Square) uint8 {
 	return castlingClearTable[square]
 }
 
-// makeMove applies m and returns the resulting position. It copies the
-// position rather than mutating it. m must come from move generation or
-// otherwise carry the correct flags; a UCI move parsed by ParseUCIMove does
-// not have enough information on its own.
+// makeMove requires the flags supplied by move generation.
 func (b *Position) makeMove(m Move) Position {
 	return b.makeMoveInternal(m, true)
 }
 
-// nullMove returns the position after a "pass": the same board with the side to
-// move flipped, the en passant target cleared, and the clocks advanced. It is
-// used only by null-move pruning and is never a legal game move. Castling
-// rights and the piece placement are unchanged, so the incremental key only
-// needs the en passant and side-to-move terms replaced.
 func (b *Position) nullMove() Position {
 	next := *b
 	next.key = b.key ^ b.epHash ^ zobristSide
@@ -93,9 +75,6 @@ func (b *Position) nullMove() Position {
 	return next
 }
 
-// hasNonPawnMaterial reports whether colour still has a knight, bishop, rook, or
-// queen. Null-move pruning is disabled without one: a free move is worth too
-// much in a pure pawn ending, where zugzwang is common.
 func (b *Position) hasNonPawnMaterial(colour Colour) bool {
 	offset := Piece(0)
 	if colour == Black {
@@ -105,9 +84,7 @@ func (b *Position) hasNonPawnMaterial(colour Colour) bool {
 		b.pieceBitboards[Rook+offset]|b.pieceBitboards[Queen+offset] != 0
 }
 
-// makeMoveForLegality applies only the board changes needed to test whether the
-// mover's king is attacked. The result has a stale key, clocks, castling rights,
-// and en passant target, so it must not be used as a game position.
+// The result is only valid for king-safety checks, not as a game position.
 func (b *Position) makeMoveForLegality(m Move) Position {
 	return b.makeMoveInternal(m, false)
 }
@@ -130,7 +107,6 @@ func (b *Position) makeMoveInternal(m Move, updateKey bool) Position {
 	fromMask := BitBoard(1) << from
 	toMask := BitBoard(1) << to
 
-	// Start from the old key and remove the state that is about to change.
 	key := uint64(0)
 	if updateKey {
 		key = b.key
@@ -138,7 +114,6 @@ func (b *Position) makeMoveInternal(m Move, updateKey bool) Position {
 		key ^= b.epHash
 	}
 
-	// Find and lift the moving piece.
 	moving := NoPiece
 	for piece := Pawn; piece <= King; piece++ {
 		bb := &next.pieceBitboards[piece+offset]
@@ -156,7 +131,6 @@ func (b *Position) makeMoveInternal(m Move, updateKey bool) Position {
 		panic("makeMove: no piece on the from square")
 	}
 
-	// Remove the captured piece, or the pawn captured en passant.
 	if m.IsEnPassant() {
 		captured := to - 8
 		if us == Black {
@@ -178,7 +152,6 @@ func (b *Position) makeMoveInternal(m Move, updateKey bool) Position {
 		}
 	}
 
-	// Place the moving piece, replacing it with the promotion piece if needed.
 	if m.flags&promotionFlag != 0 {
 		promotion, ok := m.Promotion()
 		if !ok || promotion < Knight || promotion > Queen {
@@ -197,7 +170,6 @@ func (b *Position) makeMoveInternal(m Move, updateKey bool) Position {
 		}
 	}
 
-	// Move the rook when castling.
 	if m.IsCastling() {
 		var rookFrom, rookTo Square
 		switch {
@@ -244,7 +216,6 @@ func (b *Position) makeMoveInternal(m Move, updateKey bool) Position {
 
 		next.flags ^= whiteToMove
 
-		// Add the new castling rights, en passant target, and side to move.
 		key ^= zobristCastling[(next.flags&^whiteToMove)>>1]
 		key ^= next.epHash
 		key ^= zobristSide

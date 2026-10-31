@@ -300,9 +300,6 @@ func TestSearchMetricsPreserveSearchResults(t *testing.T) {
 	if metrics.MakeMoveCalls < metrics.SearchMakeMoveCalls || metrics.MakeMoveCalls > metrics.PseudoMoves+metrics.SearchMakeMoveCalls {
 		t.Fatalf("copy-make counts do not add up: %+v", metrics)
 	}
-	// Every node is entered by one copy-make, except that a PVS or LMR
-	// re-search revisits the same child without copying it again. Allow that
-	// small excess but nothing else.
 	if metrics.SearchMakeMoveCalls > measured.Nodes {
 		t.Fatalf("search copy-make calls = %d, nodes = %d", metrics.SearchMakeMoveCalls, measured.Nodes)
 	}

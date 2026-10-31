@@ -16,8 +16,6 @@ const (
 	maxBenchDepth     = 8
 )
 
-// benchPositions is a fixed, self-contained set of positions. The bench must
-// not depend on the working directory or on test data files.
 var benchPositions = []string{
 	"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
 	"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
@@ -29,8 +27,6 @@ var benchPositions = []string{
 	"8/8/8/4k3/8/8/3Q4/4K3 w - - 0 1",
 }
 
-// Bench runs the deterministic benchmark and prints its final
-// "<nodes> nodes <nps> nps" line to out. It returns a process exit code.
 func Bench(out, errOut io.Writer, depth int) int {
 	if depth < 1 {
 		depth = defaultBenchDepth
@@ -59,8 +55,6 @@ func runBench(out *lineWriter, errOut io.Writer, depth int) int {
 			fmt.Fprintf(errOut, "bench: position %d: %v\n", i+1, err)
 			return 1
 		}
-		// Clear between positions so each search starts from the same table
-		// state and the per-position timings are comparable.
 		tt.Clear()
 		result := position.SearchWithLimits(context.Background(), chess.SearchLimits{
 			MaxDepth: depth,

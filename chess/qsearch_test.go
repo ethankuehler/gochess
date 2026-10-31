@@ -26,7 +26,6 @@ const (
 	freePawnCaptureQSFEN = "4k3/8/8/8/4p3/3Q4/8/4K3 w - - 0 1"
 )
 
-// quiesceAt runs a fresh quiescence search with a full window.
 func quiesceAt(t *testing.T, position *Position, ply int) int {
 	t.Helper()
 	s := &searcher{}
@@ -47,8 +46,6 @@ func TestQuiesceSeesRecapture(t *testing.T) {
 	position := mustFEN(t, defendedPawnFEN)
 	standPat := position.evaluateForSideToMove()
 
-	// Qxd5+ drops the queen to Kxd5, so quiescence must decline the capture and
-	// return the stand-pat score.
 	if got := quiesceAt(t, position, 0); got != standPat {
 		t.Fatalf("quiesce score = %d, want stand-pat %d", got, standPat)
 	}
@@ -85,8 +82,6 @@ func TestQuiescePromotionCapture(t *testing.T) {
 }
 
 func TestQuiesceSearchesOnlyForcingMoves(t *testing.T) {
-	// A quiet capture-free position must score exactly its stand-pat, because
-	// none of the legal moves is a capture or promotion.
 	position := mustFEN(t, NewStartingPosition().FEN())
 	got := quiesceAt(t, position, 0)
 	if want := position.evaluateForSideToMove(); got != want {
@@ -224,8 +219,6 @@ func TestQuiesceDrawLeaves(t *testing.T) {
 			t.Fatalf("repetition leaf = %d, want 0", got)
 		}
 
-		// A key path with only one earlier occurrence is not a third
-		// occurrence and must not score 0.
 		control := &searcher{}
 		if got := control.quiesce(*position, -infinity, infinity, 2); got == 0 {
 			t.Fatal("control quiesce scored 0 without a threefold repetition")
@@ -234,8 +227,6 @@ func TestQuiesceDrawLeaves(t *testing.T) {
 }
 
 func TestQuiesceStalemateUsesStandPat(t *testing.T) {
-	// Stalemate at the horizon is deliberately not detected: a captures-only
-	// search sees no legal captures and returns the stand-pat score.
 	position := mustFEN(t, stalemateQSFEN)
 	if len(position.LegalMoves()) != 0 {
 		t.Fatal("fixture is not stalemate")
@@ -275,8 +266,6 @@ func TestQuiesceColourSymmetry(t *testing.T) {
 		original := mustFEN(t, fen)
 		mirrored := mustFEN(t, mirrorFEN(t, fen))
 
-		// mirrorFEN swaps colours and the side to move, so the side-to-move
-		// score is identical. A White-relative sign bug would negate it.
 		got := quiesceAt(t, original, 1)
 		want := quiesceAt(t, mirrored, 1)
 		if got != want {
@@ -311,11 +300,6 @@ func TestQuiesceDoesNotMutatePosition(t *testing.T) {
 	}
 }
 
-// TestQuiesceMatchesReference compares the production search with the
-// full-width reference. The reference has no alpha-beta, so fixtures are kept
-// small enough that a capture sequence cannot explode; in particular, dense
-// middlegame positions such as kiwipete are validated by the direct tests
-// instead.
 func TestQuiesceMatchesReference(t *testing.T) {
 	fixtures := []string{
 		NewStartingPosition().FEN(),
@@ -389,12 +373,7 @@ func TestSearchCancellationIncludesQuiescence(t *testing.T) {
 	}
 }
 
-// referenceQuiesce is a full-width reference for quiesce with the same
-// terminal, draw, max-ply, and repetition rules. It has no alpha-beta pruning
-// and no transposition table; it exists only to validate the production search
-// in tests. It shares a searcher key path with referenceMinimax so that
-// threefold repetition is detected exactly where the production search detects
-// it, including cycles that start from quiet check evasions.
+// referenceQuiesce is a full-width oracle with no pruning or table.
 func referenceQuiesce(b *Position, ply int) int {
 	return referenceQuiesceAt(&searcher{}, b, ply)
 }

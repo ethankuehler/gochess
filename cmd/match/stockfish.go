@@ -13,8 +13,6 @@ import (
 
 var stockfishDivideLine = regexp.MustCompile(`^([a-h][1-8][a-h][1-8][qrbn]?): (\d+)$`)
 
-// stockfishClient is a small UCI client for an external Stockfish process. It
-// is used as both an opponent and an independent move-generation oracle.
 type stockfishClient struct {
 	cmd       *exec.Cmd
 	stdin     io.WriteCloser
@@ -94,8 +92,6 @@ func (c *stockfishClient) send(command string) error {
 	return nil
 }
 
-// setPosition sends a FEN plus the moves that led to it and waits for readyok.
-// Stockfish reports illegal move sequences as an error line and may exit.
 func (c *stockfishClient) setPosition(fen string, moves []string) error {
 	command := "position fen " + fen
 	if len(moves) > 0 {
@@ -119,8 +115,6 @@ func (c *stockfishClient) setPosition(fen string, moves []string) error {
 	return nil
 }
 
-// perft asks Stockfish for a perft divide. The returned map is keyed by UCI
-// root move and includes every legal move at depth 1.
 func (c *stockfishClient) perft(depth int) (map[string]uint64, uint64, error) {
 	if depth < 1 {
 		return nil, 0, fmt.Errorf("perft depth must be at least 1")

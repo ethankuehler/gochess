@@ -657,8 +657,6 @@
       return `${prefix} · ${info.depth} ply · ${evaluation} · ${info.nodes.toLocaleString()} nodes · ${info.timeMs} ms`;
     }
 
-    // currentDepth returns the typed depth, or null when it is not a valid
-    // integer of at least 1.
     function currentDepth() {
       if (depthEl.value.trim() === "") return null;
       const depth = Number(depthEl.value);
@@ -856,8 +854,7 @@
       const left = 48, right = 352, top = 8, bottom = 86;
       const xMin = points[0].x;
       const xMax = points[points.length - 1].x;
-      // A CPU chart pinned at zero would otherwise auto-scale to 1% and make
-      // the idle line look broken. Keep a stable 0-100% baseline instead.
+      // Keep CPU charts on a stable 0-100% scale.
       const yMax = Math.max(kind === "cpu" ? 100 : 1, ...points.map(point => point.y));
       const xRange = Math.max(1, xMax - xMin);
       const x = value => left + (value - xMin) / xRange * (right - left);
@@ -1200,8 +1197,6 @@
         return;
       }
       if (state.threefoldClaim || state.fiftyMoveClaim) {
-        // Engine-vs-engine has no one to press Claim draw, so adjudicate the
-        // claimable draw on the engines' behalf.
         await claimDraw(true);
         stopAuto();
         return;
@@ -1226,8 +1221,6 @@
     async function toggleAuto() {
       if (auto) {
         stopAuto();
-        // The engine may have just moved White, leaving Black to move; keep
-        // normal engine-vs-human play going when auto stops.
         await maybeEngineMove();
         return;
       }

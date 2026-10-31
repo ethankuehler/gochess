@@ -22,13 +22,6 @@ import (
 	"github.com/ethankuehler/gochess/data"
 )
 
-// Command arena versions pits two gochess builds against each other from a
-// random sample of opening-book lines, at a fixed search limit: equal depth,
-// equal time per move, or equal nodes per move. It is a regression harness
-// rather than a rating harness: an equal limit makes the comparison cheap and
-// reproducible, while the reported Elo difference is anchored to the baseline
-// build's known rating.
-
 type engineIdentity struct {
 	Name      string `json:"name"`
 	Source    string `json:"source"`
@@ -225,8 +218,6 @@ type builtEngine struct {
 	cleanup func()
 }
 
-// versionGameConfig selects one search limit for both engines. mode is
-// "depth", "movetime", or "nodes"; the other limit fields are ignored.
 type versionGameConfig struct {
 	mode     string
 	depth    int
@@ -236,8 +227,6 @@ type versionGameConfig struct {
 	verbose  bool
 }
 
-// enginePlayer is the part of an engine the game loop needs. It keeps version
-// games testable with a fake engine.
 type enginePlayer interface {
 	newGame() error
 	setPosition(fen string, moves []string) error
@@ -283,8 +272,6 @@ func runVersions(args []string, out, errOut io.Writer) error {
 		return fmt.Errorf("at most one of -movetime and -nodes may be set")
 	}
 
-	// -depth has a default, so an explicit use of it is only visible through
-	// Visit. That lets time and node modes reject an accidental depth override.
 	explicit := make(map[string]bool, 3)
 	flags.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
 	if (*movetime > 0 || *nodeLimit > 0) && explicit["depth"] {

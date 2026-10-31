@@ -50,9 +50,6 @@ func TestLateMoveReductionGuard(t *testing.T) {
 }
 
 func TestLateMoveReductionStaysClose(t *testing.T) {
-	// LMR is a heuristic: a reduced line can misjudge a late quiet move, so the
-	// best move is allowed to change. A large score drop would mean the
-	// reduction lost the position, which is not acceptable.
 	fixtures := []string{
 		NewStartingPosition().FEN(),
 		kiwipeteFEN,

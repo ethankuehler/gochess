@@ -98,8 +98,6 @@ func BenchmarkSearchDepth4(b *testing.B) {
 	}
 }
 
-// BenchmarkSearchDepth4Metrics measures the cost of the opt-in counters and
-// timers. Compare it with BenchmarkSearchDepth4 to estimate profiling overhead.
 func BenchmarkSearchDepth4Metrics(b *testing.B) {
 	BuildAllAttacks()
 	position, err := ParseFEN(benchmarkFEN)

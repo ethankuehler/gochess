@@ -1,6 +1,4 @@
-// Command search runs a fixed-depth alpha-beta search on a position and prints
-// the best move, score, node count, and speed. It is a small local debugging
-// tool, not a UCI engine.
+// Command search runs a fixed-depth search on one position.
 package main
 
 import (

@@ -67,8 +67,8 @@ GitHub Actions is **not** an approved hosting option here; the owner has ruled
 it out. Do not enable `.github/workflows/lichess-bot.yml` or propose Actions as
 a host without an explicit request.
 
-`run.sh` is meant for a laptop: it keeps the host awake with `caffeinate` and
-dies with the terminal. For an always-on host, see
+`run.sh` is meant for a laptop: it keeps the host awake with `caffeinate` on
+macOS or `systemd-inhibit` on Linux, and dies with the terminal. For an always-on host, see
 [`deploy/README.md`](deploy/README.md). It installs the same bridge as a
 systemd service on an Oracle Cloud Always Free VM, derives a per-host
 `config.deploy.yml` (with a `--low-ram` variant for the 1 GB micro shape), and

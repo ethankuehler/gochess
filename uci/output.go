@@ -7,9 +7,7 @@ import (
 	"sync"
 )
 
-// lineWriter serializes and flushes every protocol line. Search info and
-// readyok can be produced by different goroutines, so stdout writes must be
-// atomic and line-buffered.
+// lineWriter serializes output from the command loop and search goroutine.
 type lineWriter struct {
 	mu  sync.Mutex
 	buf *bufio.Writer
@@ -20,8 +18,6 @@ func newLineWriter(w io.Writer) *lineWriter {
 	return &lineWriter{buf: bufio.NewWriter(w)}
 }
 
-// line writes one formatted line and flushes it. Write errors are remembered
-// and returned on subsequent calls; callers normally ignore them.
 func (w *lineWriter) line(format string, args ...any) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -38,7 +34,6 @@ func (w *lineWriter) line(format string, args ...any) error {
 	return err
 }
 
-// err returns the first write error, if any.
 func (w *lineWriter) errValue() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()

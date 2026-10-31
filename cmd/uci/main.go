@@ -1,6 +1,4 @@
-// Command uci is the UCI front end for the gochess engine. It embeds the
-// attack tables, so it can be copied to another directory and launched by a
-// chess GUI without a data directory.
+// Command uci is the self-contained gochess UCI executable.
 package main
 
 import (

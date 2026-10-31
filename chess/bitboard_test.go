@@ -8,31 +8,26 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	// Change working directory to project root
 	os.Chdir("..")
 	BuildAllAttacks()
 	os.Exit(m.Run())
 }
 
 func TestParseFEN(t *testing.T) {
-	// Open the CSV file
 	file, err := os.Open("data/FEN.csv")
 	if err != nil {
 		log.Fatalf("Failed to open file: %v", err)
 	}
 	defer file.Close()
 
-	// Create a new CSV reader
 	reader := csv.NewReader(file)
 	reader.FieldsPerRecord = -1
 
-	// Read all the records from the CSV
 	records, err := reader.ReadAll()
 	if err != nil {
 		log.Fatalf("Failed to read CSV file: %v", err)
 	}
 
-	// Loop through and print each record
 	for _, record := range records {
 		var b, err = ParseFEN(record[0])
 		if err != nil {

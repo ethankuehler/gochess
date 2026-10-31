@@ -9,8 +9,6 @@ import (
 	"github.com/ethankuehler/gochess/chess"
 )
 
-// goParams is the parsed form of the go command. Zero values mean "not
-// supplied" for every field.
 type goParams struct {
 	depth       int
 	nodes       uint64
@@ -28,15 +26,12 @@ type goParams struct {
 	searchSet   bool
 }
 
-// searchBudget is the soft and hard time allowance for one move.
 type searchBudget struct {
 	soft time.Duration
 	hard time.Duration
 	ok   bool
 }
 
-// handleGo implements the go command. It snapshots the current position,
-// computes a time budget, and starts one search goroutine.
 func (e *Engine) handleGo(args []string) {
 	if e.isSearching() {
 		fmt.Fprintln(e.errOut, "go ignored: a search is already running")
@@ -69,9 +64,7 @@ func (e *Engine) handleGo(args []string) {
 
 	var pondering *ponderState
 	if params.ponder {
-		// A ponder search starts without a clock. The move budget is installed
-		// at ponderhit, when our clock actually starts; installing it here
-		// would burn the budget while the opponent thinks.
+		// Install the move budget at ponderhit, not while the opponent thinks.
 		stored := params
 		stored.ponder = false
 		stored.infinite = false
@@ -185,9 +178,7 @@ func parseNodes(token string) uint64 {
 	return value
 }
 
-// resolveRootMoves filters the searchmoves list to legal generated moves.
-// A non-nil empty result is meaningful: it means the GUI supplied a
-// searchmoves list with no legal entries, so there is no move to search.
+// A non-nil empty result means searchmoves contained no legal move.
 func (e *Engine) resolveRootMoves(position *chess.Position, params goParams) []chess.Move {
 	if !params.searchSet {
 		return nil
@@ -209,12 +200,7 @@ func (e *Engine) resolveRootMoves(position *chess.Position, params goParams) []c
 	return rootMoves
 }
 
-// allocateBudget turns UCI clock fields into a soft and hard time allowance.
-// It is deliberately conservative: losing on time is worse than playing a
-// slightly weaker move. A movetime command is a ceiling, not an override, when
-// clock fields are also present. GUIs such as lichess-bot send both; without
-// this the engine would search the full movetime even with only a few seconds
-// left and flag instead of playing a mate in one.
+// Movetime caps the clock budget when both are supplied.
 func allocateBudget(params goParams, side chess.Colour, overhead time.Duration) searchBudget {
 	if params.infinite || params.ponder {
 		return searchBudget{}
@@ -246,8 +232,6 @@ func allocateBudget(params goParams, side chess.Colour, overhead time.Duration) 
 	return clock
 }
 
-// allocateClockBudget computes a budget from the side-to-move clock. It does
-// not consider a movetime cap; allocateBudget applies that afterwards.
 func allocateClockBudget(params goParams, side chess.Colour, overhead time.Duration) searchBudget {
 	remaining := params.wtime
 	increment := params.winc

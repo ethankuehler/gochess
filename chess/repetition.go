@@ -2,29 +2,16 @@ package chess
 
 import "math/bits"
 
-// PositionKey identifies a position for threefold-repetition detection. Two
-// positions have the same key when the same pieces occupy the same squares, the
-// same side is to move, the same castling rights remain, and the same en passant
-// capture is available. The move clocks are not part of the key.
+// PositionKey excludes move clocks and en passant targets with no legal capture.
 type PositionKey uint64
 
-// Key returns the repetition key for the position. It is maintained
-// incrementally by makeMove and is therefore cheap to call in the search.
 func (b *Position) Key() PositionKey { return PositionKey(b.key) }
 
-// IsFiftyMoveDraw reports whether the halfmove clock has reached 100 plies,
-// which makes the fifty-move rule claimable by the side to move.
 func (b *Position) IsFiftyMoveDraw() bool { return b.halfmoveClock >= 100 }
 
-// IsSeventyFiveMoveDraw reports whether the halfmove clock has reached 150
-// plies. Unlike the fifty-move rule, the seventy-five-move rule is an
-// automatic draw and does not require a claim.
 func (b *Position) IsSeventyFiveMoveDraw() bool { return b.halfmoveClock >= 150 }
 
-// IsInsufficientMaterial reports whether neither side can possibly deliver
-// checkmate with the material on the board. It implements the standard simple
-// dead-position test: no pawns, rooks, or queens, at most one minor piece, or
-// only bishops confined to one colour complex.
+// IsInsufficientMaterial covers lone minors and bishops on one colour complex.
 func (b *Position) IsInsufficientMaterial() bool {
 	for _, piece := range []Piece{Pawn, Rook, Queen} {
 		if b.pieceBitboards[piece] != 0 || b.pieceBitboards[int(piece)+blackPieceOffset] != 0 {
@@ -38,8 +25,6 @@ func (b *Position) IsInsufficientMaterial() bool {
 	if minors <= 1 {
 		return true
 	}
-	// With knights present, checkmate may still be possible; with bishops on
-	// both colour complexes it definitely is.
 	if knights != 0 || bishops == 0 {
 		return false
 	}
@@ -58,8 +43,6 @@ func (b *Position) IsInsufficientMaterial() bool {
 	return true
 }
 
-// RepetitionCount returns how many times this position's key occurs in history.
-// history holds keys of earlier positions, oldest first.
 func (b *Position) RepetitionCount(history []PositionKey) int {
 	key := b.Key()
 	count := 0
@@ -71,23 +54,14 @@ func (b *Position) RepetitionCount(history []PositionKey) int {
 	return count
 }
 
-// IsThreefoldRepetition reports whether the position has already occurred twice
-// in history, making the current occurrence the third. The repeat does not have
-// to be consecutive. A threefold repetition is claimable, not automatic; see
-// IsFivefoldRepetition for the automatic version.
 func (b *Position) IsThreefoldRepetition(history []PositionKey) bool {
 	return b.RepetitionCount(history) >= 2
 }
 
-// IsFivefoldRepetition reports whether the position has already occurred four
-// times in history, making the current occurrence the fifth. Fivefold
-// repetition is an automatic draw and does not require a claim.
 func (b *Position) IsFivefoldRepetition(history []PositionKey) bool {
 	return b.RepetitionCount(history) >= 4
 }
 
-// computeKey hashes the position from scratch. It is used when a position is
-// created from a FEN; makeMove updates the key incrementally instead.
 func (b *Position) computeKey() uint64 {
 	var key uint64
 	for index, pieces := range b.pieceBitboards {
@@ -105,9 +79,7 @@ func (b *Position) computeKey() uint64 {
 	return key
 }
 
-// computeEnPassantKey returns the hash contribution of the en passant target.
-// FIDE considers positions different only when the en passant capture is
-// actually available, so a target with no adjacent pawn contributes nothing.
+// FIDE only hashes an en passant target when a capture is available.
 func (b *Position) computeEnPassantKey() uint64 {
 	if !b.hasEnPassantCapture() {
 		return 0
@@ -116,9 +88,6 @@ func (b *Position) computeEnPassantKey() uint64 {
 	return zobristEnPassant[FileRankFromSquare(square).file]
 }
 
-// hasEnPassantCapture reports whether a pawn of the side to move is positioned
-// to capture en passant. It checks only pseudo-legal availability, without
-// asking whether the capture would expose the king.
 func (b *Position) hasEnPassantCapture() bool {
 	if b.enPassantSquare == 0 {
 		return false
@@ -153,9 +122,7 @@ func (b *Position) hasEnPassantCapture() bool {
 	return false
 }
 
-// Zobrist tables. The values are generated deterministically with splitmix64,
-// so keys are reproducible within a process and across runs without storing a
-// table on disk. Keys are only compared within one search, not persisted.
+// Deterministic splitmix64 keys need no stored table.
 var (
 	zobristPieces    [12][squareCount]uint64
 	zobristCastling  [16]uint64

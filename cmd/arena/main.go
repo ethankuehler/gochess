@@ -1,9 +1,4 @@
-// Command arena plays gochess against Stockfish or another UCI opponent and
-// reports an Elo estimate. It is deliberately separate from cmd/match: match is
-// a rules verifier, while arena is a rating harness with time controls, an
-// opening book, paired colours, and a bootstrap confidence interval. The
-// "versions" subcommand compares two local gochess builds at a fixed depth, time
-// per move, or node count per move from a random opening sample.
+// Command arena runs rating and version matches between UCI engines.
 package main
 
 import (

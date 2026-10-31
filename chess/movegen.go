@@ -5,8 +5,6 @@ import (
 	"math/bits"
 )
 
-// ensureAttackTables panics if the package-level attack tables have not been
-// built. Callers must run BuildAllAttacks (or the individual builders) first.
 func ensureAttackTables() {
 	ok := len(knightAttacks) == squareCount &&
 		len(kingAttacks) == squareCount &&
@@ -23,24 +21,16 @@ func ensureAttackTables() {
 	}
 }
 
-// isSquareAttacked reports whether by attacks square with the current
-// occupancy.
 func (b *Position) isSquareAttacked(square Square, by Colour) bool {
 	return b.isSquareAttackedWithOccupancy(square, by, b.Occupancy(Both))
 }
 
-// isSquareAttackedWithOccupancy is isSquareAttacked with a caller-supplied
-// occupancy. Castling uses it to test transit squares with the king removed.
 func (b *Position) isSquareAttackedWithOccupancy(square Square, by Colour, occupancy BitBoard) bool {
 	offset := Piece(0)
 	if by == Black {
 		offset = blackPieceOffset
 	}
 
-	// Pawn attacks are computed with shifts rather than the attack tables.
-	// The tables are zero on ranks where a pawn of that colour cannot exist
-	// (for example black pawns on rank 8), but those entries are still needed
-	// when looking up attackers of a back-rank square.
 	target := BitBoard(1) << square
 	if by == White {
 		pawns := b.pieceBitboards[Pawn]
@@ -88,15 +78,11 @@ type legalContext struct {
 	pinEntries   [8]pinnedPiece
 }
 
-// pinnedPiece records the ray a pinned piece may move along.
 type pinnedPiece struct {
 	square Square
 	mask   BitBoard
 }
 
-// pinMask returns the squares a piece on from may move to without exposing the
-// king. Unpinned pieces may move anywhere; only pinned pieces pay for a lookup.
-// A king has at most eight rays, so at most eight pieces can be pinned.
 func (ctx *legalContext) pinMask(from Square) BitBoard {
 	if ctx.pinned&(BitBoard(1)<<from) == 0 {
 		return allSquares
@@ -209,7 +195,6 @@ func (b *Position) newLegalContext() legalContext {
 	return ctx
 }
 
-// appendTargets appends one move per target square, marking captures.
 func appendTargets(moves []Move, from Square, targets, enemy BitBoard) []Move {
 	for targets != 0 {
 		to := Square(bits.TrailingZeros64(uint64(targets)))
@@ -223,7 +208,6 @@ func appendTargets(moves []Move, from Square, targets, enemy BitBoard) []Move {
 	return moves
 }
 
-// appendPromotions appends the four promotion choices for a pawn move.
 func appendPromotions(moves []Move, from, to Square, extraFlags uint16) []Move {
 	promotions := [...]Piece{Queen, Rook, Bishop, Knight}
 	for _, promotion := range promotions {
@@ -232,8 +216,6 @@ func appendPromotions(moves []Move, from, to Square, extraFlags uint16) []Move {
 	return moves
 }
 
-// isPromotionRank reports whether a pawn of the given colour promotes on
-// square.
 func isPromotionRank(colour Colour, square Square) bool {
 	rank := FileRankFromSquare(square).rank
 	if colour == White {
@@ -242,8 +224,6 @@ func isPromotionRank(colour Colour, square Square) bool {
 	return rank == 0
 }
 
-// canCastle reports whether colour may castle on the given side from the
-// current position. occ is the full board occupancy.
 func (b *Position) canCastle(colour Colour, kingSide bool, occ BitBoard) bool {
 	var (
 		kingFrom, rookFrom Square
@@ -451,28 +431,22 @@ func (b *Position) strictlyLegalMoves(moves []Move) []Move {
 	return moves
 }
 
-// legalMoves generates moves that satisfy check, pin, and king-safety rules.
 func (b *Position) legalMoves(moves []Move) []Move {
 	return b.strictlyLegalMoves(moves)
 }
 
-// LegalMoves returns all legal moves for the side to move. The attack tables
-// must have been built with BuildAllAttacks or the individual builders.
 func (b *Position) LegalMoves() []Move {
 	ensureAttackTables()
 	var buf [256]Move
 	return append([]Move(nil), b.legalMoves(buf[:0])...)
 }
 
-// InCheck reports whether the side to move's king is attacked.
 func (b *Position) InCheck() bool {
 	ensureAttackTables()
 	us := b.sideToMove()
 	return b.isSquareAttacked(b.kingSquare(us), us.Opposite())
 }
 
-// ApplyMove applies a legal move and returns the resulting position. It
-// returns an error if m is not one of the moves returned by LegalMoves.
 func (b *Position) ApplyMove(m Move) (*Position, error) {
 	ensureAttackTables()
 	var buf [256]Move

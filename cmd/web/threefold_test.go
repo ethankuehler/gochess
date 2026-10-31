@@ -5,9 +5,6 @@ import (
 	"testing"
 )
 
-// TestReportedGameThreefoldIsClaimable replays the computer-vs-computer game
-// from the report and checks that the third occurrence of the repeated position
-// is claimable but does not end the game by itself.
 func TestReportedGameThreefoldIsClaimable(t *testing.T) {
 	g := newGame()
 	t.Cleanup(g.Close)

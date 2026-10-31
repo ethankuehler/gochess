@@ -26,8 +26,6 @@ type gameRecord struct {
 	Moves    []string `json:"moves"`
 }
 
-// playGame plays one game from a book line. The colours are assigned by the
-// caller; everything after the book is decided by the two engines.
 func playGame(cfg gameConfig, line opening, ourWhite bool, our *uci.Client, sf *uciEngine, out io.Writer) (gameRecord, error) {
 	startFEN := chess.NewStartingPosition().FEN()
 	board := chess.NewStartingPosition()

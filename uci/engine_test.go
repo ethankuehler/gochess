@@ -441,8 +441,7 @@ func TestPonderHitStartsClockLate(t *testing.T) {
 	s.send("go ponder movetime 400")
 	s.waitForPrefix("info depth 2")
 
-	// The ponder movetime must not start ticking until ponderhit. If it did,
-	// the engine would have stopped (and sent bestmove) before this point.
+	// Pondering must not consume the move budget before ponderhit.
 	time.Sleep(500 * time.Millisecond)
 	start := len(s.seen)
 	s.send("isready")

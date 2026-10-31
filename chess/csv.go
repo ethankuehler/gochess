@@ -9,8 +9,6 @@ import (
 	"strconv"
 )
 
-// loadAttackTableFS loads one 64-entry attack table from a CSV in fsys with
-// columns square, start square bit, and attack bitboard.
 func loadAttackTableFS(fsys fs.FS, fileName string) ([]BitBoard, error) {
 	if fsys == nil {
 		return nil, fmt.Errorf("nil filesystem")
@@ -22,8 +20,6 @@ func loadAttackTableFS(fsys fs.FS, fileName string) ([]BitBoard, error) {
 	return parseAttackTable(data, fileName)
 }
 
-// loadAttackTable loads one attack table from disk and exits the process on
-// failure. It is the historical helper used by the package-level builders.
 func loadAttackTable(fileName string) []BitBoard {
 	target, err := loadAttackTableFile(fileName)
 	if err != nil {
@@ -32,7 +28,6 @@ func loadAttackTable(fileName string) []BitBoard {
 	return target
 }
 
-// loadAttackTableFile is loadAttackTable without the fatal exit.
 func loadAttackTableFile(fileName string) ([]BitBoard, error) {
 	data, err := readCSV(fileName)
 	if err != nil {
@@ -41,7 +36,6 @@ func loadAttackTableFile(fileName string) ([]BitBoard, error) {
 	return parseAttackTable(data, fileName)
 }
 
-// parseAttackTable validates the CSV records and returns the table.
 func parseAttackTable(data [][]string, fileName string) ([]BitBoard, error) {
 	if len(data) != squareCount+1 {
 		return nil, fmt.Errorf("%s: expected %d data rows, got %d", fileName, squareCount, len(data))
@@ -69,8 +63,6 @@ func parseAttackTable(data [][]string, fileName string) ([]BitBoard, error) {
 	return target, nil
 }
 
-// readCSV opens and parses a CSV file. Every record must have the same
-// number of fields as the header.
 func readCSV(fileName string) ([][]string, error) {
 	file, err := os.Open(fileName)
 	if err != nil {
@@ -88,7 +80,6 @@ func readCSV(fileName string) ([][]string, error) {
 	return records, nil
 }
 
-// readCSVFS parses a CSV file from an fs.FS.
 func readCSVFS(fsys fs.FS, fileName string) ([][]string, error) {
 	file, err := fsys.Open(fileName)
 	if err != nil {
@@ -106,7 +97,6 @@ func readCSVFS(fsys fs.FS, fileName string) ([][]string, error) {
 	return records, nil
 }
 
-// readRecord parses every field in a CSV record as an unsigned integer.
 func readRecord(record []string) ([]uint64, error) {
 	values := make([]uint64, len(record))
 	for i, field := range record {

@@ -16,9 +16,7 @@ import (
 	"github.com/ethankuehler/gochess/data"
 )
 
-// Engine is one UCI session. The command loop owns position and option
-// mutation; the search goroutine owns the current search and is the only
-// writer of bestmove.
+// Only the search goroutine writes bestmove; the command loop owns the position.
 type Engine struct {
 	in     *bufio.Reader
 	out    *lineWriter
@@ -46,25 +44,17 @@ type Engine struct {
 	ponderMisses int
 }
 
-// ponderState is the extra state carried by one go ponder command. The search
-// itself receives the pointer when it starts, so releasing it only needs to
-// close the channel; the command loop never has to look the search up.
 type ponderState struct {
 	clock   *chess.SearchClock
-	params  goParams // sanitized: Ponder=false, Infinite=false
+	params  goParams
 	side    chess.Colour
 	started time.Time
 	release chan struct{}
 
-	// released is guarded by Engine.mu. depth is updated by the search
-	// goroutine and read by the command loop when it reports the outcome.
 	released bool
 	depth    atomic.Int64
 }
 
-// Run starts a UCI session on the given streams and returns when the GUI sends
-// quit or closes stdin. It uses the embedded data files, so the working
-// directory does not matter.
 func Run(in io.Reader, out, errOut io.Writer) int {
 	engine := newEngine(in, out, errOut, data.FS)
 	engine.loop()
@@ -84,8 +74,6 @@ func newEngine(in io.Reader, out, errOut io.Writer, fsys fs.FS) *Engine {
 	}
 }
 
-// lockedWriter serializes diagnostics written by the command loop and the
-// search goroutine.
 type lockedWriter struct {
 	mu sync.Mutex
 	w  io.Writer
@@ -115,8 +103,6 @@ func (e *Engine) loop() {
 	}
 }
 
-// handle processes one line. It returns true when the command loop should
-// exit (quit).
 func (e *Engine) handle(line string) bool {
 	line = strings.TrimSpace(line)
 	if line == "" {
@@ -229,9 +215,7 @@ func (e *Engine) handleSetOption(args []string) {
 	}
 }
 
-// transpositionTable returns the session table, allocating it on first use.
-// Only the command loop calls this, and it only does so while no search is
-// running, so the table is never resized underneath a search.
+// Only the idle command loop may allocate or resize the table.
 func (e *Engine) transpositionTable() *chess.TranspositionTable {
 	if e.tt == nil {
 		e.tt = chess.NewTranspositionTable(e.options.hashMB)
@@ -283,8 +267,7 @@ func (e *Engine) handlePonderHit() {
 		return
 	}
 
-	// The clock starts now, not at go ponder: our clock was not running while
-	// the opponent was thinking, so the full move budget is still available.
+	// The move clock starts at ponderhit.
 	budget := allocateBudget(ps.params, ps.side, e.options.moveOverhead)
 	if budget.ok {
 		now := time.Now()
@@ -300,8 +283,7 @@ func (e *Engine) handlePonderHit() {
 	fmt.Fprintf(e.errOut, "ponder hit: %dms depth %d\n", elapsed.Milliseconds(), depth)
 }
 
-// releasePonderLocked closes a ponder search's release channel exactly once.
-// The caller must hold e.mu.
+// releasePonderLocked requires e.mu.
 func (e *Engine) releasePonderLocked(ps *ponderState) {
 	if ps.released {
 		return
@@ -310,8 +292,6 @@ func (e *Engine) releasePonderLocked(ps *ponderState) {
 	close(ps.release)
 }
 
-// quit stops a running search and waits for it to finish. It is safe to call
-// more than once.
 func (e *Engine) quit() {
 	e.mu.Lock()
 	if e.quitting {
@@ -349,10 +329,7 @@ func (e *Engine) isSearching() bool {
 	return e.searching
 }
 
-// positionForGo returns the position to search. If no position has ever been
-// set it falls back to the starting position, which is friendlier than
-// replying with no move. A failed position command leaves position nil and
-// posValid false, in which case go must not reuse a stale board.
+// A failed position command must not leave a stale board available to go.
 func (e *Engine) positionForGo() (*chess.Position, []chess.PositionKey, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

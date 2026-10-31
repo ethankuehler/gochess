@@ -14,10 +14,7 @@ import (
 	"github.com/ethankuehler/gochess/chess"
 )
 
-// EngineResult is the information a client collects from one `go` command.
-// Score is from the side to move's point of view, matching UCI. When HasMate
-// is true, MateIn is in moves (negative means the engine is being mated) and
-// Score is not meaningful.
+// EngineResult scores are from the side to move's point of view.
 type EngineResult struct {
 	BestMove   string
 	Score      int
@@ -33,7 +30,6 @@ type EngineResult struct {
 	Metrics    *chess.SearchMetrics
 }
 
-// EngineIteration is one iterative-deepening info sample.
 type EngineIteration struct {
 	Depth    int    `json:"depth"`
 	SelDepth int    `json:"seldepth"`
@@ -42,10 +38,7 @@ type EngineIteration struct {
 	TimeMS   int64  `json:"timeMs"`
 }
 
-// Client is a small UCI client for a single engine session. It is not safe for
-// concurrent use; callers should serialize commands. StartInProcess runs the
-// engine in this process over io.Pipe, which is convenient for the web demo
-// and for tests because no external binary or working directory is needed.
+// Client commands must be serialized.
 type Client struct {
 	in         io.WriteCloser
 	out        *bufio.Reader
@@ -60,9 +53,6 @@ type Client struct {
 	closeErr  error
 }
 
-// StartInProcess starts a gochess UCI engine in the current process and
-// completes the uci/isready handshake. Diagnostics from the engine are written
-// to errOut; pass io.Discard to silence them.
 func StartInProcess(errOut io.Writer) (*Client, error) {
 	if errOut == nil {
 		errOut = io.Discard
@@ -130,7 +120,6 @@ func (c *Client) handshake() error {
 	}
 }
 
-// NewGame tells the engine that the next search is from a different game.
 func (c *Client) NewGame() error {
 	if err := c.send("ucinewgame"); err != nil {
 		return fmt.Errorf("send ucinewgame: %w", err)
@@ -138,8 +127,6 @@ func (c *Client) NewGame() error {
 	return c.ready()
 }
 
-// SetOption sends a UCI option and waits for readyok. An empty value omits the
-// "value" field, which is how button options such as "Clear Hash" are sent.
 func (c *Client) SetOption(name, value string) error {
 	command := "setoption name " + name
 	if value != "" {
@@ -151,11 +138,7 @@ func (c *Client) SetOption(name, value string) error {
 	return c.ready()
 }
 
-// SetPosition sets the current FEN, optionally followed by the moves that led
-// to it. Passing the move list lets the engine see the game history it needs
-// for threefold-repetition detection; a bare FEN has no history. It waits for
-// isready and reports an engine position error rather than silently searching a
-// stale board.
+// SetPosition includes prior moves for repetition detection.
 func (c *Client) SetPosition(fen string, moves ...string) error {
 	command := "position fen " + fen
 	if len(moves) > 0 {
@@ -167,8 +150,6 @@ func (c *Client) SetPosition(fen string, moves ...string) error {
 	return c.ready()
 }
 
-// GoDepth runs a fixed-depth search and returns the final info and best move.
-// A null or missing best move is returned as an empty BestMove.
 func (c *Client) GoDepth(depth int) (EngineResult, error) {
 	if depth < 1 {
 		depth = 1
@@ -176,8 +157,6 @@ func (c *Client) GoDepth(depth int) (EngineResult, error) {
 	return c.goCommand(fmt.Sprintf("go depth %d", depth))
 }
 
-// GoMovetime runs a search bounded by wall-clock time. A zero or negative
-// budget is treated as one millisecond.
 func (c *Client) GoMovetime(budget time.Duration) (EngineResult, error) {
 	ms := budget.Milliseconds()
 	if ms < 1 {
@@ -186,7 +165,6 @@ func (c *Client) GoMovetime(budget time.Duration) (EngineResult, error) {
 	return c.goCommand(fmt.Sprintf("go movetime %d", ms))
 }
 
-// GoNodes runs a search bounded by a node count.
 func (c *Client) GoNodes(nodes uint64) (EngineResult, error) {
 	if nodes < 1 {
 		nodes = 1
@@ -211,8 +189,7 @@ func (c *Client) goCommand(command string) (EngineResult, error) {
 			var metrics chess.SearchMetrics
 			payload := strings.TrimPrefix(line, "info string analysis ")
 			if err := json.Unmarshal([]byte(payload), &metrics); err != nil {
-				// Keep reading until bestmove: aborting here would leave the
-				// move in the pipe and desynchronize the next command.
+				// Drain through bestmove to keep the next command synchronized.
 				if analysisErr == nil {
 					analysisErr = fmt.Errorf("invalid analysis info: %w", err)
 				}
@@ -345,8 +322,6 @@ func isInitializationError(line string) bool {
 	return strings.HasPrefix(line, "info string") && strings.Contains(line, "initialization failed")
 }
 
-// parseInfo extracts the fields the web UI needs from one info line. Unknown
-// fields and `info string` messages are ignored.
 func parseInfo(fields []string, result *EngineResult) {
 	if len(fields) < 2 || fields[1] == "string" {
 		return

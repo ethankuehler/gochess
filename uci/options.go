@@ -14,10 +14,6 @@ const (
 	maxMoveOverheadMS     = 5000
 )
 
-// options holds the settings that are actually implemented. MultiPV and
-// similar options are deliberately absent: setoption accepts them so a GUI does
-// not break, but advertising them would promise behaviour the engine does not
-// have.
 type options struct {
 	moveOverhead time.Duration
 	threads      int
@@ -49,9 +45,6 @@ func (o options) lines() []string {
 	return lines
 }
 
-// set applies a setoption value. It returns a message worth reporting to the
-// GUI, or an empty string. Unknown options and unsupported options are
-// accepted and ignored.
 func (o *options) set(name, value string, hasValue bool) string {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "move overhead":
@@ -113,8 +106,6 @@ func (o *options) set(name, value string, hasValue bool) string {
 		o.hashMB = mb
 		return ""
 	case "clear hash":
-		// The engine clears its table in handleSetOption; the option parser
-		// only needs to accept the button.
 		return ""
 	case "ponder":
 		if !hasValue {
@@ -139,9 +130,6 @@ func (o *options) set(name, value string, hasValue bool) string {
 	}
 }
 
-// parseSetOption splits "setoption name <id> [value <x>]" arguments. The name
-// and value are joined back with single spaces because UCI allows both to
-// contain spaces.
 func parseSetOption(args []string) (name, value string, hasValue, ok bool) {
 	if len(args) == 0 || !strings.EqualFold(args[0], "name") {
 		return "", "", false, false

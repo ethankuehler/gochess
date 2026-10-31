@@ -105,9 +105,6 @@ func TestComparePerft(t *testing.T) {
 	}
 }
 
-// TestMatchAgainstStockfish runs a short match and therefore exercises the
-// external UCI client, per-position perft comparison, legal-move checks, and
-// draw adjudication. It is skipped unless STOCKFISH_BIN is set.
 func TestMatchAgainstStockfish(t *testing.T) {
 	path := os.Getenv("STOCKFISH_BIN")
 	if path == "" {

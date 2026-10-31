@@ -2,41 +2,27 @@ package chess
 
 import "unsafe"
 
-// Transposition table sizing. The table is allocated in mebibytes and rounded
-// down to a power-of-two number of entries so that indexing is a mask.
 const (
 	DefaultHashMB = 16
 	MinHashMB     = 1
 	MaxHashMB     = 1024
 
-	// maxTTDepth is the largest draft an int8 entry can hold. The search never
-	// stores the root itself at a draft above maxPly.
 	maxTTDepth = 127
 
-	// ttMaxHalfmoveClock disables table use close to the fifty-move rule. The
-	// Zobrist key deliberately excludes the move clocks, so a score found at a
-	// low clock can be misleading at a high one; dropping the table near the
-	// horizon is a cheap way to avoid claiming a draw that is not there.
+	// The Zobrist key excludes clocks, so disable the table near fifty-move draws.
 	ttMaxHalfmoveClock = 80
 )
 
-// Mate scores in the table are stored relative to the position rather than to
-// the root, so a mate found at one ply can be reused at another. Scores this
-// far from zero encode forced mates; see ScoreToMate.
 const mateScoreTTThreshold = MateScore - maxPly
 
-// ttBound is the alpha-beta result type stored with an entry.
 type ttBound uint8
 
 const (
-	ttExact ttBound = iota // the score is exact
-	ttLower                // the true score is at least this high
-	ttUpper                // the true score is at most this high
+	ttExact ttBound = iota
+	ttLower
+	ttUpper
 )
 
-// ttEntry is one transposition-table slot. The full 64-bit key is stored so a
-// probe can reject index collisions without relying on a shorter signature.
-// The struct is 24 bytes on 64-bit platforms.
 type ttEntry struct {
 	key   uint64
 	move  Move
@@ -48,9 +34,6 @@ type ttEntry struct {
 
 const ttEntryBytes = int(unsafe.Sizeof(ttEntry{}))
 
-// TTStats counts transposition-table activity during one search. Probes counts
-// every lookup, Hits counts lookups that found the same position, Cutoffs
-// counts hits that shortened the search, and Stores counts entries written.
 type TTStats struct {
 	Probes  uint64 `json:"probes"`
 	Hits    uint64 `json:"hits"`
@@ -58,22 +41,13 @@ type TTStats struct {
 	Stores  uint64 `json:"stores"`
 }
 
-// TranspositionTable caches search results by Zobrist key. One table is meant
-// for one search at a time; it is not safe for concurrent use.
-//
-// Replacement is depth-preferred within a search and always-replace for
-// entries left by an earlier search. That keeps deep results for the current
-// iteration while preventing a long game from filling the table with stale
-// positions. Age is a per-search generation counter, incremented by newSearch.
+// TranspositionTable is single-threaded.
 type TranspositionTable struct {
 	entries []ttEntry
 	mask    uint64
 	age     uint8
 }
 
-// NewTranspositionTable allocates a table of approximately sizeMB mebibytes.
-// The size is clamped to [MinHashMB, MaxHashMB] and rounded down to a power of
-// two entries, so the usable memory can be somewhat smaller than requested.
 func NewTranspositionTable(sizeMB int) *TranspositionTable {
 	entries := ttEntryCount(sizeMB)
 	return &TranspositionTable{
@@ -82,9 +56,6 @@ func NewTranspositionTable(sizeMB int) *TranspositionTable {
 	}
 }
 
-// ttEntryCount clamps sizeMB and rounds the slot count down to a power of two.
-// It is separate from allocation so sizing can be tested without reserving the
-// maximum amount of memory.
 func ttEntryCount(sizeMB int) int {
 	if sizeMB < MinHashMB {
 		sizeMB = MinHashMB
@@ -100,8 +71,6 @@ func ttEntryCount(sizeMB int) int {
 	return entries
 }
 
-// Clear empties the table and resets its generation. It is used by ucinewgame
-// and by the Clear Hash option.
 func (t *TranspositionTable) Clear() {
 	if t == nil {
 		return
@@ -110,7 +79,6 @@ func (t *TranspositionTable) Clear() {
 	t.age = 0
 }
 
-// Entries reports the number of slots in the table.
 func (t *TranspositionTable) Entries() int {
 	if t == nil {
 		return 0
@@ -118,9 +86,7 @@ func (t *TranspositionTable) Entries() int {
 	return len(t.entries)
 }
 
-// newSearch starts a new generation. Entries from older generations are
-// replaced even when their draft is higher. When the 8-bit generation wraps,
-// the table is cleared so ancient entries cannot masquerade as current ones.
+// Clear on generation wrap so stale entries cannot look current.
 func (t *TranspositionTable) newSearch() {
 	if t == nil {
 		return
@@ -131,9 +97,6 @@ func (t *TranspositionTable) newSearch() {
 	}
 }
 
-// probe returns the entry at key's index. ok is false on an empty slot or a
-// different position. Index collisions are normal; the key comparison is what
-// makes a hit exact.
 func (t *TranspositionTable) probe(key uint64) (ttEntry, bool) {
 	if t == nil {
 		return ttEntry{}, false
@@ -142,9 +105,7 @@ func (t *TranspositionTable) probe(key uint64) (ttEntry, bool) {
 	return entry, entry.key == key
 }
 
-// store writes an entry using the depth-preferred replacement policy. Equal
-// keys keep the deeper result; slots owned by an older search are overwritten
-// regardless of depth.
+// store prefers deeper entries from the current search.
 func (t *TranspositionTable) store(key uint64, depth int, score int32, bound ttBound, move Move) {
 	if t == nil {
 		return
@@ -175,9 +136,7 @@ func (t *TranspositionTable) store(key uint64, depth int, score int32, bound ttB
 	}
 }
 
-// scoreToTT converts a search score from root-relative mate distance to a
-// position-relative value. A mate in three from ply 5 and a mate in three from
-// ply 9 must hash to the same value.
+// Store mate distances relative to the position, not the root.
 func scoreToTT(score, ply int) int32 {
 	switch {
 	case score >= mateScoreTTThreshold:
@@ -188,7 +147,6 @@ func scoreToTT(score, ply int) int32 {
 	return int32(score)
 }
 
-// scoreFromTT reverses scoreToTT for the ply at which the entry is probed.
 func scoreFromTT(score int32, ply int) int {
 	value := int(score)
 	switch {

@@ -9,16 +9,12 @@ import (
 	"github.com/ethankuehler/gochess/chess"
 )
 
-// opening is one book line: a name and the UCI moves played from the start
-// position before the engines take over.
 type opening struct {
 	Name  string
 	Moves []string
 }
 
-// loadBook reads a CSV with a "name,moves" header. Each line is validated by
-// replaying it, so a typo fails before any game is played. Lines that transpose
-// to an already-seen position are dropped to avoid pseudo-replication.
+// loadBook validates every line and drops transpositions.
 func loadBook(path string) ([]opening, error) {
 	file, err := os.Open(path)
 	if err != nil {
