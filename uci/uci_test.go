@@ -40,9 +40,9 @@ func TestParseSetOption(t *testing.T) {
 func TestOptions(t *testing.T) {
 	options := defaultOptions()
 	lines := options.lines()
-	wantLines := 4
+	wantLines := 5
 	if metricsSupported {
-		wantLines = 5
+		wantLines = 6
 	}
 	if len(lines) != wantLines {
 		t.Fatalf("got %d option lines, want %d: %v", len(lines), wantLines, lines)
@@ -59,11 +59,17 @@ func TestOptions(t *testing.T) {
 	if !strings.Contains(lines[3], "option name Move Overhead type spin default 50 min 0 max 5000") {
 		t.Errorf("unexpected Move Overhead line: %s", lines[3])
 	}
-	if metricsSupported && lines[4] != "option name Analysis type check default false" {
-		t.Errorf("unexpected Analysis line: %s", lines[4])
+	if metricsSupported && lines[5] != "option name Analysis type check default false" {
+		t.Errorf("unexpected Analysis line: %s", lines[5])
 	}
 	if options.analysis {
 		t.Error("Analysis defaults to true")
+	}
+	if lines[4] != "option name Ponder type check default false" {
+		t.Errorf("unexpected Ponder line: %s", lines[4])
+	}
+	if options.ponder {
+		t.Error("Ponder defaults to true")
 	}
 
 	if msg := options.set("Move Overhead", "100", true); msg != "" {
@@ -100,6 +106,19 @@ func TestOptions(t *testing.T) {
 	}
 	if msg := options.set("Analysis", "", false); msg != "" || options.analysis {
 		t.Errorf("missing Analysis value message = %q, enabled = %v", msg, options.analysis)
+	}
+
+	if msg := options.set("Ponder", "TRUE", true); msg != "" || !options.ponder {
+		t.Errorf("Ponder true message = %q, enabled = %v", msg, options.ponder)
+	}
+	if msg := options.set("Ponder", "yes", true); !strings.Contains(msg, "invalid Ponder value") || !options.ponder {
+		t.Errorf("invalid Ponder message = %q, enabled = %v", msg, options.ponder)
+	}
+	if msg := options.set("Ponder", "false", true); msg != "" || options.ponder {
+		t.Errorf("Ponder false message = %q, enabled = %v", msg, options.ponder)
+	}
+	if msg := options.set("Ponder", "", false); msg != "" || options.ponder {
+		t.Errorf("missing Ponder value message = %q, enabled = %v", msg, options.ponder)
 	}
 
 	if msg := options.set("Hash", "256", true); msg != "" {
