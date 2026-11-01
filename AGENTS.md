@@ -289,8 +289,8 @@ bench/version smoke test, and Windows/macOS cross-compilation. The compiled
 `gochess` binary, `gochess-uci`, `.vscode/`, the local Go caches (`.gocache/`,
 `.gomodcache/`, `.gopath/`), and local planning notes in `plans/` are gitignored.
 
-Never commit or push Markdown (`.md`) files other than `README.md`; keep all
-other Markdown documentation local.
+Never commit or push Markdown (`.md`) files other than `README.md` and
+`AGENTS.md`; keep all other Markdown documentation local.
 
 ## Core conventions and architecture
 
