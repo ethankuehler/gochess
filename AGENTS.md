@@ -153,8 +153,9 @@ deepening alpha-beta search, and a UCI front end.
   - `magic_io.go` — magic-number CSV load/save (`LoadMagicEntries`,
     `LoadMagicEntriesFS`, `SaveMagicEntries`).
   - `movegen.go` — attack detection (`isSquareAttacked`), strictly legal
-    generation with checker and pin masks, castling checks, special-move king
-    safety validation, `LegalMoves`, and `InCheck`.
+    generation with checker and pin masks, direct capture/promotion generation,
+    castling checks, special-move king safety validation, `LegalMoves`, and
+    `InCheck`.
   - `movegen_metrics.go` — instrumented legal generation behind
     `//go:build metrics`.
   - `makemove.go` — copy-make `makeMove`, castling-rights updates, en passant,
@@ -166,9 +167,11 @@ deepening alpha-beta search, and a UCI front end.
   - `eval.go` — material values, the precomputed piece-square table
     (centrality, king safety, pawn advancement), and `attackPenalty` threat
     terms for hanging or cheaply attacked pieces, plus `Position.Evaluate`.
-  - `qsearch.go` — depth-zero `quiesce`: stand-pat, captures, en passant, and
-    promotions, all legal evasions when in check, MVV-LVA ordering, and
-    quiescence node/draw accounting.
+  - `qsearch.go` — depth-zero `quiesce`: stand-pat, directly generated captures,
+    en passant, and promotions, all legal evasions when in check, SEE/MVV-LVA
+    ordering, optional negative-SEE pruning, and quiescence node/draw accounting.
+  - `see.go` — bitboard static exchange evaluation with least-valuable-attacker
+    selection, x-ray updates, en passant, and promotion gains.
   - `search.go` — `MateScore`, `SearchResult`, `SearchInfo`, `SearchLimits`,
     fixed-depth `Search`, iterative-deepening `SearchWithLimits`, depth-zero
     delegation to `quiesce`, MVV-LVA + killer + history move ordering,
@@ -409,10 +412,14 @@ Evaluation and search:
   aspiration windows from depth 4: 25 cp around the previous score, doubling on
   a fail, capped retries, then the full window.
 - `negamax` delegates every depth-zero node to `quiesce` in `chess/qsearch.go`.
-  It searches captures, en passant, and promotions; it takes the static score as
-  a stand-pat lower bound when not in check; and it searches every legal evasion
-  when in check, returning a mate score when there are none. Ordering is
-  MVV-LVA. Quiescence does not probe or store in the transposition table and
+  It directly generates captures, en passant, and promotions instead of filtering
+  a full legal move list; it takes the static score as a stand-pat lower bound
+  when not in check; and it searches every legal evasion when in check, returning
+  a mate score when there are none. Ordering combines static exchange evaluation
+  (SEE) with MVV-LVA and places non-losing captures before losing ones. By
+  default, negative-SEE non-promotion captures are pruned outside check and mate
+  windows; `searchOptions.see` and `searchOptions.seePruning` allow independent
+  ablation. Quiescence does not probe or store in the transposition table and
   does not extend the PV. It counts its own node, so every node is counted
   exactly once, and `SelDepth` includes quiescence plies while `Depth` does not.
   Draw checks run at every quiescence node, with checkmate taking precedence
@@ -705,9 +712,12 @@ Things to be careful with:
   depths. `chess/qsearch_test.go` covers stand-pat, free and defended captures,
   en passant, promotions, MVV-LVA ordering, quiet evasions, mate/draw precedence
   at the horizon, the max-ply cap, colour symmetry, node limits, cancellation,
-  and reference equivalence. The reference oracle models draws, repetition, and
-  the ply cap but has no alpha-beta, so dense middlegame positions are compared
-  only at shallow depths.
+  and reference equivalence. `chess/tactical_test.go` checks exact direct versus
+  filtered tactical generation on tactical fixtures and deterministic random
+  games. `chess/see_test.go` covers exchange values, x-rays, en passant,
+  promotions, SEE ordering/pruning, pruning exemptions, and node reduction. The
+  reference oracle models draws, repetition, and the ply cap but has no
+  alpha-beta, so dense middlegame positions are compared only at shallow depths.
 - `chess/ucimove_test.go` covers double pushes, captures, en passant, castling,
   all four promotions, promotion captures, illegal/malformed moves, and
   `FindLegalMove` with flagless notation. `chess/repetition_test.go` covers key
