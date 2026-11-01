@@ -62,6 +62,78 @@ func (b *Position) addStrictlyLegalKingMovesWithStats(moves []Move, ctx *legalCo
 	return moves
 }
 
+func (b *Position) tacticalMovesWithStats(moves []Move, stats *moveGenStats) []Move {
+	generationStart := time.Now()
+	filterBefore := stats.filterNS
+	initialLen := len(moves)
+	ctx := b.newLegalContext()
+	offset := Piece(0)
+	if ctx.us == Black {
+		offset = blackPieceOffset
+	}
+
+	if ctx.checkerCount < 2 {
+		pushTable, attackTable := pawnMoveTables(ctx.us)
+		for pawns := b.pieceBitboards[Pawn+offset]; pawns != 0; pawns &= pawns - 1 {
+			from := Square(bits.TrailingZeros64(uint64(pawns)))
+			allowed := ctx.checkTarget & ctx.pinMask(from)
+			before := len(moves)
+			for pushes := pushTable[from] &^ ctx.occupancy & allowed; pushes != 0; pushes &= pushes - 1 {
+				to := Square(bits.TrailingZeros64(uint64(pushes)))
+				if isPromotionRank(ctx.us, to) {
+					moves = appendPromotions(moves, from, to, 0)
+				}
+			}
+			for captures := attackTable[from] & ctx.enemy & allowed; captures != 0; captures &= captures - 1 {
+				to := Square(bits.TrailingZeros64(uint64(captures)))
+				if isPromotionRank(ctx.us, to) {
+					moves = appendPromotions(moves, from, to, captureFlag)
+				} else {
+					moves = append(moves, newMove(from, to, captureFlag))
+				}
+			}
+			stats.pseudoMoves += uint64(len(moves) - before)
+
+			if targets := attackTable[from] & b.enPassantSquare; targets != 0 {
+				to := Square(bits.TrailingZeros64(uint64(targets)))
+				m := newMove(from, to, captureFlag|enPassantFlag)
+				stats.pseudoMoves++
+				filterStart := time.Now()
+				next := b.makeMoveForLegality(m)
+				stats.makeMoveCalls++
+				legal := !next.isSquareAttacked(next.kingSquare(ctx.us), ctx.them)
+				stats.filterNS += time.Since(filterStart).Nanoseconds()
+				if legal {
+					moves = append(moves, m)
+				}
+			}
+		}
+
+		before := len(moves)
+		moves = b.strictlyLegalTacticalPieceMoves(moves, &ctx, offset)
+		stats.pseudoMoves += uint64(len(moves) - before)
+	}
+
+	for targets := kingAttacks[ctx.king] & ctx.enemy; targets != 0; targets &= targets - 1 {
+		to := Square(bits.TrailingZeros64(uint64(targets)))
+		m := newMove(ctx.king, to, captureFlag)
+		stats.pseudoMoves++
+		filterStart := time.Now()
+		next := b.makeMoveForLegality(m)
+		stats.makeMoveCalls++
+		legal := !next.isSquareAttacked(next.kingSquare(ctx.us), ctx.them)
+		stats.filterNS += time.Since(filterStart).Nanoseconds()
+		if legal {
+			moves = append(moves, m)
+		}
+	}
+
+	stats.legalMoves += uint64(len(moves) - initialLen)
+	generationNS := time.Since(generationStart).Nanoseconds() - (stats.filterNS - filterBefore)
+	stats.generationNS += generationNS
+	return moves
+}
+
 // Keep this in sync with strictlyLegalMoves.
 func (b *Position) legalMovesWithStats(moves []Move, stats *moveGenStats) []Move {
 	generationStart := time.Now()

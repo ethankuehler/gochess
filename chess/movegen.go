@@ -413,6 +413,86 @@ func (b *Position) strictlyLegalPieceMoves(moves []Move, ctx *legalContext, offs
 	return moves
 }
 
+func (b *Position) strictlyLegalTacticalPawnMoves(moves []Move, ctx *legalContext, offset Piece) []Move {
+	pushTable, attackTable := pawnMoveTables(ctx.us)
+	for pawns := b.pieceBitboards[Pawn+offset]; pawns != 0; pawns &= pawns - 1 {
+		from := Square(bits.TrailingZeros64(uint64(pawns)))
+		allowed := ctx.checkTarget & ctx.pinMask(from)
+		for pushes := pushTable[from] &^ ctx.occupancy & allowed; pushes != 0; pushes &= pushes - 1 {
+			to := Square(bits.TrailingZeros64(uint64(pushes)))
+			if isPromotionRank(ctx.us, to) {
+				moves = appendPromotions(moves, from, to, 0)
+			}
+		}
+		for captures := attackTable[from] & ctx.enemy & allowed; captures != 0; captures &= captures - 1 {
+			to := Square(bits.TrailingZeros64(uint64(captures)))
+			if isPromotionRank(ctx.us, to) {
+				moves = appendPromotions(moves, from, to, captureFlag)
+			} else {
+				moves = append(moves, newMove(from, to, captureFlag))
+			}
+		}
+		if targets := attackTable[from] & b.enPassantSquare; targets != 0 {
+			to := Square(bits.TrailingZeros64(uint64(targets)))
+			m := newMove(from, to, captureFlag|enPassantFlag)
+			next := b.makeMoveForLegality(m)
+			if !next.isSquareAttacked(next.kingSquare(ctx.us), ctx.them) {
+				moves = append(moves, m)
+			}
+		}
+	}
+	return moves
+}
+
+func (b *Position) strictlyLegalTacticalPieceMoves(moves []Move, ctx *legalContext, offset Piece) []Move {
+	for pieces := b.pieceBitboards[Knight+offset]; pieces != 0; pieces &= pieces - 1 {
+		from := Square(bits.TrailingZeros64(uint64(pieces)))
+		targets := knightAttacks[from] & ctx.enemy & ctx.checkTarget & ctx.pinMask(from)
+		moves = appendTargets(moves, from, targets, ctx.enemy)
+	}
+	for pieces := b.pieceBitboards[Bishop+offset]; pieces != 0; pieces &= pieces - 1 {
+		from := Square(bits.TrailingZeros64(uint64(pieces)))
+		targets := BishopAttack(from, ctx.occupancy) & ctx.enemy & ctx.checkTarget & ctx.pinMask(from)
+		moves = appendTargets(moves, from, targets, ctx.enemy)
+	}
+	for pieces := b.pieceBitboards[Rook+offset]; pieces != 0; pieces &= pieces - 1 {
+		from := Square(bits.TrailingZeros64(uint64(pieces)))
+		targets := RookAttack(from, ctx.occupancy) & ctx.enemy & ctx.checkTarget & ctx.pinMask(from)
+		moves = appendTargets(moves, from, targets, ctx.enemy)
+	}
+	for pieces := b.pieceBitboards[Queen+offset]; pieces != 0; pieces &= pieces - 1 {
+		from := Square(bits.TrailingZeros64(uint64(pieces)))
+		targets := QueenAttack(from, ctx.occupancy) & ctx.enemy & ctx.checkTarget & ctx.pinMask(from)
+		moves = appendTargets(moves, from, targets, ctx.enemy)
+	}
+	return moves
+}
+
+func (b *Position) strictlyLegalTacticalKingMoves(moves []Move, ctx *legalContext) []Move {
+	for targets := kingAttacks[ctx.king] & ctx.enemy; targets != 0; targets &= targets - 1 {
+		to := Square(bits.TrailingZeros64(uint64(targets)))
+		m := newMove(ctx.king, to, captureFlag)
+		next := b.makeMoveForLegality(m)
+		if !next.isSquareAttacked(next.kingSquare(ctx.us), ctx.them) {
+			moves = append(moves, m)
+		}
+	}
+	return moves
+}
+
+func (b *Position) tacticalMoves(moves []Move) []Move {
+	ctx := b.newLegalContext()
+	offset := Piece(0)
+	if ctx.us == Black {
+		offset = blackPieceOffset
+	}
+	if ctx.checkerCount < 2 {
+		moves = b.strictlyLegalTacticalPawnMoves(moves, &ctx, offset)
+		moves = b.strictlyLegalTacticalPieceMoves(moves, &ctx, offset)
+	}
+	return b.strictlyLegalTacticalKingMoves(moves, &ctx)
+}
+
 func (b *Position) strictlyLegalMoves(moves []Move) []Move {
 	ctx := b.newLegalContext()
 	offset := Piece(0)

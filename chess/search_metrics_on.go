@@ -21,6 +21,21 @@ func (s *searcher) legalMoves(b *Position, buf []Move) []Move {
 	return moves
 }
 
+func (s *searcher) tacticalMoves(b *Position, buf []Move) []Move {
+	if s.metrics == nil {
+		return b.tacticalMoves(buf)
+	}
+	var stats moveGenStats
+	moves := b.tacticalMovesWithStats(buf, &stats)
+	s.metrics.MoveGenCalls++
+	s.metrics.PseudoMoves += stats.pseudoMoves
+	s.metrics.LegalMoves += stats.legalMoves
+	s.metrics.MakeMoveCalls += stats.makeMoveCalls
+	s.metrics.MoveGenNS += stats.generationNS
+	s.metrics.LegalFilterNS += stats.filterNS
+	return moves
+}
+
 func (s *searcher) evaluate(b *Position) int {
 	if s.metrics == nil {
 		return b.evaluateForSideToMove()
