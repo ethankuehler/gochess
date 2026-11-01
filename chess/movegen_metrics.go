@@ -62,6 +62,7 @@ func (b *Position) addStrictlyLegalKingMovesWithStats(moves []Move, ctx *legalCo
 	return moves
 }
 
+// Keep this in sync with tacticalMoves.
 func (b *Position) tacticalMovesWithStats(moves []Move, stats *moveGenStats) []Move {
 	generationStart := time.Now()
 	filterBefore := stats.filterNS

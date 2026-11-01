@@ -17,13 +17,19 @@ func seeAttackers(square Square, colour Colour, boards *[12]BitBoard, occupancy 
 		offset = blackPieceOffset
 	}
 
+	// Derive pawn origins with shifts, not the reverse attack tables: those
+	// tables are zero on the ranks a pawn of that colour cannot occupy, but a
+	// back-rank square still needs its 7th-rank pawn defenders (e.g. c7 defends
+	// b8, and the recapture promotes).
 	pawns := boards[Pawn+offset]
-	var attackers BitBoard
+	target := BitBoard(1) << square
+	var origins BitBoard
 	if colour == White {
-		attackers = blackPawnAttacks[square] & pawns
+		origins = ((target >> 7) &^ fileAMask) | ((target >> 9) &^ fileHMask)
 	} else {
-		attackers = whitePawnAttacks[square] & pawns
+		origins = ((target << 7) &^ fileHMask) | ((target << 9) &^ fileAMask)
 	}
+	attackers := origins & pawns
 	attackers |= knightAttacks[square] & boards[Knight+offset]
 	attackers |= kingAttacks[square] & boards[King+offset]
 	attackers |= BishopAttack(square, occupancy) & (boards[Bishop+offset] | boards[Queen+offset])
@@ -112,10 +118,18 @@ func (b *Position) see(m Move) int {
 		attackerMask := BitBoard(1) << attackerSquare
 		boards[occupant] &^= toMask
 		boards[attacker+offset] &^= attackerMask
-		boards[attacker+offset] |= toMask
 		occupancy &^= attackerMask
-		occupant = attacker + offset
-		onTarget = attacker
+		if attacker == Pawn && isPromotionRank(side, to) {
+			// A recapture on the last rank promotes; count the gain and let the
+			// promoted piece defend itself against a further recapture.
+			gain[depth] += seePieceValue(Queen) - seePieceValue(Pawn)
+			onTarget = Queen
+			occupant = Queen + offset
+		} else {
+			onTarget = attacker
+			occupant = attacker + offset
+		}
+		boards[occupant] |= toMask
 		side = side.Opposite()
 	}
 

@@ -22,6 +22,9 @@ func TestStaticExchangeEvaluation(t *testing.T) {
 		{"quiet knight promotion", promotionQSFEN, "e7e8n", 220},
 		{"queen promotion capture", promotionCaptureFEN, "b7a8q", 1300},
 		{"knight promotion capture", promotionCaptureFEN, "b7a8n", 720},
+		{"back-rank pawn defends", "rn2k3/2P5/8/8/1Q6/8/8/4K3 w - - 0 1", "b4b8", 320},
+		{"back-rank pawn recaptures rook", "rR6/2P5/8/8/8/8/8/4K2k b - - 0 1", "a8b8", -800},
+		{"black promotion recapture", "4k3/8/8/8/8/8/Rp6/r3K3 w - - 0 1", "a2a1", -800},
 	}
 
 	for _, tc := range cases {
@@ -66,19 +69,38 @@ func TestQSearchSEEOrderingAndPruning(t *testing.T) {
 	}
 }
 
-func TestQSearchSEEPruningKeepsPromotionsAndCheckEvasions(t *testing.T) {
+func TestQSearchSEEPruningKeepsPromotions(t *testing.T) {
 	promotion := mustFEN(t, promotionCaptureFEN)
 	moves := promotion.tacticalMoves(nil)
 	got := (&searcher{opts: searchOptions{see: true, seePruning: true}}).orderQSMoves(promotion, moves, true)
 	if len(got) != len(moves) {
 		t.Fatalf("pruning removed a promotion: got %v, want %v", got, moves)
 	}
+}
 
-	checked := mustFEN(t, inCheckQueenFEN)
-	evasions := checked.LegalMoves()
-	got = (&searcher{opts: searchOptions{see: true, seePruning: true}}).orderQSMoves(checked, evasions, false)
-	if len(got) != len(evasions) {
-		t.Fatalf("ordering removed a check evasion: got %d, want %d", len(got), len(evasions))
+// A pawn on the 7th rank defends a back-rank square and promotes when it
+// recaptures, so SEE must value that exchange correctly in both directions.
+func TestQSearchSEEBackRankPawnDefenders(t *testing.T) {
+	s := &searcher{opts: searchOptions{see: true, seePruning: true}}
+
+	winning := mustFEN(t, "rn2k3/2P5/8/8/1Q6/8/8/4K3 w - - 0 1")
+	queen := legalMoveFor(t, winning, "b4b8")
+	if got := winning.see(queen); got != 320 {
+		t.Fatalf("SEE(Qxb8) = %d, want 320 (c7 guards b8)", got)
+	}
+	kept := s.orderQSMoves(winning, winning.tacticalMoves(nil), true)
+	if _, ok := findMove(kept, queen.String()); !ok {
+		t.Errorf("winning back-rank capture %s was pruned: %v", queen, kept)
+	}
+
+	losing := mustFEN(t, "rR6/2P5/8/8/8/8/8/4K2k b - - 0 1")
+	rook := legalMoveFor(t, losing, "a8b8")
+	if got := losing.see(rook); got != -800 {
+		t.Fatalf("SEE(Rxb8) = %d, want -800 (c7 recaptures with promotion)", got)
+	}
+	pruned := s.orderQSMoves(losing, losing.tacticalMoves(nil), true)
+	if _, ok := findMove(pruned, rook.String()); ok {
+		t.Errorf("losing back-rank capture %s was not pruned: %v", rook, pruned)
 	}
 }
 

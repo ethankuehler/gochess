@@ -171,7 +171,8 @@ deepening alpha-beta search, and a UCI front end.
     en passant, and promotions, all legal evasions when in check, SEE/MVV-LVA
     ordering, optional negative-SEE pruning, and quiescence node/draw accounting.
   - `see.go` — bitboard static exchange evaluation with least-valuable-attacker
-    selection, x-ray updates, en passant, and promotion gains.
+    selection, x-ray updates, en passant, back-rank-aware pawn attackers (derived
+    with shifts), and promotion gains on both the initial move and recaptures.
   - `search.go` — `MateScore`, `SearchResult`, `SearchInfo`, `SearchLimits`,
     fixed-depth `Search`, iterative-deepening `SearchWithLimits`, depth-zero
     delegation to `quiesce`, MVV-LVA + killer + history move ordering,
@@ -360,7 +361,10 @@ Bitboard representation:
 - Pawn attack detection in `isSquareAttacked` uses bit shifts with file masks,
   not the reverse attack tables. The tables are zero on ranks where a pawn of
   that colour cannot exist (for example black pawns on rank 8), but those
-  entries are needed to find attackers of back-rank squares.
+  entries are needed to find attackers of back-rank squares. `seeAttackers`
+  derives pawn origins with the same shift pattern; using the reverse tables
+  there silently drops the 7th-rank pawn that recaptures (and promotes) on a
+  back-rank square.
 
 Evaluation and search:
 
@@ -715,7 +719,8 @@ Things to be careful with:
   and reference equivalence. `chess/tactical_test.go` checks exact direct versus
   filtered tactical generation on tactical fixtures and deterministic random
   games. `chess/see_test.go` covers exchange values, x-rays, en passant,
-  promotions, SEE ordering/pruning, pruning exemptions, and node reduction. The
+  promotions, back-rank pawn defenders and promotion recaptures, SEE
+  ordering/pruning, pruning exemptions, and node reduction. The
   reference oracle models draws, repetition, and the ply cap but has no
   alpha-beta, so dense middlegame positions are compared only at shallow depths.
 - `chess/ucimove_test.go` covers double pushes, captures, en passant, castling,

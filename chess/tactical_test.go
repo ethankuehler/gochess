@@ -5,6 +5,18 @@ import (
 	"testing"
 )
 
+// filterCapturesAndPromotions is the independent oracle for the direct
+// tactical generator: a full legal move list filtered down to forcing moves.
+func filterCapturesAndPromotions(moves []Move) []Move {
+	kept := moves[:0]
+	for _, m := range moves {
+		if _, promotion := m.Promotion(); m.IsCapture() || promotion {
+			kept = append(kept, m)
+		}
+	}
+	return kept
+}
+
 func requireTacticalMoveParity(t *testing.T, position *Position) {
 	t.Helper()
 	var buf [256]Move

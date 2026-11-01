@@ -83,16 +83,6 @@ func (s *searcher) searchQSMoves(b *Position, moves []Move, best, alpha, beta, p
 	return best
 }
 
-func filterCapturesAndPromotions(moves []Move) []Move {
-	kept := moves[:0]
-	for _, m := range moves {
-		if _, promotion := m.Promotion(); m.IsCapture() || promotion {
-			kept = append(kept, m)
-		}
-	}
-	return kept
-}
-
 const qsLosingCapture = -1 << 20
 
 func (s *searcher) orderQSMoves(b *Position, moves []Move, prune bool) []Move {
