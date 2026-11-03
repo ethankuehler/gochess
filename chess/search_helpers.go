@@ -1,8 +1,4 @@
-//go:build !metrics
-
 package chess
-
-const MetricsEnabled = false
 
 func (s *searcher) legalMoves(b *Position, buf []Move) []Move {
 	return b.legalMoves(buf)

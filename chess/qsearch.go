@@ -43,9 +43,6 @@ func (s *searcher) quiesce(b Position, alpha, beta, ply int) int {
 
 	standPat := s.evaluate(&b)
 	if standPat >= beta {
-		if MetricsEnabled && s.metrics != nil {
-			s.metrics.BetaCutoffs++
-		}
 		return standPat
 	}
 	if standPat > alpha {
@@ -74,9 +71,6 @@ func (s *searcher) searchQSMoves(b *Position, moves []Move, best, alpha, beta, p
 			alpha = score
 		}
 		if alpha >= beta {
-			if MetricsEnabled && s.metrics != nil {
-				s.metrics.BetaCutoffs++
-			}
 			break
 		}
 	}

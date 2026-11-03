@@ -18,7 +18,6 @@ type options struct {
 	moveOverhead time.Duration
 	threads      int
 	hashMB       int
-	analysis     bool
 	ponder       bool
 }
 
@@ -32,17 +31,13 @@ func defaultOptions() options {
 
 // lines returns the option declarations sent in response to uci.
 func (o options) lines() []string {
-	lines := []string{
+	return []string{
 		fmt.Sprintf("option name Hash type spin default %d min %d max %d", chess.DefaultHashMB, chess.MinHashMB, chess.MaxHashMB),
 		"option name Clear Hash type button",
 		"option name Threads type spin default 1 min 1 max 1",
 		fmt.Sprintf("option name Move Overhead type spin default %d min 0 max %d", defaultMoveOverheadMS, maxMoveOverheadMS),
 		"option name Ponder type check default false",
 	}
-	if metricsSupported {
-		lines = append(lines, "option name Analysis type check default false")
-	}
-	return lines
 }
 
 func (o *options) set(name, value string, hasValue bool) string {
@@ -75,19 +70,6 @@ func (o *options) set(name, value string, hasValue bool) string {
 			return "Threads is fixed at 1; this engine is single-threaded"
 		}
 		o.threads = 1
-		return ""
-	case "analysis":
-		if !hasValue {
-			return ""
-		}
-		switch {
-		case strings.EqualFold(strings.TrimSpace(value), "true"):
-			o.analysis = true
-		case strings.EqualFold(strings.TrimSpace(value), "false"):
-			o.analysis = false
-		default:
-			return fmt.Sprintf("invalid Analysis value %q", value)
-		}
 		return ""
 	case "hash":
 		if !hasValue {

@@ -197,7 +197,7 @@ func playGame(config matchConfig, gameIndex int, rootFEN string, initialMoves []
 	if err := ourClient.NewGame(); err != nil {
 		return gameResult{}, fmt.Errorf("gochess ucinewgame: %w", err)
 	}
-	if err := stockfish.newGame(); err != nil {
+	if err := stockfish.NewGame(); err != nil {
 		return gameResult{}, err
 	}
 
@@ -263,13 +263,19 @@ func playGame(config matchConfig, gameIndex int, rootFEN string, initialMoves []
 		default:
 			engineName = "Stockfish"
 			if config.validateDepth == 0 {
-				if err := stockfish.setPosition(rootFEN, history); err != nil {
+				if err := stockfish.SetPosition(rootFEN, history...); err != nil {
 					return gameResult{}, err
 				}
 			}
-			move, score, hasMate, err = stockfish.goDepth(config.depth)
-			if err != nil {
-				return gameResult{}, err
+			stockfishResult, searchErr := stockfish.GoDepth(config.depth)
+			if searchErr != nil {
+				return gameResult{}, searchErr
+			}
+			move = stockfishResult.BestMove
+			if stockfishResult.HasMate {
+				score, hasMate = stockfishResult.MateIn, true
+			} else {
+				score, hasMate = stockfishResult.Score, false
 			}
 		}
 		if move == "" {
@@ -353,10 +359,10 @@ func checkDrawAwareness(board *chess.Position, history []chess.PositionKey, dept
 }
 
 func validatePosition(board *chess.Position, rootFEN string, history []string, stockfish *stockfishClient, depth int) error {
-	if err := stockfish.setPosition(rootFEN, history); err != nil {
+	if err := stockfish.SetPosition(rootFEN, history...); err != nil {
 		return err
 	}
-	theirs, theirTotal, err := stockfish.perft(depth)
+	theirs, theirTotal, err := stockfish.Perft(depth)
 	if err != nil {
 		return err
 	}

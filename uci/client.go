@@ -2,7 +2,6 @@ package uci
 
 import (
 	"bufio"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,32 +9,22 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/ethankuehler/gochess/chess"
 )
 
 // EngineResult scores are from the side to move's point of view.
 type EngineResult struct {
-	BestMove   string
-	Score      int
-	MateIn     int
-	HasMate    bool
-	Depth      int
-	SelDepth   int
-	Nodes      uint64
-	NPS        uint64
-	TimeMS     int64
-	PV         []string
-	Iterations []EngineIteration
-	Metrics    *chess.SearchMetrics
-}
-
-type EngineIteration struct {
-	Depth    int    `json:"depth"`
-	SelDepth int    `json:"seldepth"`
-	Nodes    uint64 `json:"nodes"`
-	NPS      uint64 `json:"nps"`
-	TimeMS   int64  `json:"timeMs"`
+	BestMove string
+	Score    int
+	MateIn   int
+	HasMate  bool
+	Depth    int
+	SelDepth int
+	Nodes    uint64
+	NPS      uint64
+	TimeMS   int64
+	HashFull int
+	TBHits   uint64
+	PV       []string
 }
 
 // Client commands must be serialized.
@@ -179,24 +168,10 @@ func (c *Client) goCommand(command string) (EngineResult, error) {
 
 	start := time.Now()
 	var result EngineResult
-	var analysisErr error
 	for {
 		line, err := c.readLine()
 		if err != nil {
 			return result, fmt.Errorf("read search: %w", err)
-		}
-		if strings.HasPrefix(line, "info string analysis ") {
-			var metrics chess.SearchMetrics
-			payload := strings.TrimPrefix(line, "info string analysis ")
-			if err := json.Unmarshal([]byte(payload), &metrics); err != nil {
-				// Drain through bestmove to keep the next command synchronized.
-				if analysisErr == nil {
-					analysisErr = fmt.Errorf("invalid analysis info: %w", err)
-				}
-			} else {
-				result.Metrics = &metrics
-			}
-			continue
 		}
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
@@ -206,7 +181,6 @@ func (c *Client) goCommand(command string) (EngineResult, error) {
 		case "info":
 			if len(fields) >= 2 && fields[1] != "string" {
 				parseInfo(fields, &result)
-				recordIteration(&result)
 			}
 		case "bestmove":
 			if len(fields) >= 2 && fields[1] != "0000" && fields[1] != "(none)" {
@@ -218,30 +192,9 @@ func (c *Client) goCommand(command string) (EngineResult, error) {
 					result.TimeMS = 1
 				}
 			}
-			if analysisErr != nil {
-				return result, analysisErr
-			}
 			return result, nil
 		}
 	}
-}
-
-func recordIteration(result *EngineResult) {
-	if result.Depth <= 0 {
-		return
-	}
-	iteration := EngineIteration{
-		Depth:    result.Depth,
-		SelDepth: result.SelDepth,
-		Nodes:    result.Nodes,
-		NPS:      result.NPS,
-		TimeMS:   result.TimeMS,
-	}
-	if len(result.Iterations) > 0 && result.Iterations[len(result.Iterations)-1].Depth == iteration.Depth {
-		result.Iterations[len(result.Iterations)-1] = iteration
-		return
-	}
-	result.Iterations = append(result.Iterations, iteration)
 }
 
 func (c *Client) ready() error {
@@ -347,6 +300,14 @@ func parseInfo(fields []string, result *EngineResult) {
 		case "time":
 			if value, ok := fieldInt(fields, i+1); ok && value >= 0 {
 				result.TimeMS = int64(value)
+			}
+		case "hashfull":
+			if value, ok := fieldInt(fields, i+1); ok && value >= 0 {
+				result.HashFull = value
+			}
+		case "tbhits":
+			if value, ok := fieldUint(fields, i+1); ok {
+				result.TBHits = value
 			}
 		case "score":
 			if i+2 >= len(fields) {

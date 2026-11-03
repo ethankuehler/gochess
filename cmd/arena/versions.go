@@ -228,11 +228,11 @@ type versionGameConfig struct {
 }
 
 type enginePlayer interface {
-	newGame() error
-	setPosition(fen string, moves []string) error
-	goDepth(depth int) (engineSearchResult, error)
-	goMovetime(budget time.Duration) (engineSearchResult, error)
-	goNodes(nodes uint64) (engineSearchResult, error)
+	NewGame() error
+	SetPosition(fen string, moves ...string) error
+	GoDepth(depth int) (engineSearchResult, error)
+	GoMovetime(budget time.Duration) (engineSearchResult, error)
+	GoNodes(nodes uint64) (engineSearchResult, error)
 }
 
 func runVersions(args []string, out, errOut io.Writer) error {
@@ -355,7 +355,7 @@ func runVersions(args []string, out, errOut io.Writer) error {
 	}
 
 	candidateInfo := engineIdentity{
-		Name:      candidate.label(),
+		Name:      candidate.Label(),
 		Source:    candidateSource,
 		SHA256:    hashFile(candidatePath),
 		AutoBuilt: candidateBuild != nil,
@@ -364,7 +364,7 @@ func runVersions(args []string, out, errOut io.Writer) error {
 		candidateInfo.BuildRef = candidateBuild.ref
 	}
 	baselineInfo := engineIdentity{
-		Name:      baseline.label(),
+		Name:      baseline.Label(),
 		Source:    baselineSource,
 		SHA256:    hashFile(baselinePathValue),
 		AutoBuilt: baselineBuild != nil,
@@ -599,10 +599,10 @@ func playVersionGame(cfg versionGameConfig, line opening, candidateWhite bool, c
 		board = next
 	}
 
-	if err := candidate.newGame(); err != nil {
+	if err := candidate.NewGame(); err != nil {
 		return versionGameRecord{}, engineAccumulator{}, engineAccumulator{}, fmt.Errorf("candidate ucinewgame: %w", err)
 	}
-	if err := baseline.newGame(); err != nil {
+	if err := baseline.NewGame(); err != nil {
 		return versionGameRecord{}, engineAccumulator{}, engineAccumulator{}, fmt.Errorf("baseline ucinewgame: %w", err)
 	}
 
@@ -652,7 +652,7 @@ func playVersionGame(cfg versionGameConfig, line opening, candidateWhite bool, c
 			stats = &candidateMoves
 		}
 
-		if err := player.setPosition(startFEN, history); err != nil {
+		if err := player.SetPosition(startFEN, history...); err != nil {
 			return versionGameRecord{}, engineAccumulator{}, engineAccumulator{}, fmt.Errorf("%s position: %w", label, err)
 		}
 		start := time.Now()
@@ -692,11 +692,11 @@ func playVersionGame(cfg versionGameConfig, line opening, candidateWhite bool, c
 func searchVersionPlayer(player enginePlayer, cfg versionGameConfig) (engineSearchResult, error) {
 	switch cfg.mode {
 	case "movetime":
-		return player.goMovetime(cfg.movetime)
+		return player.GoMovetime(cfg.movetime)
 	case "nodes":
-		return player.goNodes(cfg.nodes)
+		return player.GoNodes(cfg.nodes)
 	default:
-		return player.goDepth(cfg.depth)
+		return player.GoDepth(cfg.depth)
 	}
 }
 

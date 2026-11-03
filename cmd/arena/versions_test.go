@@ -79,36 +79,6 @@ func TestEngineAccumulator(t *testing.T) {
 	}
 }
 
-func TestParseEngineInfo(t *testing.T) {
-	fields := strings.Fields("info depth 6 seldepth 9 score cp 42 nodes 12345 nps 67890 time 181 hashfull 12 tbhits 3 pv e2e4 e7e5")
-	var res engineSearchResult
-	parseEngineInfo(fields, &res)
-	if res.Depth != 6 || res.SelDepth != 9 || res.Nodes != 12345 || res.NPS != 67890 || res.TimeMS != 181 {
-		t.Errorf("parsed result = %+v", res)
-	}
-	if res.Score != 42 || res.HasMate {
-		t.Errorf("score = %+v, want cp 42", res)
-	}
-	if res.HashFull != 12 || res.TBHits != 3 {
-		t.Errorf("hashfull/tbhits = %d/%d", res.HashFull, res.TBHits)
-	}
-	if len(res.PV) != 2 || res.PV[0] != "e2e4" || res.PV[1] != "e7e5" {
-		t.Errorf("pv = %v", res.PV)
-	}
-
-	var mate engineSearchResult
-	parseEngineInfo(strings.Fields("info depth 4 score mate -3 nodes 100 time 10"), &mate)
-	if !mate.HasMate || mate.MateIn != -3 {
-		t.Errorf("mate result = %+v", mate)
-	}
-
-	var ignored engineSearchResult
-	parseEngineInfo(strings.Fields("info string initialized"), &ignored)
-	if ignored.Depth != 0 || ignored.Nodes != 0 || len(ignored.PV) != 0 {
-		t.Errorf("info string changed result: %+v", ignored)
-	}
-}
-
 func TestCandidateColorSplit(t *testing.T) {
 	records := []versionGameRecord{
 		{CandidateWhite: true, Result: "1-0"},
@@ -135,25 +105,25 @@ type fakeEngine struct {
 	moves             []string
 }
 
-func (f *fakeEngine) newGame() error { return nil }
+func (f *fakeEngine) NewGame() error { return nil }
 
-func (f *fakeEngine) setPosition(fen string, moves []string) error {
+func (f *fakeEngine) SetPosition(fen string, moves ...string) error {
 	f.fen = fen
 	f.moves = append([]string(nil), moves...)
 	return nil
 }
 
-func (f *fakeEngine) goDepth(depth int) (engineSearchResult, error) {
+func (f *fakeEngine) GoDepth(depth int) (engineSearchResult, error) {
 	f.requestedMode, f.requestedDepth = "depth", depth
 	return f.result(depth)
 }
 
-func (f *fakeEngine) goMovetime(budget time.Duration) (engineSearchResult, error) {
+func (f *fakeEngine) GoMovetime(budget time.Duration) (engineSearchResult, error) {
 	f.requestedMode, f.requestedMovetime = "movetime", budget
 	return f.result(4)
 }
 
-func (f *fakeEngine) goNodes(nodes uint64) (engineSearchResult, error) {
+func (f *fakeEngine) GoNodes(nodes uint64) (engineSearchResult, error) {
 	f.requestedMode, f.requestedNodes = "nodes", nodes
 	return f.result(4)
 }

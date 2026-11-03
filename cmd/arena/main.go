@@ -14,7 +14,6 @@ import (
 
 	"github.com/ethankuehler/gochess/chess"
 	"github.com/ethankuehler/gochess/data"
-	"github.com/ethankuehler/gochess/uci"
 )
 
 type report struct {
@@ -83,9 +82,6 @@ func run(args []string, out, errOut io.Writer) error {
 	if *maxPlies < 1 {
 		return fmt.Errorf("max-plies must be at least 1")
 	}
-	if _, err := os.Stat(*enginePath); err != nil {
-		return fmt.Errorf("engine binary %q: %w", *enginePath, err)
-	}
 	// loadBook replays the lines, which needs legal move generation.
 	if err := chess.BuildAllAttacksFromFS(data.FS); err != nil {
 		return fmt.Errorf("initialize attack tables: %w", err)
@@ -98,6 +94,9 @@ func run(args []string, out, errOut io.Writer) error {
 	if *checkBook {
 		fmt.Fprintf(out, "book ok: %d lines\n", len(book))
 		return nil
+	}
+	if _, err := os.Stat(*enginePath); err != nil {
+		return fmt.Errorf("engine binary %q: %w", *enginePath, err)
 	}
 	if *skip >= len(book) {
 		return fmt.Errorf("skip %d >= book lines %d", *skip, len(book))
@@ -125,14 +124,11 @@ func run(args []string, out, errOut io.Writer) error {
 	}
 	defer sf.Close()
 
-	our, err := uci.StartInProcess(errOut)
+	our, err := startEngine(*enginePath, nil, errOut)
 	if err != nil {
 		return fmt.Errorf("start gochess: %w", err)
 	}
 	defer our.Close()
-	if err := our.SetOption("Move Overhead", "0"); err != nil {
-		return fmt.Errorf("set Move Overhead: %w", err)
-	}
 
 	opponent := *stockfishPath
 	switch {

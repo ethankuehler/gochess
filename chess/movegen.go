@@ -493,7 +493,7 @@ func (b *Position) tacticalMoves(moves []Move) []Move {
 	return b.strictlyLegalTacticalKingMoves(moves, &ctx)
 }
 
-func (b *Position) strictlyLegalMoves(moves []Move) []Move {
+func (b *Position) legalMoves(moves []Move) []Move {
 	ctx := b.newLegalContext()
 	offset := Piece(0)
 	if ctx.us == Black {
@@ -509,10 +509,6 @@ func (b *Position) strictlyLegalMoves(moves []Move) []Move {
 		moves = b.addCastlingMoves(moves, ctx.us, ctx.occupancy)
 	}
 	return moves
-}
-
-func (b *Position) legalMoves(moves []Move) []Move {
-	return b.strictlyLegalMoves(moves)
 }
 
 func (b *Position) LegalMoves() []Move {

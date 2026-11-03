@@ -33,9 +33,3 @@ func (w *lineWriter) line(format string, args ...any) error {
 	}
 	return err
 }
-
-func (w *lineWriter) errValue() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.err
-}
