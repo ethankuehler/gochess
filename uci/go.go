@@ -54,12 +54,11 @@ func (e *Engine) handleGo(args []string) {
 	rootMoves := e.resolveRootMoves(position, params)
 
 	limits := chess.SearchLimits{
-		MaxDepth:       params.depth,
-		MaxNodes:       params.nodes,
-		RootMoves:      rootMoves,
-		GameHistory:    history,
-		TT:             e.transpositionTable(),
-		CollectMetrics: e.options.analysis && metricsSupported,
+		MaxDepth:    params.depth,
+		MaxNodes:    params.nodes,
+		RootMoves:   rootMoves,
+		GameHistory: history,
+		TT:          e.transpositionTable(),
 	}
 
 	var pondering *ponderState

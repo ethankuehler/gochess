@@ -1,9 +1,6 @@
 package chess
 
-import (
-	"context"
-	"testing"
-)
+import "testing"
 
 const benchmarkFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
@@ -95,22 +92,5 @@ func BenchmarkSearchDepth4(b *testing.B) {
 	b.ReportMetric(float64(nodes), "nodes/op")
 	if elapsed := b.Elapsed().Seconds(); elapsed > 0 {
 		b.ReportMetric(float64(nodes)*float64(b.N)/elapsed, "nodes/s")
-	}
-}
-
-func BenchmarkSearchDepth4Metrics(b *testing.B) {
-	BuildAllAttacks()
-	position, err := ParseFEN(benchmarkFEN)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = position.SearchWithLimits(context.Background(), SearchLimits{
-			MaxDepth:       4,
-			CollectMetrics: true,
-		}, nil)
 	}
 }
