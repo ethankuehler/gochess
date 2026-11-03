@@ -194,7 +194,7 @@ go run ./cmd/perft -suite data/perft.csv          # -deep to include slow rows
 
 ## Comparing engine versions
 
-`cmd/arena versions` is a fixed-depth regression harness. It builds the current
+`cmd/arena versions` is a fixed-limit regression harness. It builds the current
 working tree and a baseline from `HEAD` (or another git ref), picks a seeded
 random sample of opening lines, and plays every line twice with the colours
 swapped:
@@ -207,8 +207,9 @@ The candidate is built from the working tree; the baseline is built from
 `-baseline-ref` (default `HEAD`; use `origin/main` for the last pushed commit).
 Use `-engine` and `-baseline` to run pre-built binaries instead. The default
 book is `data/openings.csv`; `-openings` is the number of random lines to
-sample, `-seed` makes the sample reproducible, and `-depth` is the fixed search
-depth for both sides.
+sample, and `-seed` makes the sample reproducible. Use `-depth` (default 5),
+`-movetime`, or `-nodes` to select the per-move limit for both sides; the three
+limits are mutually exclusive.
 
 The report includes the match score and a bootstrap Elo difference over opening
 pairs. `-anchor-elo` (default `1640`, the baseline build's last recorded Lichess
@@ -217,7 +218,7 @@ the anchor when the baseline changes, or pass `-anchor-elo 0` to report only the
 Elo difference. This is an anchor-based regression estimate, not a new Lichess
 measurement. Per-engine metrics cover nodes, NPS, total search time, average and
 maximum depth, average time per move, p50/p95 move time, and nodes per move;
-the report also includes colour splits, draw rate, and endings. Fixed-depth
+the report also includes colour splits, draw rate, and endings. Fixed-limit
 matches are for comparing versions of *this* engine; use the default
 Stockfish mode for rating work against external engines.
 
@@ -237,11 +238,11 @@ cp tools/lichess/.env.example tools/lichess/.env
 ./tools/lichess/run.sh                    # rated bots + casual human challenges
 ```
 
-The default config accepts rated standard blitz/rapid games from other bots and
-casual challenges from humans; one of the two slots is reserved for human
-challengers. Humans can challenge
+The default config accepts rated standard bullet/blitz/rapid games from other
+bots and casual challenges from humans; one of the two slots is reserved for
+human challengers. Humans can challenge
 [gochess6767](https://lichess.org/@/gochess6767) (Lichess only offers casual
-games against bots), with at least a +2 increment. It writes PGNs to
+games against bots), with time controls from 1+0 through 10+10. It writes PGNs to
 `tools/lichess/games/` and logs to `tools/lichess/lichess-bot.log`. Lichess caps
 bot-vs-bot games at 100/day, so a stable Glicko-2 rating takes several days of
 running. That number is not comparable to `cmd/arena`'s Stockfish-scale Elo; use
@@ -282,9 +283,10 @@ go run ./cmd/match -stockfish stockfish -fen "4k3/8/8/8/8/8/8/R3K3 w - - 0 1" \
   -moves "e1d1 e8d8 d1e1 d8e8 e1d1 e8d8 d1e1 d8e8"
 ```
 
-CI checks `gofmt`, `go build`, `go vet`, `go test -race ./...`, Stockfish perft
-and match comparisons, a `bench` smoke test, and a Windows/macOS cross-compile.
-Run `gofmt -l .` before pushing.
+CI checks `gofmt`, `go build`, `go vet`, `go test -race ./...`,
+`go test -tags metrics -race ./...`, Stockfish perft and match comparisons,
+bench/version smoke tests, and Windows/macOS cross-compilation. Run `gofmt -l .`
+before pushing.
 
 ## Layout
 
@@ -295,6 +297,7 @@ cmd/uci/     standalone UCI binary
 cmd/web/     local board UI and in-process engine client
 cmd/search/  fixed-depth search CLI
 cmd/match/   gochess-vs-Stockfish match and rules verifier
+cmd/arena/   Stockfish rating games and local engine-version comparisons
 cmd/perft/   perft runner, suite, and Stockfish comparison
 cmd/genmagics/  magic-number CSV generator
 data/        embedded attack tables, magics, and test fixtures
