@@ -136,10 +136,15 @@ type searchOptions struct {
 	nullMove   bool
 	lmr        bool
 	futility   bool
+	see        bool
+	seePruning bool
 }
 
 func defaultSearchOptions() searchOptions {
-	return searchOptions{pvs: true, aspiration: true, nullMove: true, lmr: true, futility: true}
+	return searchOptions{
+		pvs: true, aspiration: true, nullMove: true, lmr: true, futility: true,
+		see: true, seePruning: true,
+	}
 }
 
 func (b *Position) searchWithOptions(ctx context.Context, limits SearchLimits, info func(SearchInfo), opts searchOptions) (result SearchResult) {
@@ -361,6 +366,9 @@ func (s *searcher) searchRoot(b *Position, ordered []Move, depth, alpha, beta in
 			} else {
 				moveScore = -s.negamax(child, depth-1, -alpha-1, -alpha, 1, true)
 				if moveScore > alpha && moveScore < beta {
+					if s.stopped {
+						return Move{}, 0, nil, true
+					}
 					moveScore = -s.negamax(child, depth-1, -beta, -alpha, 1, true)
 					wide = true
 				}
@@ -638,12 +646,12 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int, nullAllowed 
 			score = -s.negamax(child, depth-1, -beta, -alpha, ply+1, true)
 		} else if reduction := s.lateMoveReduction(&child, m, depth, moveIndex, pv, alpha, beta); reduction > 0 {
 			score = -s.negamax(child, depth-1-reduction, -alpha-1, -alpha, ply+1, true)
-			if score > alpha {
+			if score > alpha && !s.stopped {
 				score = -s.negamax(child, depth-1, -beta, -alpha, ply+1, true)
 			}
 		} else {
 			score = -s.negamax(child, depth-1, -alpha-1, -alpha, ply+1, true)
-			if pv && score > alpha && score < beta {
+			if pv && score > alpha && score < beta && !s.stopped {
 				score = -s.negamax(child, depth-1, -beta, -alpha, ply+1, true)
 			}
 		}

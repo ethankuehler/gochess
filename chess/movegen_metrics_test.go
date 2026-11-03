@@ -57,3 +57,34 @@ func TestLegalMovesWithStatsCopyMakeCounts(t *testing.T) {
 		requireNoMoves(t, moves, "e5d6")
 	})
 }
+
+func TestTacticalMovesWithStatsMatchesTacticalMoves(t *testing.T) {
+	fens := []string{
+		NewStartingPosition().FEN(),
+		kiwipeteFEN,
+		enPassantQSFEN,
+		promotionCaptureFEN,
+		inCheckRookFEN,
+	}
+	for _, fen := range fens {
+		position := mustFEN(t, fen)
+		want := position.tacticalMoves(nil)
+		var stats moveGenStats
+		got := position.tacticalMovesWithStats(nil, &stats)
+		if !slices.Equal(got, want) {
+			t.Fatalf("%s: instrumented tactical moves = %v, want %v", fen, moveNames(got), moveNames(want))
+		}
+		if stats.legalMoves != uint64(len(want)) {
+			t.Errorf("%s: legalMoves stat = %d, want %d", fen, stats.legalMoves, len(want))
+		}
+		if stats.pseudoMoves < stats.legalMoves {
+			t.Errorf("%s: pseudoMoves = %d, legalMoves = %d", fen, stats.pseudoMoves, stats.legalMoves)
+		}
+		if stats.makeMoveCalls > stats.pseudoMoves {
+			t.Errorf("%s: makeMoveCalls = %d, pseudoMoves = %d", fen, stats.makeMoveCalls, stats.pseudoMoves)
+		}
+		if stats.generationNS <= 0 {
+			t.Errorf("%s: generationNS = %d", fen, stats.generationNS)
+		}
+	}
+}

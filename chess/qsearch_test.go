@@ -96,7 +96,7 @@ func TestOrderQSMoves(t *testing.T) {
 		t.Fatalf("filtered %d promotions, want 4", len(moves))
 	}
 
-	orderQSMoves(position, moves)
+	(&searcher{}).orderQSMoves(position, moves, false)
 	if piece, ok := moves[0].Promotion(); !ok || piece != Queen {
 		t.Fatalf("first ordered move = %s, want a queen promotion", moves[0])
 	}
@@ -115,7 +115,7 @@ func TestOrderQSMovesStableForQuietEvasions(t *testing.T) {
 		t.Fatalf("fixture has %d legal moves, want at least 2", len(want))
 	}
 
-	orderQSMoves(position, moves)
+	(&searcher{}).orderQSMoves(position, moves, false)
 	for i := range want {
 		if moves[i] != want[i] {
 			t.Fatalf("quiet evasion order changed at %d: got %s, want %s", i, moves[i], want[i])

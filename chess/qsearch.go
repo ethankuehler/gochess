@@ -32,7 +32,7 @@ func (s *searcher) quiesce(b Position, alpha, beta, ply int) int {
 			s.repetitionDraw(b.key, int(b.halfmoveClock), ply) {
 			return 0
 		}
-		orderQSMoves(&b, moves)
+		moves = s.orderQSMoves(&b, moves, false)
 		return s.searchQSMoves(&b, moves, -infinity, alpha, beta, ply)
 	}
 
@@ -52,13 +52,12 @@ func (s *searcher) quiesce(b Position, alpha, beta, ply int) int {
 		alpha = standPat
 	}
 
-	moves := s.legalMoves(&b, buf[:0])
-	forcing := filterCapturesAndPromotions(moves)
-	if len(forcing) == 0 {
+	moves := s.tacticalMoves(&b, buf[:0])
+	moves = s.orderQSMoves(&b, moves, s.opts.seePruning && !mateWindow(alpha, beta))
+	if len(moves) == 0 {
 		return standPat
 	}
-	orderQSMoves(&b, forcing)
-	return s.searchQSMoves(&b, forcing, standPat, alpha, beta, ply)
+	return s.searchQSMoves(&b, moves, standPat, alpha, beta, ply)
 }
 
 func (s *searcher) searchQSMoves(b *Position, moves []Move, best, alpha, beta, ply int) int {
@@ -84,21 +83,30 @@ func (s *searcher) searchQSMoves(b *Position, moves []Move, best, alpha, beta, p
 	return best
 }
 
-func filterCapturesAndPromotions(moves []Move) []Move {
+const qsLosingCapture = -1 << 20
+
+func (s *searcher) orderQSMoves(b *Position, moves []Move, prune bool) []Move {
+	var scores [256]int
 	kept := moves[:0]
 	for _, m := range moves {
-		if _, promotion := m.Promotion(); m.IsCapture() || promotion {
-			kept = append(kept, m)
+		score := qsMoveScore(b, m)
+		if (s.opts.see || prune) && m.IsCapture() {
+			exchange := b.see(m)
+			_, promotion := m.Promotion()
+			if prune && !promotion && exchange < 0 {
+				continue
+			}
+			if s.opts.see {
+				score += exchange * 16
+				if exchange < 0 {
+					score += qsLosingCapture
+				}
+			}
 		}
+		scores[len(kept)] = score
+		kept = append(kept, m)
 	}
-	return kept
-}
-
-func orderQSMoves(b *Position, moves []Move) {
-	var scores [256]int
-	for i, m := range moves {
-		scores[i] = qsMoveScore(b, m)
-	}
+	moves = kept
 	for i := 1; i < len(moves); i++ {
 		move, score := moves[i], scores[i]
 		j := i - 1
@@ -108,6 +116,7 @@ func orderQSMoves(b *Position, moves []Move) {
 		}
 		moves[j+1], scores[j+1] = move, score
 	}
+	return moves
 }
 
 // mvvLva treats an empty capture target as an en-passant pawn.
