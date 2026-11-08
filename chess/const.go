@@ -42,23 +42,12 @@ const (
 const blackPieceOffset = 6
 
 func PieceTypes(colour Colour) iter.Seq[Piece] {
-	var start Piece
-	var stop Piece
-	switch colour {
-	case White:
-		start = 0
-		stop = blackPieceOffset
-	case Black:
-		start = blackPieceOffset
-		stop = blackPieceOffset + 6
-	case Both:
-		start = 0
-		stop = 12
-	}
-
 	return func(yield func(Piece) bool) {
-		for i := start; i < stop; i++ {
-			if !yield(i) {
+		if colour != White && colour != Black && colour != Both {
+			return
+		}
+		for piece := Pawn; piece <= King; piece++ {
+			if !yield(piece) {
 				return
 			}
 		}

@@ -45,17 +45,8 @@ search runs without a clock; the normal move budget starts at `ponderhit`, and
 `stop` still produces the `bestmove` the protocol requires. Options are `Hash`
 (default 16 MB, range 1–1024), `Clear Hash`, `Threads` (fixed at 1),
 `Move Overhead` (default 50 ms, range 0–5000), and `Ponder` (default false).
-A `metrics` build also advertises `Analysis` (default false; adds final search
-metrics as `info string analysis`). `MultiPV` and Chess960 are accepted but
-ignored, since neither is implemented yet.
-
-Search metrics are compiled out by default. Build an instrumented binary with:
-
-```sh
-go build ./cmd/uci                          # normal, no metrics overhead
-go build -tags metrics -o gochess-metrics ./cmd/uci
-go test -tags metrics ./...                 # metrics tests
-```
+`MultiPV` and Chess960 are accepted but ignored, since neither is implemented
+yet.
 
 For a release build with a version stamp:
 
@@ -113,58 +104,6 @@ CGO_ENABLED=0 go build -trimpath \
 Run `cmd/search`, `cmd/perft`, and `cmd/genmagics` from the repo root: they open
 `data/...` via relative paths. `cmd/uci`, `cmd/web`, and `cmd/match` use the
 embedded files and do not care about the working directory.
-
-## Runtime analysis
-
-Runtime analysis is disabled by default. Start the local board with:
-
-```sh
-go run ./cmd/web -analysis
-```
-
-To include search phase metrics in the panel, use the metrics build:
-
-```sh
-go run -tags metrics ./cmd/web -analysis
-```
-
-The default build still provides CPU, heap, goroutine, and pprof sampling; only
-the search-metric fields and the UCI `Analysis` option are compiled out.
-
-Open **Runtime analysis** in the side panel during engine play or auto play. The
-page plots process CPU utilization, live heap, goroutines, and per-iteration
-search nodes, time, and NPS. CPU utilization is process user+system time and is
-marked unavailable if the platform cannot supply it. It also shows inclusive
-wall-clock timings and call counts for legal move generation, special-move
-legality filtering (copy-make plus attack test), evaluation, and search-edge
-copy-make. Every copy-make call is counted, including the copies made while
-filtering; their time is reported with the legality filter because timing each
-individual copy would add too much overhead.
-The bars are disjoint but incomplete: the panel reports the measured share and
-an unattributed remainder covering draw checks, ordering, PV maintenance,
-callbacks, and the timing instrumentation itself. `elapsedNs` is search-loop time, not the UCI `time` field. The server
-retains five minutes of runtime samples and the latest 64 searches.
-
-In the metrics build, collecting search metrics adds measurable overhead
-(roughly 20–60% at moderate fixed depth, depending on the position and search
-size), so a time-limited search may complete fewer iterations while it is on.
-The default build has no metrics-wrapper or timer overhead; use it for real NPS
-and strength benchmarks.
-
-The panel links to Go CPU, heap, and trace profiles. Start a sustained search or
-auto play, download the 10-second CPU profile, then inspect function hotspots and
-flame graphs with:
-
-```sh
-go tool pprof -http=127.0.0.1:8081 gochess-cpu.pb.gz
-```
-
-Profiling routes and sampling exist only with `-analysis`, which requires a
-loopback listen address. Profiles cover the whole local process, including HTTP
-work, and short searches may contain too few CPU samples. Confirm optimizations
-with normal, non-profiled benchmarks. Other UCI clients can request only the
-final search metrics with `setoption name Analysis value true` when running a
-`metrics` build.
 
 ## Benchmarking
 
@@ -283,10 +222,9 @@ go run ./cmd/match -stockfish stockfish -fen "4k3/8/8/8/8/8/8/R3K3 w - - 0 1" \
   -moves "e1d1 e8d8 d1e1 d8e8 e1d1 e8d8 d1e1 d8e8"
 ```
 
-CI checks `gofmt`, `go build`, `go vet`, `go test -race ./...`,
-`go test -tags metrics -race ./...`, Stockfish perft and match comparisons,
-bench/version smoke tests, and Windows/macOS cross-compilation. Run `gofmt -l .`
-before pushing.
+CI checks `gofmt`, `go build`, `go vet`, `go test -race ./...`, Stockfish perft
+and match comparisons, bench/version smoke tests, and Windows/macOS
+cross-compilation. Run `gofmt -l .` before pushing.
 
 ## Layout
 

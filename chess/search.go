@@ -64,31 +64,14 @@ func (c *SearchClock) hardPassed() bool {
 }
 
 type SearchLimits struct {
-	MaxDepth       int
-	MaxNodes       uint64
-	Deadline       time.Time
-	SoftDeadline   time.Time
-	Clock          *SearchClock
-	RootMoves      []Move // nil means every legal move
-	GameHistory    []PositionKey
-	TT             *TranspositionTable
-	CollectMetrics bool
-}
-
-// SearchMetrics timings are inclusive and do not overlap.
-type SearchMetrics struct {
-	ElapsedNS           int64  `json:"elapsedNs"`
-	MoveGenCalls        uint64 `json:"moveGenCalls"`
-	PseudoMoves         uint64 `json:"pseudoMoves"`
-	LegalMoves          uint64 `json:"legalMoves"`
-	EvaluationCalls     uint64 `json:"evaluationCalls"`
-	MakeMoveCalls       uint64 `json:"makeMoveCalls"`
-	SearchMakeMoveCalls uint64 `json:"searchMakeMoveCalls"`
-	BetaCutoffs         uint64 `json:"betaCutoffs"`
-	MoveGenNS           int64  `json:"moveGenNs"`
-	LegalFilterNS       int64  `json:"legalFilterNs"`
-	EvaluationNS        int64  `json:"evaluationNs"`
-	SearchMakeMoveNS    int64  `json:"searchMakeMoveNs"`
+	MaxDepth     int
+	MaxNodes     uint64
+	Deadline     time.Time
+	SoftDeadline time.Time
+	Clock        *SearchClock
+	RootMoves    []Move // nil means every legal move
+	GameHistory  []PositionKey
+	TT           *TranspositionTable
 }
 
 type SearchInfo struct {
@@ -111,7 +94,6 @@ type SearchResult struct {
 	Nodes      uint64
 	PV         []Move
 	TT         TTStats
-	Metrics    *SearchMetrics
 }
 
 func (b *Position) Search(depth int) SearchResult {
@@ -153,16 +135,6 @@ func (b *Position) searchWithOptions(ctx context.Context, limits SearchLimits, i
 	}
 	ensureAttackTables()
 
-	var metrics *SearchMetrics
-	var metricsStart time.Time
-	if limits.CollectMetrics && MetricsEnabled {
-		metrics = &SearchMetrics{}
-		metricsStart = time.Now()
-		defer func() {
-			metrics.ElapsedNS = time.Since(metricsStart).Nanoseconds()
-			result.Metrics = metrics
-		}()
-	}
 	clock := limits.Clock
 	if clock == nil {
 		clock = new(SearchClock)
@@ -173,7 +145,6 @@ func (b *Position) searchWithOptions(ctx context.Context, limits SearchLimits, i
 		clock:    clock,
 		maxNodes: limits.MaxNodes,
 		tt:       limits.TT,
-		metrics:  metrics,
 		opts:     opts,
 	}
 	defer func() {
@@ -451,7 +422,6 @@ type searcher struct {
 	nodes    uint64
 	stopped  bool
 	seldepth int
-	metrics  *SearchMetrics
 
 	tt      *TranspositionTable
 	ttStats TTStats
@@ -671,9 +641,6 @@ func (s *searcher) negamax(b Position, depth, alpha, beta, ply int, nullAllowed 
 			alpha = score
 		}
 		if alpha >= beta {
-			if MetricsEnabled && s.metrics != nil {
-				s.metrics.BetaCutoffs++
-			}
 			if _, promotion := m.Promotion(); !m.IsCapture() && !promotion {
 				s.recordQuietCutoff(us, m, depth, ply)
 			}

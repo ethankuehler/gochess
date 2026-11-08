@@ -22,8 +22,7 @@ Commands under `cmd/`:
 - `match`: gochess-versus-Stockfish games with perft and draw validation.
 - `arena`: paired Stockfish rating games; `versions` compares local builds at a
   fixed depth, time, or node limit and reports W/D/L, Elo, and search metrics.
-- `web`: local browser board, human/auto play, undo/reset, PGN export, and
-  optional runtime analysis.
+- `web`: local browser board, human/auto play, undo/reset, and PGN export.
 
 ## Build and test commands
 
@@ -32,17 +31,14 @@ Run Go commands and disk-based tools from the repository root.
 ```sh
 go build ./...
 go build -o gochess ./cmd/uci
-go build -tags metrics -o gochess-metrics ./cmd/uci
 go vet ./...
 
 go test ./...
 go test -race ./...
-go test -tags metrics -race ./...
 go test -bench . ./chess
 
 go run ./cmd/uci
 go run ./cmd/web
-go run ./cmd/web -analysis
 go run ./cmd/search -fen "<FEN>" -moves "e2e4 e7e5" -depth 5
 go run ./cmd/search -fen "<FEN>" -eval
 go run ./cmd/perft -depth 5
@@ -130,8 +126,8 @@ The compiled binaries, `.vscode/`, local Go caches, and `plans/` are gitignored.
   `SearchWithLimits`. The latter performs iterative-deepening PVS with aspiration
   windows, quiescence, move ordering, pruning, draw detection, and optional TT.
 - `SearchLimits` supports depth, nodes, hard/soft deadlines, `SearchClock`, root
-  moves, game history, TT, and metrics. Nil `RootMoves` means all moves; non-nil
-  empty means none. A non-nil clock overrides deadline fields. Limits include
+  moves, game history, and TT. Nil `RootMoves` means all moves; non-nil empty
+  means none. A non-nil clock overrides deadline fields. Limits include
   quiescence work.
 - Unsound pruning/reductions belong only at null-window scout nodes, not PV
   nodes. Quiescence directly generates tactical moves, searches all evasions in
@@ -154,11 +150,7 @@ The compiled binaries, `.vscode/`, local Go caches, and `plans/` are gitignored.
   by ply, and table use is disabled at `halfmoveClock >= 80`.
 - Cancellation/deadlines are polled every 256 nodes and at root moves; preserve
   responsive `stop` behavior if changing this. The root is excluded from node
-  counts. Metrics builds may have extra PVS/LMR node entries without copy-make.
-- Metrics require `-tags metrics`; the default build ignores `CollectMetrics` and
-  returns nil metrics. Use default builds for strength/NPS comparisons because
-  instrumentation adds overhead. Metrics phase timings are inclusive but do not
-  cover all search work.
+  counts.
 
 ## UCI protocol and concurrency
 
@@ -189,7 +181,7 @@ The compiled binaries, `.vscode/`, local Go caches, and `plans/` are gitignored.
 - Call `finishSearch` exactly once and before writing `bestmove`, so a GUI can
   immediately send another position/go. Do not move it after the write.
 - Always-advertised options: Hash (16 MB default, 1–1024), Clear Hash, Threads
-  fixed at 1, Move Overhead, and Ponder. Metrics builds also advertise Analysis.
+  fixed at 1, Move Overhead, and Ponder.
   Hash changes are idle-only. MultiPV/Chess960 may be tolerated but are not
   implemented or advertised; there are no tablebases or opening book in UCI.
 - Bench uses fixed positions/depth, one thread, no clock, and clears one TT
@@ -203,14 +195,11 @@ The compiled binaries, `.vscode/`, local Go caches, and `plans/` are gitignored.
   move with `ApplyUCIMove`. Human mode engines play Black; auto play uses both.
 - Do not hold the game mutex during search. Reset replaces the client to cancel
   in-flight work and discard stale results. Undo also removes the engine reply.
-  Close the game/client and analysis sampler in tests and on shutdown.
+  Close the game/client in tests and on shutdown.
 - Threefold repetition and fifty-move draws are claimable through
   `/api/claim-draw`; they do not automatically end the game. Auto play claims
   automatically. Fivefold, seventy-five-move, and insufficient-material draws
   end automatically. PGN results derive from current game status.
-- Analysis is opt-in, loopback-only, bounded, and unavailable in ordinary mode.
-  Do not expose analysis or pprof on the global default mux. Runtime retention is
-  300 samples and 64 searches; CPU/trace captures are limited to 1–60 seconds.
 
 ## Style and error handling
 
@@ -229,7 +218,7 @@ The compiled binaries, `.vscode/`, local Go caches, and `plans/` are gitignored.
 
 - Use the standard `testing` package. Extend data-driven fixtures rather than
   hardcoding positions where practical. Add tests only alongside the project's
-  existing test suites and run the relevant default, race, and metrics variants.
+  existing test suites and run the relevant default and race variants.
 - Engine tests cover parsing, attacks/magics, legal generation, make-move, perft,
   evaluation symmetry, SEE, quiescence, search/reference equivalence, draws, TT,
   limits, SAN/PGN, and non-mutation. Preserve deterministic search and bench
@@ -237,7 +226,7 @@ The compiled binaries, `.vscode/`, local Go caches, and `plans/` are gitignored.
 - UCI tests use in-process pipes and cover protocol state, concurrency, output
   purity, options, limits, terminal positions, pondering, and client cleanup.
 - Web tests use `httptest`, close every game/client, and cover engine lifecycle,
-  draw claims/automatic draws, reset/undo, PGN, and analysis bounds/security.
+  draw claims/automatic draws, reset/undo, and PGN.
 - Stockfish tests skip unless `STOCKFISH_BIN` is set. `cmd/arena` uses fake
   engines for deterministic harness tests. Do not weaken reference/perft checks
   to accommodate an engine change without understanding the discrepancy.

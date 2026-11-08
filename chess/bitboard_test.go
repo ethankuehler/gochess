@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"log"
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -93,6 +94,23 @@ func TestOccupancy(t *testing.T) {
 
 	}
 
+}
+
+func TestPieceTypesMatchPieceBitboard(t *testing.T) {
+	position := NewStartingPosition()
+	for _, colour := range []Colour{White, Black, Both} {
+		var got []Piece
+		for piece := range PieceTypes(colour) {
+			got = append(got, piece)
+			if colour != Both {
+				position.PieceBitboard(colour, piece)
+			}
+		}
+		want := []Piece{Pawn, Knight, Bishop, Rook, Queen, King}
+		if !slices.Equal(got, want) {
+			t.Errorf("PieceTypes(%v) = %v, want %v", colour, got, want)
+		}
+	}
 }
 
 func TestSquaresToBitBoard(t *testing.T) {

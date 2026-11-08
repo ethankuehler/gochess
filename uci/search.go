@@ -2,7 +2,6 @@ package uci
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -131,7 +130,6 @@ func (e *Engine) writeFinal(result chess.SearchResult, elapsed time.Duration) {
 		} else {
 			e.out.line("info depth 0 score cp 0")
 		}
-		e.writeAnalysis(result.Metrics)
 		e.out.line("bestmove 0000")
 		return
 	}
@@ -144,24 +142,11 @@ func (e *Engine) writeFinal(result chess.SearchResult, elapsed time.Duration) {
 		Time:     elapsed,
 		PV:       result.PV,
 	})
-	e.writeAnalysis(result.Metrics)
 	if result.PonderMove != (chess.Move{}) {
 		e.out.line("bestmove %s ponder %s", result.BestMove, result.PonderMove)
 		return
 	}
 	e.out.line("bestmove %s", result.BestMove)
-}
-
-func (e *Engine) writeAnalysis(metrics *chess.SearchMetrics) {
-	if metrics == nil {
-		return
-	}
-	encoded, err := json.Marshal(metrics)
-	if err != nil {
-		fmt.Fprintf(e.errOut, "analysis metrics: %v\n", err)
-		return
-	}
-	e.out.line("info string analysis %s", encoded)
 }
 
 func formatPV(moves []chess.Move) string {

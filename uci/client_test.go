@@ -2,7 +2,6 @@ package uci
 
 import (
 	"io"
-	"strings"
 	"testing"
 	"time"
 
@@ -44,21 +43,6 @@ func TestClientSearch(t *testing.T) {
 	}
 	if result.NPS == 0 || result.SelDepth < result.Depth {
 		t.Errorf("NPS/seldepth = %d/%d, depth = %d", result.NPS, result.SelDepth, result.Depth)
-	}
-	if len(result.Iterations) != 2 {
-		t.Fatalf("iterations = %+v, want depths 1 and 2", result.Iterations)
-	}
-	for i, iteration := range result.Iterations {
-		if iteration.Depth != i+1 || iteration.SelDepth < iteration.Depth || iteration.Nodes == 0 || iteration.NPS == 0 || iteration.TimeMS < 1 {
-			t.Errorf("iteration %d = %+v", i, iteration)
-		}
-	}
-	last := result.Iterations[len(result.Iterations)-1]
-	if last.Depth != result.Depth || last.SelDepth != result.SelDepth || last.Nodes != result.Nodes || last.NPS != result.NPS || last.TimeMS != result.TimeMS {
-		t.Errorf("final iteration = %+v, result = %+v", last, result)
-	}
-	if result.Metrics != nil {
-		t.Error("disabled search returned metrics")
 	}
 
 	parsed, err := chess.ParseUCIMove(result.BestMove)
@@ -117,9 +101,6 @@ func TestClientTerminalPositions(t *testing.T) {
 	if result.HasMate {
 		t.Errorf("stalemate reported mate %d", result.MateIn)
 	}
-	if len(result.Iterations) != 0 {
-		t.Errorf("terminal result contained iteration samples: %+v", result.Iterations)
-	}
 }
 
 func TestClientSetPositionErrorRecovers(t *testing.T) {
@@ -163,7 +144,8 @@ func TestParseInfo(t *testing.T) {
 	var result EngineResult
 	parseInfo([]string{
 		"info", "depth", "5", "seldepth", "7", "score", "cp", "-34",
-		"nodes", "12345", "nps", "400000", "time", "31", "pv", "e2e4", "e7e5", "g1f3",
+		"nodes", "12345", "nps", "400000", "time", "31", "hashfull", "12", "tbhits", "3",
+		"pv", "e2e4", "e7e5", "g1f3",
 	}, &result)
 
 	if result.Depth != 5 || result.SelDepth != 7 || result.Score != -34 || result.HasMate {
@@ -171,6 +153,9 @@ func TestParseInfo(t *testing.T) {
 	}
 	if result.Nodes != 12345 || result.NPS != 400000 || result.TimeMS != 31 {
 		t.Errorf("nodes/NPS/time = %d/%d/%d", result.Nodes, result.NPS, result.TimeMS)
+	}
+	if result.HashFull != 12 || result.TBHits != 3 {
+		t.Errorf("hashfull/tbhits = %d/%d", result.HashFull, result.TBHits)
 	}
 	if len(result.PV) != 3 || result.PV[0] != "e2e4" || result.PV[2] != "g1f3" {
 		t.Errorf("PV = %v", result.PV)
@@ -220,55 +205,6 @@ func TestClientSetOptionAndLimits(t *testing.T) {
 	}
 }
 
-func TestClientAnalysis(t *testing.T) {
-	if !chess.MetricsEnabled {
-		t.Skip("metrics build tag not enabled")
-	}
-	client := startTestClient(t)
-	if err := client.SetOption("Analysis", "true"); err != nil {
-		t.Fatalf("enable Analysis: %v", err)
-	}
-	if err := client.SetPosition(chess.NewStartingPosition().FEN()); err != nil {
-		t.Fatalf("SetPosition: %v", err)
-	}
-	result, err := client.GoDepth(1)
-	if err != nil {
-		t.Fatalf("GoDepth: %v", err)
-	}
-	if result.Metrics == nil || result.Metrics.MoveGenCalls == 0 || result.Metrics.MakeMoveCalls == 0 {
-		t.Fatalf("analysis metrics = %+v", result.Metrics)
-	}
-
-	checkmate, err := chess.ParseFEN("7k/6Q1/6K1/8/8/8/8/8 b - - 0 1")
-	if err != nil {
-		t.Fatalf("ParseFEN: %v", err)
-	}
-	if err := client.SetPosition(checkmate.FEN()); err != nil {
-		t.Fatalf("SetPosition checkmate: %v", err)
-	}
-	result, err = client.GoDepth(1)
-	if err != nil {
-		t.Fatalf("GoDepth checkmate: %v", err)
-	}
-	if result.Metrics == nil || result.Metrics.MoveGenCalls != 1 || result.Metrics.LegalMoves != 0 {
-		t.Fatalf("terminal analysis metrics = %+v", result.Metrics)
-	}
-
-	if err := client.SetOption("Analysis", "false"); err != nil {
-		t.Fatalf("disable Analysis: %v", err)
-	}
-	if err := client.SetPosition(chess.NewStartingPosition().FEN()); err != nil {
-		t.Fatalf("SetPosition: %v", err)
-	}
-	result, err = client.GoDepth(1)
-	if err != nil {
-		t.Fatalf("GoDepth disabled: %v", err)
-	}
-	if result.Metrics != nil {
-		t.Fatalf("disabled analysis metrics = %+v", result.Metrics)
-	}
-}
-
 type clientTestWriteCloser struct {
 	io.Writer
 }
@@ -284,12 +220,11 @@ func clientWithOutput(lines ...string) *Client {
 	return &Client{in: clientTestWriteCloser{Writer: io.Discard}, lines: output}
 }
 
-func TestGoCommandIterationsAndAnalysis(t *testing.T) {
+func TestGoCommand(t *testing.T) {
 	client := clientWithOutput(
 		"info depth 1 seldepth 2 score cp 10 nodes 10 nps 1000 time 1 pv e2e4",
-		"info string analysisx ignored",
+		"info string ignored",
 		"info depth 1 seldepth 3 score cp 20 nodes 20 nps 2000 time 2 pv d2d4 e7e5",
-		`info string analysis {"elapsedNs":2,"moveGenCalls":3,"pseudoMoves":45,"legalMoves":40,"evaluationCalls":20,"makeMoveCalls":25,"searchMakeMoveCalls":5,"betaCutoffs":4,"moveGenNs":1,"legalFilterNs":2,"evaluationNs":0,"searchMakeMoveNs":0}`,
 		"bestmove d2d4",
 	)
 	result, err := client.goCommand("go depth 1")
@@ -299,41 +234,7 @@ func TestGoCommandIterationsAndAnalysis(t *testing.T) {
 	if result.BestMove != "d2d4" || result.Depth != 1 || result.SelDepth != 3 || result.Nodes != 20 || result.NPS != 2000 || result.TimeMS != 2 {
 		t.Fatalf("result = %+v", result)
 	}
-	if len(result.Iterations) != 1 {
-		t.Fatalf("iterations = %+v, want final duplicate to replace first sample", result.Iterations)
-	}
-	iteration := result.Iterations[0]
-	if iteration.Depth != 1 || iteration.SelDepth != 3 || iteration.Nodes != 20 || iteration.NPS != 2000 || iteration.TimeMS != 2 {
-		t.Fatalf("iteration = %+v", iteration)
-	}
-	if result.Metrics == nil || result.Metrics.ElapsedNS != 2 || result.Metrics.MoveGenCalls != 3 || result.Metrics.PseudoMoves != 45 || result.Metrics.SearchMakeMoveCalls != 5 || result.Metrics.BetaCutoffs != 4 || result.Metrics.LegalFilterNS != 2 {
-		t.Fatalf("metrics = %+v", result.Metrics)
-	}
 	if len(result.PV) != 2 || result.PV[0] != "d2d4" {
 		t.Fatalf("PV = %v", result.PV)
-	}
-}
-
-func TestGoCommandRejectsMalformedAnalysis(t *testing.T) {
-	client := clientWithOutput(
-		`info string analysis {"elapsedNs":`,
-		"bestmove e2e4",
-		"info depth 1 seldepth 1 score cp 1 nodes 1 nps 1000 time 1 pv e2e4",
-		"bestmove e2e4",
-	)
-	result, err := client.goCommand("go depth 1")
-	if err == nil || !strings.Contains(err.Error(), "invalid analysis info") {
-		t.Fatalf("goCommand error = %v, want invalid analysis info", err)
-	}
-	if result.BestMove != "e2e4" {
-		t.Fatalf("malformed analysis result = %+v", result)
-	}
-	// The malformed line must not leave bestmove in the pipe for the next go.
-	result, err = client.goCommand("go depth 1")
-	if err != nil {
-		t.Fatalf("goCommand after malformed analysis: %v", err)
-	}
-	if result.BestMove != "e2e4" || len(result.Iterations) != 1 {
-		t.Fatalf("result after malformed analysis = %+v", result)
 	}
 }

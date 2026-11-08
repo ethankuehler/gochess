@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/ethankuehler/gochess/chess"
-	"github.com/ethankuehler/gochess/uci"
 )
 
 type gameConfig struct {
@@ -26,7 +25,7 @@ type gameRecord struct {
 	Moves    []string `json:"moves"`
 }
 
-func playGame(cfg gameConfig, line opening, ourWhite bool, our *uci.Client, sf *uciEngine, out io.Writer) (gameRecord, error) {
+func playGame(cfg gameConfig, line opening, ourWhite bool, our, sf enginePlayer, out io.Writer) (gameRecord, error) {
 	startFEN := chess.NewStartingPosition().FEN()
 	board := chess.NewStartingPosition()
 
@@ -47,7 +46,7 @@ func playGame(cfg gameConfig, line opening, ourWhite bool, our *uci.Client, sf *
 	if err := our.NewGame(); err != nil {
 		return gameRecord{}, fmt.Errorf("gochess ucinewgame: %w", err)
 	}
-	if err := sf.newGame(); err != nil {
+	if err := sf.NewGame(); err != nil {
 		return gameRecord{}, err
 	}
 
@@ -104,20 +103,20 @@ func playGame(cfg gameConfig, line opening, ourWhite bool, our *uci.Client, sf *
 			move, score = res.BestMove, res.Score
 		} else {
 			engine = "Stockfish"
-			if err := sf.setPosition(startFEN, history); err != nil {
+			if err := sf.SetPosition(startFEN, history...); err != nil {
 				return rec, err
 			}
 			start := time.Now()
 			var res engineSearchResult
 			var err error
 			if cfg.sfNodes > 0 {
-				res, err = sf.goNodes(cfg.sfNodes)
+				res, err = sf.GoNodes(cfg.sfNodes)
 			} else {
 				budget := cfg.sfMovetime
 				if budget <= 0 {
 					budget = cfg.movetime
 				}
-				res, err = sf.goMovetime(budget)
+				res, err = sf.GoMovetime(budget)
 			}
 			elapsed = time.Since(start)
 			if err != nil {
